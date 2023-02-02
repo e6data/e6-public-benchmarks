@@ -1,0 +1,345 @@
+import json
+import threading
+from multiprocessing import Pool
+
+import trino
+import csv
+import datetime
+import logging
+
+import time
+from pathlib import Path
+
+import os
+import psutil
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+
+ENGINE = 'Trino'
+ENGINE_IP = os.getenv("ENGINE_IP")
+ENGINE_PORT = int(os.getenv("ENGINE_PORT") or 8889)
+DB_NAME = os.getenv("DB_NAME")
+QUERY_CSV_COLUMN_NAME = os.getenv("QUERY_CSV_COLUMN_NAME") or 'QUERY'
+INPUT_CSV_PATH = os.getenv('INPUT_CSV_PATH')
+CONCURRENT_QUERY_COUNT = os.getenv("CONCURRENT_QUERY_COUNT") or 5
+CONCURRENCY_INTERVAL = os.getenv("CONCURRENCY_INTERVAL") or 5
+
+QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"
+QUERY_INPUT_TYPE = 'CSV_PATH'  # mysql or csv
+
+MACHINE_TYPE = 'c5.9xlarge'
+max_retry_count = 10
+sleep_time = 10
+
+
+class QueryException(Exception):
+    pass
+
+
+def create_readable_name_from_key_name(key: str) -> str:
+    return key.lower().replace('_', ' ').capitalize()
+
+
+def e6x_query_method(row):
+    """
+    ONLY FOR CONCURRENCY QUERIES
+    """
+    client_perceived_start_time = time.time()
+    query_alias_name = row.get('query_alias_name')
+    query = row.get('query').replace('\n', ' ').replace('  ', ' ')
+    db_name = row.get('db_name') or DB_NAME
+    logger.info(
+        'Query alias: {}, FIRED at: {} BEFORE CREATING CONNECTION'.format(query_alias_name, datetime.datetime.now()))
+    local_connection = create_e6x_con()
+    logger.info(
+        'TIMESTAMP : {} connected with db {} and Engine {}'.format(datetime.datetime.now(), db_name, ENGINE_IP))
+    local_cursor = local_connection.cursor()
+    logger.info('TIMESTAMP : {} Executing Query: {}'.format(datetime.datetime.now(), query))
+    logger.info('Query alias: {}, Started at: {}'.format(query_alias_name, datetime.datetime.now()))
+    status = query_on_6ex(query, local_cursor,
+                          query_alias=query_alias_name)
+    client_perceived_time = round(time.time() - client_perceived_start_time, 3)
+    logger.info('Query alias: {}, Ended at: {}'.format(query_alias_name, datetime.datetime.now()))
+    try:
+        local_cursor.close()
+        local_connection.close()
+    except Exception as e:
+        logger.error("CURSOR CLOSE FAILED : {}".format(str(e)))
+    return status, query_alias_name, query, db_name, client_perceived_time
+
+
+def query_on_6ex(query, cursor, query_alias=None) -> dict:
+    query_start_time = datetime.datetime.now()
+    try:
+        logger.info(
+            'JUST BEFORE EXECUTION Query alias: {}, Started at: {}'.format(query_alias, datetime.datetime.now()))
+        cursor.execute(query)
+        results = cursor.fetchall()
+        row_count = len(results)
+        logger.info(
+            'JUST AFTER FETCH MANY Query alias: {}, Ended at: {}'.format(query_alias, datetime.datetime.now()))
+        query_end_time = datetime.datetime.now()
+        query_status = 'Success'
+
+        elapsed_time = cursor.stats.get('elapsedTimeMillis') / 1000
+        query_id = cursor.stats.get('queryId')
+
+        return dict(
+            query_id=query_id,
+            row_count=row_count,
+            execution_time=elapsed_time,
+            query_status=query_status,
+            start_time=query_start_time,
+            end_time=query_end_time,
+            err_msg=None,
+        )
+    except Exception as e:
+        logger.info('TIMESTAMP {} Error on querying e6data engine: {}'.format(datetime.datetime.now(), e))
+        query_status = 'Failure'
+        err_msg = str(e)
+        query_end_time = datetime.datetime.now()
+        if 'timeout' in err_msg:
+            err_msg = 'Connect timeout. Unable to connect.'
+        return dict(
+            query_id=None,
+            row_count=0,
+            execution_time=0,
+            query_status=query_status,
+            start_time=query_start_time,
+            end_time=query_end_time,
+            err_msg=err_msg,
+        )
+
+
+def create_e6x_con(db_name=DB_NAME):
+    logger.info(f'TIMESTAMP : {datetime.datetime.now()} Connecting to e6x database...')
+    now = time.time()
+    try:
+        e6x_connection = trino.dbapi.connect(
+            host=ENGINE_IP,
+            port=ENGINE_PORT,
+            user='vishal',
+            catalog='hive',
+            schema=db_name,
+        )
+        # self.e6x_cursor = self.e6x_connection.cursor()
+        logger.info('TIMESTAMP : {} Connected to e6x in {}'.format(datetime.datetime.now(), time.time() - now))
+        return e6x_connection
+    except Exception as e:
+        logger.error(e)
+        logger.error(
+            'TIMESTAMP : {} Failed to connect to the e6x database with {}'.format(datetime.datetime.now(), db_name)
+        )
+
+
+class E6XBenchmark:
+    current_retry_count = 1
+    max_retry_count = 5
+    retry_sleep_time = 5  # Seconds
+
+    def __init__(self):
+        self.execution_start_time = datetime.datetime.now()
+        self.total_number_of_queries = 0
+        self.total_number_of_queries_successful = 0
+        self.total_number_of_queries_failed = 0
+        self.failed_query_alias = []
+
+        self.db_list = list()
+
+        self.e6x_connection = None
+        self.e6x_cursor = None
+        self.local_file_path = None
+
+        self.db_conn_retry_count = 0
+
+        self._check_envs()
+
+        self.counter = 0
+        self.failed_query_count = 0
+        self.success_query_count = 0
+        self.query_results = list()
+        self.local_file_path = None
+
+        result, is_any_query_failed = self._perform_query_from_csv()
+        self._send_V2_summary()
+        self._generate_csv_report(result)
+        if is_any_query_failed:
+            msg = 'Some queries failed. Please check the above logs for more information.'
+            logger.error(msg)
+            """
+            Raise Exception if any query failed to execute.
+            Based on this, Jenkins will display build failed.
+            """
+            raise QueryException(msg)
+
+    def _generate_csv_report(self, result):
+        """
+        DB name, Query Alias, Query Text, Query ID, Query Status, Execution Time, Client Perceived Time,
+        Row Count , Error message, Start Time, End Time, (edited)
+        """
+        column_order = ['db_name', 'query_alias_name', 'query_id', 'query_status', 'execution_time',
+                        'client_perceived_time', 'row_count', 'err_msg', 'start_time', 'end_time']
+        path = Path(__file__).resolve().parent
+        result_file_path = os.path.join(path, 'results.csv')
+        logger.info('Result local file path {}'.format(result_file_path))
+        with open(result_file_path, 'w', newline='') as fp:
+            header_list = [create_readable_name_from_key_name(i) for i in column_order]
+            writer = csv.writer(fp, delimiter=',')
+            writer.writerow(header_list)
+            for line in result:
+                ordered_data = list()
+                for k in column_order:
+                    ordered_data.append(line.get(k))
+                writer.writerow(ordered_data)
+
+    def _check_envs(self):
+        if not ENGINE_IP:
+            raise QueryException('Invalid ENGINE_IP: Please set the environment.')
+        if not QUERY_INPUT_TYPE:
+            raise QueryException('Invalid QUERY_INPUT_TYPE: Please set the environment.')
+        if not INPUT_CSV_PATH:
+            raise QueryException('Invalid INPUT_CSV_PATH: Please set the environment.')
+
+    def _send_V2_summary(self):
+        current_timestamp = datetime.datetime.now()
+        failed_query_message = self.total_number_of_queries_failed
+        if failed_query_message > 0:
+            try:
+                failed_query_message = '{} (Query Alias: {})'.format(failed_query_message,
+                                                                     ', '.join(self.failed_query_alias))
+            except:
+                failed_query_message = 'Failed Query Alias not available'
+        test_run_date = f'{self.execution_start_time:%d-%m-%Y %H:%M:%S}'
+        summary_data = {
+            'Engine': ENGINE,
+            'Test Run Date': test_run_date,
+            'Dataset': DB_NAME,
+            'Total Run Time': str(current_timestamp - self.execution_start_time).split('.')[0],
+            'Total Queries Run': self.total_number_of_queries,
+            'Total Queries Successful': self.total_number_of_queries_successful,
+            'Total Queries Failed': failed_query_message,
+        }
+        data = 'Summary \n'
+        for key, value in summary_data.items():
+            data += '{} - {} \n'.format(key, value)
+        logger.info("SUMMARY\n" + data)
+
+    def _get_query_list_from_csv_file(self):
+        self.local_file_path = INPUT_CSV_PATH
+        logger.info('Local file path {}'.format(self.local_file_path))
+        logger.info('Reading data from file...')
+        data = list()
+        with open(self.local_file_path, 'r') as fh:
+            reader = csv.DictReader(fh)
+            csv_data = [i for i in reader]
+            if not DB_NAME:
+                raise QueryException(
+                    'SET DB_NAME as environment variable.')
+            for row in csv_data:
+                data.append({
+                    'query': row.get(QUERY_CSV_COLUMN_NAME) or row.get('query'),
+                    'query_alias_name': row.get('QUERY_ALIAS') or row.get('query_alias_name'),
+                    'db_name': DB_NAME,
+                    'result_correctness_check': 0,
+                    'query_num': None,
+                    'group_id': None,
+                    'query_category': None
+                })
+
+        self.total_number_of_queries = len(csv_data)
+        return data
+
+    def _perform_query_from_csv(self):
+        logger.info('Performing query on e6x from cloud storage file (eg S3)')
+
+        all_rows = self._get_query_list_from_csv_file()
+        if QUERYING_MODE == "CONCURRENT":
+            self.total_number_of_threads = CONCURRENT_QUERY_COUNT
+            self.time_wait = CONCURRENCY_INTERVAL
+            self.total_number_of_threads = int(self.total_number_of_threads)
+            self.time_wait = int(self.time_wait)
+
+            pool_pool = list()
+            size = self.total_number_of_threads
+            a = (len(all_rows) / self.total_number_of_threads)
+            concur_looper = int(a) + 1 if type(a) == float else a
+            for j in range(concur_looper):
+                pool = Pool(processes=size)
+                res = pool.map_async(e6x_query_method, (i for i in all_rows[size * j:size * (j + 1)]))
+                pool_pool.append(res)
+                time.sleep(self.time_wait)
+            logger.info("Running concurrent queries in E6DATA with ENABLE_CONCURRENCY enabled")
+            for j in pool_pool:
+                for output in j.get():
+                    status, query_alias_name, query, db_name, client_perceived_time = output[0], output[1], output[2], \
+                        output[3], output[4]
+
+                    if status.get('query_status') == 'Failure':
+                        self.failed_query_count += 1
+                        self.failed_query_alias.append(query_alias_name)
+                    else:
+                        self.success_query_count += 1
+                    self.query_results.append(dict(
+                        s_no=self.counter + 1,
+                        query_alias_name=query_alias_name,
+                        query=query,
+                        db_name=db_name,
+                        client_perceived_time=client_perceived_time,
+                        **status
+                    ))
+                    logger.info(dict(
+                        s_no=self.counter + 1,
+                        query_alias_name=query_alias_name,
+                        query=query,
+                        db_name=db_name,
+                        client_perceived_time=client_perceived_time,
+                        **status
+                    ))
+                    logger.info('{}. Query status of query alias: {} {}'.format(
+                        self.counter,
+                        query_alias_name,
+                        status.get('query_status'))
+                    )
+                    self.counter += 1
+                    logger.info('JOINING...')
+        else:
+            for row in all_rows:
+                logger.info("Running sequential queries in E6DATA with ENABLE_CONCURRENCY disabled")
+                status, query_alias_name, query, db_name, client_perceived_time = e6x_query_method(row)
+                err_msg = status.pop('err_msg')
+                self.query_results.append(dict(
+                    **status,
+                    query_alias_name=query_alias_name,
+                    query=query,
+                    db_name=db_name,
+                    client_perceived_time=client_perceived_time,
+                    err_msg=err_msg
+                ))
+
+        logger.info('TIMESTAMP {} ALL Query completed'.format(datetime.datetime.now()))
+        self.total_number_of_queries = len(all_rows)
+        self.total_number_of_queries_successful = self.success_query_count
+        self.total_number_of_queries_failed = self.failed_query_count
+
+        logger.info('Total failed query: {}'.format(self.failed_query_count))
+        logger.info('Total success query: {}'.format(self.success_query_count))
+        is_any_query_failed = self.failed_query_count > 0
+        return self.query_results, is_any_query_failed
+
+
+def ram_cpu_calculation(period):
+    while True:
+        mem_usage = psutil.virtual_memory()
+        cpu_usage = psutil.cpu_percent(period)
+        logger.info(
+            f"TIMESTAMP : {datetime.datetime.now()} RAM USAGE: {mem_usage.used / (1024 ** 3):.2f}G CPU USAGE {cpu_usage}%")
+
+
+if __name__ == '__main__':
+    logger.info('Engin IP is {}'.format(os.getenv("ENGINE_IP")))
+
+    a = threading.Thread(target=ram_cpu_calculation, args=(5,))
+    a.daemon = True
+    a.start()
+    E6XBenchmark()
