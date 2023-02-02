@@ -1,5 +1,5 @@
 QUERY_ALIAS,QUERY
-Bootstrap-1,"select count(sr_ticket_number) from store_returns;"
-Bootstrap-2,"select count(ss_sold_date_sk) from store_sales;"
-Bootstrap-3,"select count(cs_sold_date_sk) from catalog_sales;"
-Bootstrap-4,"select count(ws_sold_date_sk) from web_sales;"
+Bootstrap-1,"select count(sr_ticket_number) from store_returns"
+Bootstrap-2,"select count(ss_sold_date_sk) from store_sales"
+Bootstrap-3,"select count(cs_sold_date_sk) from catalog_sales"
+Bootstrap-4,"select count(ws_sold_date_sk) from web_sales"

@@ -21,8 +21,8 @@ ENGINE_IP = os.getenv("ENGINE_IP")
 DB_NAME = os.getenv("DB_NAME")
 QUERY_CSV_COLUMN_NAME = os.getenv("QUERY_CSV_COLUMN_NAME") or 'QUERY'
 INPUT_CSV_PATH = os.getenv('INPUT_CSV_PATH')
-CONCURRENT_QUERY_COUNT = os.getenv("CONCURRENT_QUERY_COUNT") or 5
-CONCURRENCY_INTERVAL = os.getenv("CONCURRENCY_INTERVAL") or 5
+CONCURRENT_QUERY_COUNT = int(os.getenv("CONCURRENT_QUERY_COUNT") or 5)
+CONCURRENCY_INTERVAL = int(os.getenv("CONCURRENCY_INTERVAL") or 5)
 
 QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"
 QUERY_INPUT_TYPE = 'CSV_PATH'  # mysql or csv
@@ -186,10 +186,12 @@ class E6XBenchmark:
         DB name, Query Alias, Query Text, Query ID, Query Status, Execution Time, Client Perceived Time,
         Row Count , Error message, Start Time, End Time, (edited)
         """
-        column_order = ['db_name', 'query_alias_name', 'query_id', 'query_status', 'execution_time',
+        column_order = ['db_name', 'query_alias_name', 'query_text', 'query_id', 'query_status', 'execution_time',
                         'client_perceived_time', 'row_count', 'err_msg', 'start_time', 'end_time']
         path = Path(__file__).resolve().parent
-        result_file_path = os.path.join(path, 'results.csv')
+        today = datetime.datetime.now().strftime('%Y-%m-%d_%H_%M_%S')
+        file_name = f'e6data_results_{today}.csv'
+        result_file_path = os.path.join(path,  file_name)
         logger.info('Result local file path {}'.format(result_file_path))
         with open(result_file_path, 'w', newline='') as fp:
             header_list = [create_readable_name_from_key_name(i) for i in column_order]
@@ -292,7 +294,7 @@ class E6XBenchmark:
                     self.query_results.append(dict(
                         s_no=self.counter + 1,
                         query_alias_name=query_alias_name,
-                        query=query,
+                        query_text=query,
                         db_name=db_name,
                         client_perceived_time=client_perceived_time,
                         **status
@@ -300,7 +302,7 @@ class E6XBenchmark:
                     logger.info(dict(
                         s_no=self.counter + 1,
                         query_alias_name=query_alias_name,
-                        query=query,
+                        query_text=query,
                         db_name=db_name,
                         client_perceived_time=client_perceived_time,
                         **status
@@ -320,7 +322,7 @@ class E6XBenchmark:
                 self.query_results.append(dict(
                     **status,
                     query_alias_name=query_alias_name,
-                    query=query,
+                    query_text=query,
                     db_name=db_name,
                     client_perceived_time=client_perceived_time,
                     err_msg=err_msg
