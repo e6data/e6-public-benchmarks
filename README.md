@@ -23,6 +23,12 @@ export CONCURRENCY_INTERVAL = 10 # Default Value is 5
 # Example: If your benchmarking needs 50 queries to fire every 2 seconds,
 # export CONCURRENT_QUERY_COUNT = 50
 # export CONCURRENCY_INTERVAL = 2
+
+Additional environment variables in Athena Benchmarking
+export ATHENA_BUCKET=testbucketname #For storing query results
+export ASSUME_ROLE_MODE=true #default value is false .To be Enabled if querying is to expected using assume role
+export AWS_ASSUME_ROLE_ARN=arn:aws:iam::123445667:role/rolename #ARN of assume role
+
 ```
 
 ### 3. Run the python script.
@@ -33,4 +39,8 @@ python3 e6_benchmark.py
 For <em>Trino</em>:
 ```
 python3 trino_benchmark.py
+```
+For <em>Athena</em>:
+```
+python3 athena_benchmark.py
 ```

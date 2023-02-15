@@ -3,3 +3,5 @@ psutil
 thrift
 pytz
 trino
+boto3==1.24.64
+pyathena==2.16.1
