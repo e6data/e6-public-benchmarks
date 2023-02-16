@@ -26,7 +26,7 @@ export CONCURRENCY_INTERVAL = 10 # Default Value is 5
 
 #Additional environment variables in Athena Benchmarking
 export RESULT_BUCKET=testbucketname # Query results of Athena will be stored in this bucket
-export GLUE_REGION=us-east-1 # Location of AWS Glue. Default Value is us-east-1
+export GLUE_REGION=us-east-1 # Region of AWS Glue. Default Value is us-east-1
 ```
 
 ### 3. Run the python script.
