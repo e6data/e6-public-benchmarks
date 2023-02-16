@@ -1,42 +1,39 @@
-import threading
-from multiprocessing import Pool
-
 import csv
 import datetime
 import logging
-
-import time
-from pathlib import Path
-from pyathena import connect
-import boto3
 import os
+import threading
+import time
+from multiprocessing import Pool
+from pathlib import Path
+
+import boto3
 import psutil
+from pyathena import connect
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
-
 ENGINE = 'Athena'
 
-
 DB_NAME = os.getenv("DB_NAME")
+ATHENA_BUCKET = os.getenv("ATHENA_BUCKET")
 QUERY_CSV_COLUMN_NAME = os.getenv("QUERY_CSV_COLUMN_NAME") or 'QUERY'
 INPUT_CSV_PATH = os.getenv('INPUT_CSV_PATH')
 CONCURRENT_QUERY_COUNT = int(os.getenv("CONCURRENT_QUERY_COUNT") or 5)
 CONCURRENCY_INTERVAL = int(os.getenv("CONCURRENCY_INTERVAL") or 5)
 
-REGION=os.getenv("REGION") or "us-east-1"
-QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"
-QUERY_INPUT_TYPE = 'CSV_PATH'  # mysql or csv
+REGION = os.getenv("REGION") or "us-east-1"
+QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"  # or 'CONCURRENT'
+QUERY_INPUT_TYPE = 'CSV_PATH'
 
-
-AWS_ASSUME_ROLE_ARN=os.getenv("AWS_ASSUME_ROLE_ARN") or None
-ASSUME_ROLE_MODE=os.getenv("ASSUME_ROLE_MODE") or False #True if querying in athena is to be done by assuming role
-
+AWS_ASSUME_ROLE_ARN = os.getenv("AWS_ASSUME_ROLE_ARN") or None  # Optional
+ASSUME_ROLE_MODE = os.getenv("ASSUME_ROLE_MODE") == 'true'  # True if querying in athena is to be done by assuming role
 
 TEST_DB_EPOC_TIME = datetime.datetime.now().strftime('%s')
 os.environ['TEST_DB_EPOC_TIME'] = TEST_DB_EPOC_TIME
-ATHENA_BUCKET_PATH= "s3://{}/Athena/{}".format(os.getenv("ATHENA_BUCKET"), os.getenv("TEST_DB_EPOC_TIME"))
+ATHENA_BUCKET_PATH = "s3://{}/Athena/{}".format(ATHENA_BUCKET, TEST_DB_EPOC_TIME)
+
 
 class QueryException(Exception):
     pass
@@ -44,6 +41,7 @@ class QueryException(Exception):
 
 def create_readable_name_from_key_name(key: str) -> str:
     return key.lower().replace('_', ' ').capitalize()
+
 
 def create_athena_con(db_name=DB_NAME):
     logger.info(f'TIMESTAMP : {datetime.datetime.now()} Connecting to athena database...')
@@ -65,7 +63,6 @@ def create_athena_con(db_name=DB_NAME):
                 schema_name=DB_NAME
             )
 
-        # self.athena_cursor = self.athena_connection.cursor()
         logger.info('Connected to athena in {}'.format(time.time() - now))
         return athena_conn
     except Exception as e:
@@ -107,14 +104,13 @@ def query_on_athena(query, cursor) -> dict:
         row_count = cursor.rownumber
         query_id = cursor.query_id
         try:
-            bytes_scanned = round(cursor.data_scanned_in_bytes / (1024 * 1024 * 1024),
-                                  3)
+            bytes_scanned = round(cursor.data_scanned_in_bytes / (1024 * 1024 * 1024), 3)
         except:
-            bytes_scanned = "Not availaible"
+            bytes_scanned = "Not available"
         try:
             execution_time_from_engine = cursor.engine_execution_time_in_millis / 1000
         except:
-            execution_time_from_engine = "Not availaible"
+            execution_time_from_engine = "Not available"
         query_status = 'Success'
 
         return dict(
@@ -195,8 +191,10 @@ class AthenaBenchmark:
         failed_query_message = self.total_number_of_queries_failed
         if failed_query_message > 0:
             try:
-                failed_query_message = '{} (Query Alias: {})'.format(failed_query_message,
-                                                                     ', '.join(self.failed_query_alias))
+                failed_query_message = '{} (Query Alias: {})'.format(
+                    failed_query_message,
+                    ', '.join(self.failed_query_alias)
+                )
             except:
                 failed_query_message = 'Failed Query Alias not available'
         test_run_date = f'{self.execution_start_time:%d-%m-%Y %H:%M:%S}'
@@ -214,8 +212,6 @@ class AthenaBenchmark:
             data += '{} - {} \n'.format(key, value)
         logger.info("SUMMARY\n" + data)
 
-
-
     def _check_envs(self):
         if not QUERY_INPUT_TYPE:
             raise QueryException('Invalid QUERY_INPUT_TYPE: Please set the environment.')
@@ -225,7 +221,6 @@ class AthenaBenchmark:
             raise QueryException('SET DB_NAME as environment variable.')
         if not os.getenv("ATHENA_BUCKET"):
             raise QueryException('SET ATHENA_BUCKET as environment variable.It is used in saving query results.')
-
 
     def generate_sts_token(self):
         """
@@ -237,10 +232,9 @@ class AthenaBenchmark:
             RoleSessionName="AssumeRoleSession"
         )
         _credentials = _assumed_role_object['Credentials']
-        os.environ['AWS_ACCESS_KEY_ID']=_credentials['AccessKeyId']
-        os.environ['AWS_SECRET_ACCESS_KEY']=_credentials['SecretAccessKey']
-        os.environ['AWS_SESSION_TOKEN']=_credentials['SessionToken']
-
+        os.environ['AWS_ACCESS_KEY_ID'] = _credentials['AccessKeyId']
+        os.environ['AWS_SECRET_ACCESS_KEY'] = _credentials['SecretAccessKey']
+        os.environ['AWS_SESSION_TOKEN'] = _credentials['SessionToken']
 
     def _get_query_list_from_csv_file(self):
         self.local_file_path = INPUT_CSV_PATH
@@ -276,9 +270,9 @@ class AthenaBenchmark:
 
             pool_pool = list()
             size = self.total_number_of_threads
-            a = (len(all_rows) / self.total_number_of_threads)
-            concur_looper = int(a) + 1 if type(a) == float else a
-            for j in range(concur_looper):
+            loop_count = (len(all_rows) / self.total_number_of_threads)
+            concurrent_looper = int(loop_count) + 1 if type(loop_count) == float else loop_count
+            for j in range(concurrent_looper):
                 pool = Pool(processes=size)
                 res = pool.map_async(athena_query_method, (i for i in all_rows[size * j:size * (j + 1)]))
                 pool_pool.append(res)
@@ -286,7 +280,7 @@ class AthenaBenchmark:
             logger.info("Running concurrent queries in ATHENA with ENABLE_CONCURRENCY enabled")
             for j in pool_pool:
                 for output in j.get():
-                    status, query_alias_name, query, db_name= output[0], output[1], output[2],output[3]
+                    status, query_alias_name, query, db_name = output[0], output[1], output[2], output[3]
 
                     if status.get('query_status') == 'Failure':
                         self.failed_query_count += 1
@@ -360,17 +354,19 @@ class AthenaBenchmark:
         logger.info('Total success query: {}'.format(self.success_query_count))
         is_any_query_failed = self.failed_query_count > 0
         return self.query_results, is_any_query_failed
+
     def _generate_csv_report(self, result):
         """
         DB name, Query Alias, Query Text, Query ID, Query Status, Execution Time, Client Perceived Time,bytes_scanned_in_GB
         Row Count , Error message, Start Time, End Time, (edited)
         """
         column_order = ['db_name', 'query_alias_name', 'query_text', 'query_id', 'query_status', 'execution_time',
-                        'client_perceived_time', 'row_count','bytes_scanned_in_GB', 'err_msg', 'start_time', 'end_time']
+                        'client_perceived_time', 'row_count', 'bytes_scanned_in_GB', 'err_msg', 'start_time',
+                        'end_time']
         path = Path(__file__).resolve().parent
         today = datetime.datetime.now().strftime('%Y-%m-%d_%H_%M_%S')
         file_name = f'athena_results_{today}.csv'
-        result_file_path = os.path.join(path,  file_name)
+        result_file_path = os.path.join(path, file_name)
         logger.info('Result local file path {}'.format(result_file_path))
         with open(result_file_path, 'w', newline='') as fp:
             header_list = [create_readable_name_from_key_name(i) for i in column_order]
@@ -389,6 +385,7 @@ def ram_cpu_calculation(period):
         cpu_usage = psutil.cpu_percent(period)
         logger.info(
             f"TIMESTAMP : {datetime.datetime.now()} RAM USAGE: {mem_usage.used / (1024 ** 3):.2f}G CPU USAGE {cpu_usage}%")
+
 
 if __name__ == '__main__':
     logger.info('Engine is {}'.format(os.getenv("ENGINE")))

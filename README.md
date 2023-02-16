@@ -34,14 +34,14 @@ export AWS_ASSUME_ROLE_ARN=arn:aws:iam::123445667:role/rolename # ARN of assume 
 
 ### 3. Run the python script.
 For <em>e6data</em>:
-```
+```bash
 python3 e6_benchmark.py
 ```
 For <em>Trino</em>:
-```
+```bash
 python3 trino_benchmark.py
 ```
 For <em>Athena</em>:
-```
+```bash
 python3 athena_benchmark.py
 ```
