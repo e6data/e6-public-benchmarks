@@ -26,8 +26,8 @@ export CONCURRENCY_INTERVAL = 10 # Default Value is 5
 
 #Additional environment variables in Athena Benchmarking
 export ATHENA_BUCKET=testbucketname # For storing query results
-export REGION=us-east-1 # Glue region.Default Value is us-east-1
-export ASSUME_ROLE_MODE=true # Default Value is false.To be Enabled if querying is to expected using assume role
+export REGION=us-east-1 # Glue region. Default Value is us-east-1
+export ASSUME_ROLE_MODE=true # Default Value is false. To be Enabled if querying is to expected using assume role
 export AWS_ASSUME_ROLE_ARN=arn:aws:iam::123445667:role/rolename # ARN of assume role
 
 ```
