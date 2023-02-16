@@ -271,9 +271,9 @@ class E6XBenchmark:
             self.time_wait = int(self.time_wait)
 
             pool_pool = list()
-            size = self.total_number_of_threads
-            a = (len(all_rows) / self.total_number_of_threads)
-            concur_looper = int(a) + 1 if type(a) == float else a
+            size = min(self.total_number_of_threads, len(all_rows))
+            loop_count = (len(all_rows) / self.total_number_of_threads)
+            concur_looper = int(loop_count) + 1 if int(loop_count) != loop_count else int(loop_count)
             for j in range(concur_looper):
                 pool = Pool(processes=size)
                 res = pool.map_async(e6x_query_method, (i for i in all_rows[size * j:size * (j + 1)]))

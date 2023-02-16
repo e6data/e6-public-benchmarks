@@ -7,7 +7,6 @@ import time
 from multiprocessing import Pool
 from pathlib import Path
 
-import boto3
 import psutil
 from pyathena import connect
 
@@ -17,22 +16,17 @@ logger = logging.getLogger()
 ENGINE = 'Athena'
 
 DB_NAME = os.getenv("DB_NAME")
-ATHENA_BUCKET = os.getenv("ATHENA_BUCKET")
+RESULT_BUCKET = os.getenv("RESULT_BUCKET")
 QUERY_CSV_COLUMN_NAME = os.getenv("QUERY_CSV_COLUMN_NAME") or 'QUERY'
 INPUT_CSV_PATH = os.getenv('INPUT_CSV_PATH')
 CONCURRENT_QUERY_COUNT = int(os.getenv("CONCURRENT_QUERY_COUNT") or 5)
 CONCURRENCY_INTERVAL = int(os.getenv("CONCURRENCY_INTERVAL") or 5)
 
-REGION = os.getenv("REGION") or "us-east-1"
+GLUE_REGION = os.getenv("GLUE_REGION") or "us-east-1"
 QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"  # or 'CONCURRENT'
 QUERY_INPUT_TYPE = 'CSV_PATH'
 
-AWS_ASSUME_ROLE_ARN = os.getenv("AWS_ASSUME_ROLE_ARN") or None  # Optional
-ASSUME_ROLE_MODE = os.getenv("ASSUME_ROLE_MODE") == 'true'  # True if querying in athena is to be done by assuming role
-
-TEST_DB_EPOC_TIME = datetime.datetime.now().strftime('%s')
-os.environ['TEST_DB_EPOC_TIME'] = TEST_DB_EPOC_TIME
-ATHENA_BUCKET_PATH = "s3://{}/Athena/{}".format(ATHENA_BUCKET, TEST_DB_EPOC_TIME)
+RESULT_BUCKET_PATH = "s3://{}/Athena/{}".format(RESULT_BUCKET, datetime.datetime.now().strftime('%s'))
 
 
 class QueryException(Exception):
@@ -47,22 +41,11 @@ def create_athena_con(db_name=DB_NAME):
     logger.info(f'TIMESTAMP : {datetime.datetime.now()} Connecting to athena database...')
     now = time.time()
     try:
-        if ASSUME_ROLE_MODE:
-            athena_conn = connect(
-                s3_staging_dir=ATHENA_BUCKET_PATH,
-                region_name=REGION,
-                schema_name=DB_NAME,
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-                aws_session_token=os.getenv('AWS_SESSION_TOKEN')
-            )
-        else:
-            athena_conn = connect(
-                s3_staging_dir=ATHENA_BUCKET_PATH,
-                region_name=REGION,
-                schema_name=DB_NAME
-            )
-
+        athena_conn = connect(
+            s3_staging_dir=RESULT_BUCKET_PATH,
+            region_name=GLUE_REGION,
+            schema_name=DB_NAME
+        )
         logger.info('Connected to athena in {}'.format(time.time() - now))
         return athena_conn
     except Exception as e:
@@ -171,8 +154,6 @@ class AthenaBenchmark:
         self.success_query_count = 0
         self.query_results = list()
         self.local_file_path = None
-        if ASSUME_ROLE_MODE:
-            self.generate_sts_token()
 
         result, is_any_query_failed = self._perform_query_from_csv()
         self._send_V2_summary()
@@ -219,22 +200,8 @@ class AthenaBenchmark:
             raise QueryException('Invalid INPUT_CSV_PATH: Please set the environment.')
         if not DB_NAME:
             raise QueryException('SET DB_NAME as environment variable.')
-        if not os.getenv("ATHENA_BUCKET"):
-            raise QueryException('SET ATHENA_BUCKET as environment variable.It is used in saving query results.')
-
-    def generate_sts_token(self):
-        """
-        Function for generating sts token using assume role.
-        """
-        _sts_client = boto3.client('sts')
-        _assumed_role_object = _sts_client.assume_role(
-            RoleArn=AWS_ASSUME_ROLE_ARN,
-            RoleSessionName="AssumeRoleSession"
-        )
-        _credentials = _assumed_role_object['Credentials']
-        os.environ['AWS_ACCESS_KEY_ID'] = _credentials['AccessKeyId']
-        os.environ['AWS_SECRET_ACCESS_KEY'] = _credentials['SecretAccessKey']
-        os.environ['AWS_SESSION_TOKEN'] = _credentials['SessionToken']
+        if not RESULT_BUCKET:
+            raise QueryException('SET RESULT_BUCKET as environment variable.It is used in saving query results.')
 
     def _get_query_list_from_csv_file(self):
         self.local_file_path = INPUT_CSV_PATH
@@ -269,9 +236,9 @@ class AthenaBenchmark:
             self.time_wait = int(self.time_wait)
 
             pool_pool = list()
-            size = self.total_number_of_threads
+            size = min(self.total_number_of_threads, len(all_rows))
             loop_count = (len(all_rows) / self.total_number_of_threads)
-            concurrent_looper = int(loop_count) + 1 if type(loop_count) == float else loop_count
+            concurrent_looper = int(loop_count) + 1 if int(loop_count) != loop_count else int(loop_count)
             for j in range(concurrent_looper):
                 pool = Pool(processes=size)
                 res = pool.map_async(athena_query_method, (i for i in all_rows[size * j:size * (j + 1)]))
