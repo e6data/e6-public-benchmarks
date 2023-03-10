@@ -1,40 +1,21 @@
 import csv
-import datetime
-import logging
-import os
 import threading
 import time
 from multiprocessing import Pool
 from pathlib import Path
 
-import psutil
 from pyathena import connect
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
+from utils import get_logger, create_readable_name_from_key_name, read_from_csv, ram_cpu_usage
+from utils.envs import *
 
 ENGINE = 'Athena'
 
-DB_NAME = os.getenv("DB_NAME")
-RESULT_BUCKET = os.getenv("RESULT_BUCKET")
-QUERY_CSV_COLUMN_NAME = os.getenv("QUERY_CSV_COLUMN_NAME") or 'QUERY'
-INPUT_CSV_PATH = os.getenv('INPUT_CSV_PATH')
-CONCURRENT_QUERY_COUNT = int(os.getenv("CONCURRENT_QUERY_COUNT") or 5)
-CONCURRENCY_INTERVAL = int(os.getenv("CONCURRENCY_INTERVAL") or 5)
-
-GLUE_REGION = os.getenv("GLUE_REGION") or "us-east-1"
-QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"  # or 'CONCURRENT'
-QUERY_INPUT_TYPE = 'CSV_PATH'
-
-RESULT_BUCKET_PATH = "s3://{}/Athena/{}".format(RESULT_BUCKET, datetime.datetime.now().strftime('%s'))
+logger = get_logger()
 
 
 class QueryException(Exception):
     pass
-
-
-def create_readable_name_from_key_name(key: str) -> str:
-    return key.lower().replace('_', ' ').capitalize()
 
 
 def create_athena_con(db_name=DB_NAME):
@@ -207,22 +188,8 @@ class AthenaBenchmark:
         self.local_file_path = INPUT_CSV_PATH
         logger.info('Local file path {}'.format(self.local_file_path))
         logger.info('Reading data from file...')
-        data = list()
-        with open(self.local_file_path, 'r') as fh:
-            reader = csv.DictReader(fh)
-            csv_data = [i for i in reader]
-            for row in csv_data:
-                data.append({
-                    'query': row.get(QUERY_CSV_COLUMN_NAME) or row.get('query'),
-                    'query_alias_name': row.get('QUERY_ALIAS') or row.get('query_alias_name'),
-                    'db_name': DB_NAME,
-                    'result_correctness_check': 0,
-                    'query_num': None,
-                    'group_id': None,
-                    'query_category': None
-                })
-
-        self.total_number_of_queries = len(csv_data)
+        data = read_from_csv(self.local_file_path)
+        self.total_number_of_queries = len(data)
         return data
 
     def _perform_query_from_csv(self):
@@ -346,18 +313,9 @@ class AthenaBenchmark:
                 writer.writerow(ordered_data)
 
 
-def ram_cpu_calculation(period):
-    while True:
-        mem_usage = psutil.virtual_memory()
-        cpu_usage = psutil.cpu_percent(period)
-        logger.info(
-            f"TIMESTAMP : {datetime.datetime.now()} RAM USAGE: {mem_usage.used / (1024 ** 3):.2f}G CPU USAGE {cpu_usage}%")
-
-
 if __name__ == '__main__':
     logger.info('Engine is {}'.format(os.getenv("ENGINE")))
-
-    a = threading.Thread(target=ram_cpu_calculation, args=(5,))
+    a = threading.Thread(target=ram_cpu_usage, args=(5,))
     a.daemon = True
     a.start()
     AthenaBenchmark()
