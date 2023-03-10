@@ -52,7 +52,7 @@ def e6x_query_method(row):
     local_cursor = local_connection.cursor(db_name=db_name)
     logger.info('TIMESTAMP : {} Executing Query: {}'.format(datetime.datetime.now(), query))
     logger.info('Query alias: {}, Started at: {}'.format(query_alias_name, datetime.datetime.now()))
-    status = query_on_6ex(query, local_cursor,
+    status = query_on_e6x(query, local_cursor,
                           query_alias=query_alias_name)
     client_perceived_time = round(time.time() - client_perceived_start_time, 3)
     logger.info('Query alias: {}, Ended at: {}'.format(query_alias_name, datetime.datetime.now()))
@@ -68,7 +68,7 @@ def e6x_query_method(row):
     return status, query_alias_name, query, db_name, client_perceived_time
 
 
-def query_on_6ex(query, cursor, query_alias=None) -> dict:
+def query_on_e6x(query, cursor, query_alias=None) -> dict:
     query_start_time = datetime.datetime.now()
     try:
         logger.info(
@@ -271,9 +271,9 @@ class E6XBenchmark:
             self.time_wait = int(self.time_wait)
 
             pool_pool = list()
-            size = self.total_number_of_threads
-            a = (len(all_rows) / self.total_number_of_threads)
-            concur_looper = int(a) + 1 if type(a) == float else a
+            size = min(self.total_number_of_threads, len(all_rows))
+            loop_count = (len(all_rows) / self.total_number_of_threads)
+            concur_looper = int(loop_count) + 1 if int(loop_count) != loop_count else int(loop_count)
             for j in range(concur_looper):
                 pool = Pool(processes=size)
                 res = pool.map_async(e6x_query_method, (i for i in all_rows[size * j:size * (j + 1)]))
@@ -327,6 +327,33 @@ class E6XBenchmark:
                     client_perceived_time=client_perceived_time,
                     err_msg=err_msg
                 ))
+                if status.get('query_status') == 'Failure':
+                    self.failed_query_count += 1
+                    self.failed_query_alias.append(query_alias_name)
+                else:
+                    self.success_query_count += 1
+                self.query_results.append(dict(
+                    s_no=self.counter + 1,
+                    query_alias_name=query_alias_name,
+                    query_text=query,
+                    db_name=db_name,
+                    client_perceived_time=client_perceived_time,
+                    **status
+                ))
+                logger.info(dict(
+                    s_no=self.counter + 1,
+                    query_alias_name=query_alias_name,
+                    query_text=query,
+                    db_name=db_name,
+                    client_perceived_time=client_perceived_time,
+                    **status
+                ))
+                logger.info('{}. Query status of query alias: {} {}'.format(
+                    self.counter,
+                    query_alias_name,
+                    status.get('query_status'))
+                )
+                self.counter += 1
 
         logger.info('TIMESTAMP {} ALL Query completed'.format(datetime.datetime.now()))
         self.total_number_of_queries = len(all_rows)

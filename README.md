@@ -23,14 +23,22 @@ export CONCURRENCY_INTERVAL = 10 # Default Value is 5
 # Example: If your benchmarking needs 50 queries to fire every 2 seconds,
 # export CONCURRENT_QUERY_COUNT = 50
 # export CONCURRENCY_INTERVAL = 2
+
+#Additional environment variables in Athena Benchmarking
+export RESULT_BUCKET=testbucketname # Query results of Athena will be stored in this bucket
+export GLUE_REGION=us-east-1 # Region of AWS Glue. Default Value is us-east-1
 ```
 
 ### 3. Run the python script.
 For <em>e6data</em>:
-```
+```bash
 python3 e6_benchmark.py
 ```
 For <em>Trino</em>:
-```
+```bash
 python3 trino_benchmark.py
+```
+For <em>Athena</em>:
+```bash
+python3 athena_benchmark.py
 ```

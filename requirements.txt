@@ -3,3 +3,4 @@ psutil
 thrift
 pytz
 trino
+pyathena
