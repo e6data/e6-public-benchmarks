@@ -54,6 +54,11 @@ def e6x_query_method(row):
 def query_on_6ex(query, cursor, query_alias=None) -> dict:
     query_start_time = datetime.datetime.now()
     try:
+        if query.endswith(';'):
+            """
+            Trino doesn't support ; at the end.
+            """
+            query = query[:-1]
         logger.info(
             'JUST BEFORE EXECUTION Query alias: {}, Started at: {}'.format(query_alias, datetime.datetime.now()))
         cursor.execute(query)
@@ -77,7 +82,7 @@ def query_on_6ex(query, cursor, query_alias=None) -> dict:
             err_msg=None,
         )
     except Exception as e:
-        logger.info('TIMESTAMP {} Error on querying e6data engine: {}'.format(datetime.datetime.now(), e))
+        logger.info('TIMESTAMP {} Error on querying {} engine: {}'.format(datetime.datetime.now(), ENGINE, e))
         query_status = 'Failure'
         err_msg = str(e)
         query_end_time = datetime.datetime.now()
@@ -279,6 +284,11 @@ class E6XBenchmark:
                 logger.info("Running sequential queries in E6DATA with ENABLE_CONCURRENCY disabled")
                 status, query_alias_name, query, db_name, client_perceived_time = e6x_query_method(row)
                 err_msg = status.pop('err_msg')
+                if status.get('query_status') == 'Failure':
+                    self.failed_query_count += 1
+                    self.failed_query_alias.append(query_alias_name)
+                else:
+                    self.success_query_count += 1
                 self.query_results.append(dict(
                     **status,
                     query_alias_name=query_alias_name,
