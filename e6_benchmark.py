@@ -4,36 +4,20 @@ from multiprocessing import Pool
 
 import e6xdb.e6x as edb
 import csv
-import datetime
-import logging
-
+from utils import get_logger, create_readable_name_from_key_name, read_from_csv, ram_cpu_usage
+from utils.envs import *
 import time
 from pathlib import Path
 
 import os
-import psutil
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
 
 ENGINE = 'e6data'
-ENGINE_IP = os.getenv("ENGINE_IP")
-DB_NAME = os.getenv("DB_NAME")
-QUERY_CSV_COLUMN_NAME = os.getenv("QUERY_CSV_COLUMN_NAME") or 'QUERY'
-INPUT_CSV_PATH = os.getenv('INPUT_CSV_PATH')
-CONCURRENT_QUERY_COUNT = int(os.getenv("CONCURRENT_QUERY_COUNT") or 5)
-CONCURRENCY_INTERVAL = int(os.getenv("CONCURRENCY_INTERVAL") or 5)
 
-QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"
-QUERY_INPUT_TYPE = 'CSV_PATH'  # mysql or csv
+logger = get_logger()
 
 
 class QueryException(Exception):
     pass
-
-
-def create_readable_name_from_key_name(key: str) -> str:
-    return key.lower().replace('_', ' ').capitalize()
 
 
 def e6x_query_method(row):
@@ -191,7 +175,7 @@ class E6XBenchmark:
         path = Path(__file__).resolve().parent
         today = datetime.datetime.now().strftime('%Y-%m-%d_%H_%M_%S')
         file_name = f'e6data_results_{today}.csv'
-        result_file_path = os.path.join(path,  file_name)
+        result_file_path = os.path.join(path, file_name)
         logger.info('Result local file path {}'.format(result_file_path))
         with open(result_file_path, 'w', newline='') as fp:
             header_list = [create_readable_name_from_key_name(i) for i in column_order]
@@ -236,28 +220,15 @@ class E6XBenchmark:
         logger.info("SUMMARY\n" + data)
 
     def _get_query_list_from_csv_file(self):
+        if not DB_NAME:
+            raise QueryException(
+                'SET DB_NAME as environment variable.'
+            )
         self.local_file_path = INPUT_CSV_PATH
         logger.info('Local file path {}'.format(self.local_file_path))
         logger.info('Reading data from file...')
-        data = list()
-        with open(self.local_file_path, 'r') as fh:
-            reader = csv.DictReader(fh)
-            csv_data = [i for i in reader]
-            if not DB_NAME:
-                raise QueryException(
-                    'SET DB_NAME as environment variable.')
-            for row in csv_data:
-                data.append({
-                    'query': row.get(QUERY_CSV_COLUMN_NAME) or row.get('query'),
-                    'query_alias_name': row.get('QUERY_ALIAS') or row.get('query_alias_name'),
-                    'db_name': DB_NAME,
-                    'result_correctness_check': 0,
-                    'query_num': None,
-                    'group_id': None,
-                    'query_category': None
-                })
-
-        self.total_number_of_queries = len(csv_data)
+        data = read_from_csv(self.local_file_path)
+        self.total_number_of_queries = len(data)
         return data
 
     def _perform_query_from_csv(self):
@@ -366,18 +337,9 @@ class E6XBenchmark:
         return self.query_results, is_any_query_failed
 
 
-def ram_cpu_calculation(period):
-    while True:
-        mem_usage = psutil.virtual_memory()
-        cpu_usage = psutil.cpu_percent(period)
-        logger.info(
-            f"TIMESTAMP : {datetime.datetime.now()} RAM USAGE: {mem_usage.used / (1024 ** 3):.2f}G CPU USAGE {cpu_usage}%")
-
-
 if __name__ == '__main__':
     logger.info('Engin IP is {}'.format(os.getenv("ENGINE_IP")))
-
-    a = threading.Thread(target=ram_cpu_calculation, args=(5,))
+    a = threading.Thread(target=ram_cpu_usage, args=(5,))
     a.daemon = True
     a.start()
     E6XBenchmark()
