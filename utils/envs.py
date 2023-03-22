@@ -12,8 +12,8 @@ CONCURRENT_QUERY_COUNT = int(os.getenv("CONCURRENT_QUERY_COUNT") or 5)
 CONCURRENCY_INTERVAL = int(os.getenv("CONCURRENCY_INTERVAL") or 5)
 QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"
 QUERY_INPUT_TYPE = 'CSV_PATH'  # mysql or csv
-E6_USER = os.getenv("E6_USER", "admin")
-E6_TOKEN = os.getenv("E6_TOKEN", "admin")
+E6_USER = os.getenv("E6_USER")
+E6_TOKEN = os.getenv("E6_TOKEN")
 """
 For Athena
 """

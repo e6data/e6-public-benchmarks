@@ -194,6 +194,10 @@ class E6XBenchmark:
             raise QueryException('Invalid QUERY_INPUT_TYPE: Please set the environment.')
         if not INPUT_CSV_PATH:
             raise QueryException('Invalid INPUT_CSV_PATH: Please set the environment.')
+        if not E6_USER:
+            raise QueryException('Please set E6_USER environment variable.Refer readme for more information.')
+        if not E6_TOKEN:
+            raise QueryException('Please set E6_TOKEN environment variable.Refer readme for more information.')
 
     def _send_V2_summary(self):
         current_timestamp = datetime.datetime.now()
