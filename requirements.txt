@@ -1,6 +1,4 @@
-e6xdb
+e6data-python-connector
 psutil
-thrift
-pytz
 trino
 pyathena
