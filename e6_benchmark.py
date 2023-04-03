@@ -106,12 +106,12 @@ def create_e6x_con(db_name=DB_NAME):
         e6x_connection = edb.connect(host=ENGINE_IP,
                                      port=9000,
                                      scheme='e6xdb',
-                                     username='admin',
+                                     username=E6_USER,
                                      database=db_name,
                                      auth=None,
                                      configuration=None,
                                      kerberos_service_name=None,
-                                     password='admin',
+                                     password=E6_TOKEN,
                                      check_hostname=None,
                                      ssl_cert=None,
                                      thrift_transport=None)
@@ -194,6 +194,10 @@ class E6XBenchmark:
             raise QueryException('Invalid QUERY_INPUT_TYPE: Please set the environment.')
         if not INPUT_CSV_PATH:
             raise QueryException('Invalid INPUT_CSV_PATH: Please set the environment.')
+        if not E6_USER:
+            raise QueryException('Please set E6_USER environment variable.Refer readme for more information.')
+        if not E6_TOKEN:
+            raise QueryException('Please set E6_TOKEN environment variable.Refer readme for more information.')
 
     def _send_V2_summary(self):
         current_timestamp = datetime.datetime.now()

@@ -23,7 +23,7 @@ class QueryException(Exception):
     pass
 
 
-def e6x_query_method(row):
+def trino_query_method(row):
     """
     ONLY FOR CONCURRENCY QUERIES
     """
@@ -33,14 +33,14 @@ def e6x_query_method(row):
     db_name = row.get('db_name') or DB_NAME
     logger.info(
         'Query alias: {}, FIRED at: {} BEFORE CREATING CONNECTION'.format(query_alias_name, datetime.datetime.now()))
-    local_connection = create_e6x_con()
+    local_connection = create_trino_con()
     logger.info(
         'TIMESTAMP : {} connected with db {} and Engine {}'.format(datetime.datetime.now(), db_name, ENGINE_IP))
     local_cursor = local_connection.cursor()
     logger.info('TIMESTAMP : {} Executing Query: {}'.format(datetime.datetime.now(), query))
     logger.info('Query alias: {}, Started at: {}'.format(query_alias_name, datetime.datetime.now()))
-    status = query_on_6ex(query, local_cursor,
-                          query_alias=query_alias_name)
+    status = query_on_trino(query, local_cursor,
+                            query_alias=query_alias_name)
     client_perceived_time = round(time.time() - client_perceived_start_time, 3)
     logger.info('Query alias: {}, Ended at: {}'.format(query_alias_name, datetime.datetime.now()))
     try:
@@ -51,7 +51,7 @@ def e6x_query_method(row):
     return status, query_alias_name, query, db_name, client_perceived_time
 
 
-def query_on_6ex(query, cursor, query_alias=None) -> dict:
+def query_on_trino(query, cursor, query_alias=None) -> dict:
     query_start_time = datetime.datetime.now()
     try:
         if query.endswith(';'):
@@ -99,28 +99,27 @@ def query_on_6ex(query, cursor, query_alias=None) -> dict:
         )
 
 
-def create_e6x_con(db_name=DB_NAME):
-    logger.info(f'TIMESTAMP : {datetime.datetime.now()} Connecting to e6x database...')
+def create_trino_con(db_name=DB_NAME):
+    logger.info(f'TIMESTAMP : {datetime.datetime.now()} Connecting to Trino database...')
     now = time.time()
     try:
-        e6x_connection = trino.dbapi.connect(
+        trino_connection = trino.dbapi.connect(
             host=ENGINE_IP,
             port=ENGINE_PORT,
             user='vishal',
             catalog='hive',
             schema=db_name,
         )
-        # self.e6x_cursor = self.e6x_connection.cursor()
-        logger.info('TIMESTAMP : {} Connected to e6x in {}'.format(datetime.datetime.now(), time.time() - now))
-        return e6x_connection
+        logger.info('TIMESTAMP : {} Connected to Trino in {}'.format(datetime.datetime.now(), time.time() - now))
+        return trino_connection
     except Exception as e:
         logger.error(e)
         logger.error(
-            'TIMESTAMP : {} Failed to connect to the e6x database with {}'.format(datetime.datetime.now(), db_name)
+            'TIMESTAMP : {} Failed to connect to the Trino database with {}'.format(datetime.datetime.now(), db_name)
         )
 
 
-class E6XBenchmark:
+class TrinoBenchmark:
     current_retry_count = 1
     max_retry_count = 5
     retry_sleep_time = 5  # Seconds
@@ -134,8 +133,8 @@ class E6XBenchmark:
 
         self.db_list = list()
 
-        self.e6x_connection = None
-        self.e6x_cursor = None
+        self.trino_connection = None
+        self.trino_cursor = None
         self.local_file_path = None
 
         self.db_conn_retry_count = 0
@@ -227,7 +226,7 @@ class E6XBenchmark:
         return data
 
     def _perform_query_from_csv(self):
-        logger.info('Performing query on e6x from cloud storage file (eg S3)')
+        logger.info('Performing query on Trino from cloud storage file (eg S3)')
 
         all_rows = self._get_query_list_from_csv_file()
         if QUERYING_MODE == "CONCURRENT":
@@ -242,10 +241,10 @@ class E6XBenchmark:
             concur_looper = int(loop_count) + 1 if int(loop_count) != loop_count else int(loop_count)
             for j in range(concur_looper):
                 pool = Pool(processes=size)
-                res = pool.map_async(e6x_query_method, (i for i in all_rows[size * j:size * (j + 1)]))
+                res = pool.map_async(trino_query_method, (i for i in all_rows[size * j:size * (j + 1)]))
                 pool_pool.append(res)
                 time.sleep(self.time_wait)
-            logger.info("Running concurrent queries in E6DATA with ENABLE_CONCURRENCY enabled")
+            logger.info("Running concurrent queries in Trino with ENABLE_CONCURRENCY enabled")
             for j in pool_pool:
                 for output in j.get():
                     status, query_alias_name, query, db_name, client_perceived_time = output[0], output[1], output[2], \
@@ -281,8 +280,8 @@ class E6XBenchmark:
                     logger.info('JOINING...')
         else:
             for row in all_rows:
-                logger.info("Running sequential queries in E6DATA with ENABLE_CONCURRENCY disabled")
-                status, query_alias_name, query, db_name, client_perceived_time = e6x_query_method(row)
+                logger.info("Running sequential queries in Trino with ENABLE_CONCURRENCY disabled")
+                status, query_alias_name, query, db_name, client_perceived_time = trino_query_method(row)
                 err_msg = status.pop('err_msg')
                 if status.get('query_status') == 'Failure':
                     self.failed_query_count += 1
@@ -314,4 +313,4 @@ if __name__ == '__main__':
     a = threading.Thread(target=ram_cpu_usage, args=(5,))
     a.daemon = True
     a.start()
-    E6XBenchmark()
+    TrinoBenchmark()

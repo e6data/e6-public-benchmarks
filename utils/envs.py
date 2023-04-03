@@ -1,6 +1,9 @@
 import datetime
 import os
 
+"""
+For e6data
+"""
 ENGINE_IP = os.getenv("ENGINE_IP")
 DB_NAME = os.getenv("DB_NAME")
 QUERY_CSV_COLUMN_NAME = os.getenv("QUERY_CSV_COLUMN_NAME") or 'QUERY'
@@ -9,7 +12,8 @@ CONCURRENT_QUERY_COUNT = int(os.getenv("CONCURRENT_QUERY_COUNT") or 5)
 CONCURRENCY_INTERVAL = int(os.getenv("CONCURRENCY_INTERVAL") or 5)
 QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"
 QUERY_INPUT_TYPE = 'CSV_PATH'  # mysql or csv
-
+E6_USER = os.getenv("E6_USER")
+E6_TOKEN = os.getenv("E6_TOKEN")
 """
 For Athena
 """
