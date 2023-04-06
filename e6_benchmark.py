@@ -105,16 +105,10 @@ def create_e6x_con(db_name=DB_NAME):
     try:
         e6x_connection = edb.connect(host=ENGINE_IP,
                                      port=9000,
-                                     scheme='e6xdb',
                                      username=E6_USER,
                                      database=db_name,
-                                     auth=None,
-                                     configuration=None,
-                                     kerberos_service_name=None,
                                      password=E6_TOKEN,
-                                     check_hostname=None,
-                                     ssl_cert=None,
-                                     thrift_transport=None)
+                                     )
         # self.e6x_cursor = self.e6x_connection.cursor()
         logger.info('TIMESTAMP : {} Connected to e6x in {}'.format(datetime.datetime.now(), time.time() - now))
         return e6x_connection
