@@ -10,7 +10,7 @@
 ### Update the .env file with appropriate values in placeholder
 
 ```console
-REACT_APP_API_DOMAIN= 'http://localhost:<port for backend service>/api/'
+REACT_APP_API_DOMAIN= 'http://localhost:3001/api/'
 
 # MYSQL PARAMS
 MYSQL_DATABASE= "<MYSQL_DATABASE>"
