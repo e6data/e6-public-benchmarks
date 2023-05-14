@@ -1,6 +1,6 @@
 version: '3.3'
 services:
-  db:
+  dbserver:
     image: mysql:5.7
     restart: always
     env_file:
