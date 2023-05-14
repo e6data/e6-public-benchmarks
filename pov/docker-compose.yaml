@@ -9,6 +9,10 @@ services:
       - '3306:3306'
     volumes:
       - my-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      retries: 10
+      interval: 30s
   backend:
     image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/api-demo:1.0.11
     env_file:
@@ -16,7 +20,8 @@ services:
     ports:
       - "3001:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
   frontend:
     image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/ui-demo:1.0.8
     env_file:
