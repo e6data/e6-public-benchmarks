@@ -7,7 +7,7 @@
 
 ## Setting up env variable
 
-### Update the .env file with appropriate values in placeholder
+### Update the env file with appropriate values in placeholder
 
 ```console
 REACT_APP_API_DOMAIN= 'http://localhost:3001/api/'
