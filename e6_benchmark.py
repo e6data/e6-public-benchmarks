@@ -54,6 +54,7 @@ def e6x_query_method(row):
 
 def query_on_e6x(query, cursor, query_alias=None) -> dict:
     query_start_time = datetime.datetime.now()
+    query_id=None
     try:
         logger.info(
             'JUST BEFORE EXECUTION Query alias: {}, Started at: {}'.format(query_alias, datetime.datetime.now()))
@@ -84,12 +85,16 @@ def query_on_e6x(query, cursor, query_alias=None) -> dict:
     except Exception as e:
         logger.info('TIMESTAMP {} Error on querying e6data engine: {}'.format(datetime.datetime.now(), e))
         query_status = 'Failure'
+        try:
+            query_id = e.queryId
+        except:
+            pass
         err_msg = str(e)
         query_end_time = datetime.datetime.now()
         if 'timeout' in err_msg:
             err_msg = 'Connect timeout. Unable to connect.'
         return dict(
-            query_id=None,
+            query_id=query_id,
             row_count=0,
             execution_time=0,
             query_status=query_status,
