@@ -7,7 +7,7 @@ import random
 
 import psutil
 
-from python_benchmarks.utils.envs import QUERY_CSV_COLUMN_NAME, DB_NAME
+from utils.envs import QUERY_CSV_COLUMN_NAME, DB_NAME
 
 logger_set = None
 
