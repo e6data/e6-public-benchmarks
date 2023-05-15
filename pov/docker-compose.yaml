@@ -23,7 +23,7 @@ services:
       dbserver:
         condition: service_healthy
   frontend:
-    image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/ui-demo:1.0.8
+    image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/ui-demo:1.0.9
     env_file:
       - env
     ports:
