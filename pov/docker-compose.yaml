@@ -20,7 +20,7 @@ services:
     ports:
       - "3001:8000"
     depends_on:
-      db:
+      dbserver:
         condition: service_healthy
   frontend:
     image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/ui-demo:1.0.8
