@@ -14,7 +14,7 @@ services:
       retries: 10
       interval: 30s
   backend:
-    image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/api-demo:1.0.14
+    image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/api-demo:1.0.19
     env_file:
       - env
     ports:
