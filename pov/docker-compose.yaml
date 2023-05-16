@@ -2,6 +2,7 @@ version: '3.3'
 services:
   dbserver:
     image: mysql:5.7
+    platform: linux/amd64/v8
     restart: always
     env_file:
       - env
@@ -10,11 +11,12 @@ services:
     volumes:
       - my-db:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root --password=$$MYSQL_ROOT_PASSWORD --silent"]
       retries: 10
       interval: 30s
   backend:
     image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/api-demo:1.0.19
+    platform: linux/amd64/v8
     env_file:
       - env
     ports:
@@ -24,6 +26,7 @@ services:
         condition: service_healthy
   frontend:
     image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/ui-demo:1.0.9
+    platform: linux/amd64/v8
     env_file:
       - env
     ports:
