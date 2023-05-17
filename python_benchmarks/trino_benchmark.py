@@ -12,7 +12,6 @@ from utils.envs import *
 
 ENGINE = 'Trino'
 
-MACHINE_TYPE = 'c5.9xlarge'
 max_retry_count = 10
 sleep_time = 10
 
@@ -106,8 +105,8 @@ def create_trino_con(db_name=DB_NAME):
         trino_connection = trino.dbapi.connect(
             host=ENGINE_IP,
             port=ENGINE_PORT,
-            user='vishal',
-            catalog='hive',
+            user=TRINO_USER,
+            catalog=TRINO_CATALOG,
             schema=db_name,
         )
         logger.info('TIMESTAMP : {} Connected to Trino in {}'.format(datetime.datetime.now(), time.time() - now))
