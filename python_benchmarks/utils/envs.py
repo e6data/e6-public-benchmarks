@@ -25,4 +25,5 @@ RESULT_BUCKET_PATH = "s3://{}/Athena/{}".format(RESULT_BUCKET, datetime.datetime
 For Trino
 """
 ENGINE_PORT = int(os.getenv("ENGINE_PORT") or 8889)
-
+TRINO_USER = os.getenv("TRINO_USER") or "test"
+TRINO_CATALOG = os.getenv("TRINO_CATALOG") or "test"

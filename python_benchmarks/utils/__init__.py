@@ -72,7 +72,3 @@ def ram_cpu_usage(interval: int):
 
 if __name__ == '__main__':
     ram_cpu_usage(2)
-#     data =read_from_csv('/Users/vishal/Documents/Projects/e6-public-benchmarks/1000_e6data.csv')
-#     import json
-#     print(json.dumps(data, indent=4))
-#     print(len(data))
