@@ -15,7 +15,7 @@ services:
       retries: 10
       interval: 30s
   backend:
-    image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/api-demo:1.0.93
+    image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/api-demo:1.0.95
     platform: linux/amd64/v8
     env_file:
       - env
@@ -25,7 +25,7 @@ services:
       dbserver:
         condition: service_healthy
   frontend:
-    image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/ui-demo:1.0.26
+    image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/ui-demo:1.0.28
     platform: linux/amd64/v8
     env_file:
       - env
