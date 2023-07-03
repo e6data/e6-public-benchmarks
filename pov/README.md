@@ -6,7 +6,8 @@ The Benchmark POV Tool simplifies the complex process of benchmarking different 
   - [Install Docker \& docker-compose](#install-docker--docker-compose)
 - [1. Install \& configure the Benchmark POV Tool using Docker](#1-install--configure-the-benchmark-pov-tool-using-docker)
   - [1.1 Configure Environment Variables (optional)](#11-configure-environment-variables-optional)
-  - [1.2 Deploy the Benchmark POV Tool in a local environment](#12-deploy-the-benchmark-pov-tool-in-a-local-environment)
+  - [1.2 Configure folder for persistence (option)](#12-configure-folder-for-persistence-option)
+  - [1.3 Deploy the Benchmark POV Tool in a local environment](#13-deploy-the-benchmark-pov-tool-in-a-local-environment)
 - [2. Configure the engines (e6data vs a target engine)](#2-configure-the-engines-e6data-vs-a-target-engine)
   - [2.1 Set up an e6data cluster](#21-set-up-an-e6data-cluster)
   - [2.2 Set up a Databricks cluster](#22-set-up-a-databricks-cluster)
@@ -58,8 +59,20 @@ DJANGO_SUPERUSER_PASSWORD= "<DJANGO_SUPERUSER_PASSWORD>"
 DJANGO_SUPERUSER_EMAIL= "<DJANGO_SUPERUSER_EMAIL>"
 ```
 
-### 1.2 Deploy the Benchmark POV Tool in a local environment
+### 1.2 Configure folder for persistence (option)
+
+To preserve the Benchmark POV Tool's state (configuration settings, benchmark history, etc.), a folder named `pov_tool_storage` will be created inside the `/pov` folder. 
+
+To set an alternative path edit the following line in the `docker-compose.yaml` file:
+
+```docker
+device: ./pov_tool_storage # change folder path
+```
+
+### 1.3 Deploy the Benchmark POV Tool in a local environment
+
 **Run the docker-compose command**
+
 > This commands needs to be run from the same directory as the docker-compose.yaml file
 
 ```console
@@ -67,7 +80,9 @@ docker-compose up -d
 ```
 
 ## 2. Configure the engines (e6data vs a target engine)
+
 ### 2.1 Set up an e6data cluster
+
 1. Login to your e6data console. 
 2. Select the workspace in which you wish to spin up the cluster.
 3. [Create a catalog](https://docs.e6data.com/docs/catalogs) (if you haven’t created one already).
@@ -81,6 +96,7 @@ docker-compose up -d
 	- Cluster IP
 
 ### 2.2 Set up a Databricks cluster
+
 1. Login to your Databricks workspace 
 2. Generate a [personal access token](https://docs.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
 3. Spin up a cluster with a configuration equivalent to the engine you’ll be benchmarking against.
