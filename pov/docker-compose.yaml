@@ -21,7 +21,7 @@ services:
     image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/api-demo:1.0.95
     platform: linux/amd64
     env_file:
-      - env
+      - .env
     ports:
       - "3001:8000"
     depends_on:
@@ -31,7 +31,7 @@ services:
     image: us-docker.pkg.dev/e6data-analytics/e6-platform-public/ui-demo:1.0.28
     platform: linux/amd64
     env_file:
-      - env
+      - .env
     ports:
       - "3000:3000"
     depends_on:
