@@ -1,12 +1,13 @@
 # Benchmark POV Tool <!-- omit in toc -->
-
+​
 The Benchmark POV Tool simplifies the complex process of benchmarking different compute engines. Follow these steps to get it up and running:
-
+​
 - [Prerequisites](#prerequisites)
   - [Install Docker \& docker-compose](#install-docker--docker-compose)
 - [1. Install \& configure the Benchmark POV Tool using Docker](#1-install--configure-the-benchmark-pov-tool-using-docker)
   - [1.1 Configure Environment Variables (optional)](#11-configure-environment-variables-optional)
-  - [1.2 Deploy the Benchmark POV Tool in a local environment](#12-deploy-the-benchmark-pov-tool-in-a-local-environment)
+  - [1.2 Configure volume for persistence (option)](#12-configure-volume-for-persistence-option)
+  - [1.3 Deploy the Benchmark POV Tool in a local environment](#13-deploy-the-benchmark-pov-tool-in-a-local-environment)
 - [2. Configure the engines (e6data vs a target engine)](#2-configure-the-engines-e6data-vs-a-target-engine)
   - [2.1 Set up an e6data cluster](#21-set-up-an-e6data-cluster)
   - [2.2 Set up a Databricks cluster](#22-set-up-a-databricks-cluster)
@@ -16,9 +17,10 @@ The Benchmark POV Tool simplifies the complex process of benchmarking different 
   - [3.3 Add engines to the Benchmark POV Tool](#33-add-engines-to-the-benchmark-pov-tool)
 - [4. Upload queries and run benchmarks](#4-upload-queries-and-run-benchmarks)
 - [5. Uninstall the Benchmark POV Tool](#5-uninstall-the-benchmark-pov-tool)
-  - [5.1 Destroying Benchmark POV Tool setup in local environment](#51-destroying-benchmark-pov-tool-setup-in-local-environment)
-
-
+  - [5.1 Remove the Benchmark POV Tool but retain settings \& benchmarks for future use](#51-remove-the-benchmark-pov-tool-but-retain-settings--benchmarks-for-future-use)
+  - [5.2 Remove the Benchmark POV Tool and delete all associated settings \& data.](#52-remove-the-benchmark-pov-tool-and-delete-all-associated-settings--data)
+​
+​
 ## Prerequisites
 - **Docker**
     - Docker Engine v1.13.0+
@@ -30,44 +32,60 @@ The Benchmark POV Tool simplifies the complex process of benchmarking different 
 - **Databricks**
     - Generate a Databricks Personal Access Token
 	- An active Databricks cluster & connection details
-
+​
 ### Install Docker & docker-compose
 - [Docker Engine installation instructions](https://docs.docker.com/engine/install/)
 - [docker-compose installation instructions](https://docs.docker.com/compose/install/)
-
+​
 ## 1. Install & configure the Benchmark POV Tool using Docker
 1. Download a copy of the e6-public-benchmarks repo from GitHub: [link](https://github.com/e6x-labs/e6-public-benchmarks)
 2. Extract the contents to the directory where it will be installed.
 3. Navigate to the `/pov` folder
-
+​
 ### 1.1 Configure Environment Variables (optional)
 - If you are installing the tool in a local environment, no edits to the `env` file are required.
 - To install in remote server, please replace `REACT_APP_API_DOMAIN` with the domain/IP of the server.
-
-```console
-# REACT APP PARAMS
-REACT_APP_API_DOMAIN= 'http://<SERVER_DOMAIN_OR_IP>:3001/api/'
-
-# MYSQL PARAMS
-MYSQL_ROOT_PASSWORD= "<MYSQL_ROOT_PASSWORD>"
-
+​
+```docker
 #BACKEND PARAMS
-MYSQL_WRITER_HOST= "<DB service name in docker-compose.yaml>"
-DJANGO_SUPERUSER_USERNAME= "<DJANGO_SUPERUSER_USERNAME>"
-DJANGO_SUPERUSER_PASSWORD= "<DJANGO_SUPERUSER_PASSWORD>"
-DJANGO_SUPERUSER_EMAIL= "<DJANGO_SUPERUSER_EMAIL>"
+MYSQL_WRITER_HOST='dbserver'
+DJANGO_SUPERUSER_USERNAME='admin'
+DJANGO_SUPERUSER_PASSWORD='password'
+DJANGO_SUPERUSER_EMAIL='admin@admin.com'
+SERVER='DEV'
+PERSISTENCE_VOLUME='pov_tool_data'
+​
+# REACT APP PARAMS
+REACT_APP_API_DOMAIN='http://localhost:3001/api/'
+​
+# MYSQL PARAMS
+MYSQL_ROOT_PASSWORD='password'
 ```
-
-### 1.2 Deploy the Benchmark POV Tool in a local environment
+​
+### 1.2 Configure volume for persistence (option)
+​
+To preserve the Benchmark POV Tool's state (configuration settings, benchmark history, etc.), a volume named `pov_tool_storage` will be created.
+​
+To change the name of the volume edit the `PERSISTENCE_VOLUME` variable in the `.env` file:
+​
+```docker
+PERSISTENCE_VOLUME='pov_tool_data'
+```
+​
+### 1.3 Deploy the Benchmark POV Tool in a local environment
+​
 **Run the docker-compose command**
+​
 > This commands needs to be run from the same directory as the docker-compose.yaml file
-
+​
 ```console
 docker-compose up -d
 ```
-
+​
 ## 2. Configure the engines (e6data vs a target engine)
+​
 ### 2.1 Set up an e6data cluster
+​
 1. Login to your e6data console. 
 2. Select the workspace in which you wish to spin up the cluster.
 3. [Create a catalog](https://docs.e6data.com/docs/catalogs) (if you haven’t created one already).
@@ -79,8 +97,9 @@ docker-compose up -d
 	- e6data username
     - Personal Access Token
 	- Cluster IP
-
+​
 ### 2.2 Set up a Databricks cluster
+​
 1. Login to your Databricks workspace 
 2. Generate a [personal access token](https://docs.databricks.com/dev-tools/auth.html#personal-access-tokens-for-users)
 3. Spin up a cluster with a configuration equivalent to the engine you’ll be benchmarking against.
@@ -88,9 +107,9 @@ docker-compose up -d
 4. Make note of the following, for later use:
 	- Server Hostname
 	- HTTP Path
-
+​
 ## 3. Add the engines to the Benchmark POV Tool
-
+​
 ### 3.1 Login to the Benchmark POV Tool Admin Console
 1. The Admin Console can be accessed here:
    1. http://localhost:3001/api/ (if locally hosted)
@@ -98,13 +117,13 @@ docker-compose up -d
 2. Username: admin (from env parameter DJANGO_SUPERUSER_USERNAME)  
 3. Password: password (from env parameter DJANGO_SUPERUSER_PASSWORD)
 > It is advisable to change the username and password after the first login.
-
+​
 ### 3.2 Create an user account
 1. Navigate to  `Home > User > Users` & click `+ Add`
 2. Create a user by providing a username, email address & password.
     - These user credentials will be used to login to the frontend.
 3. Click `SAVE`
-
+​
 ### 3.3 Add engines to the Benchmark POV Tool
 1. Navigate to `Benchmarks > Benchmark_ips` & click `+ Add`
 2. Fill in the following details:
@@ -116,7 +135,7 @@ docker-compose up -d
    - DBR IP: *Hostname of the Databricks cluster* 
    - DBR HTTP: *HTTP path of the Databricks cluster*
 3. Click `SAVE`
-
+​
 ## 4. Upload queries and run benchmarks
 1. Access the frontend of the Benchmark POV Tool:
    1. http://localhost:3000/login/ (if locally hosted)
@@ -138,21 +157,23 @@ docker-compose up -d
 8. Wait for all the queries to complete running.
 9.  The time taken to run each query & the cost incurred will be displayed.
    1.  A detailed report can be downloaded for further analysis.
-
+​
 ## 5. Uninstall the Benchmark POV Tool
-
-### 5.1 Destroying Benchmark POV Tool setup in local environment
-
+​
+### 5.1 Remove the Benchmark POV Tool but retain settings & benchmarks for future use
+​
 **Run the docker-compose destroy command**
-> This commands needs to be run from the same directory as the docker-compose.yaml file
-
+> This commands needs to be run from the same directory as the docker-compose.yaml file.
+​
 ```console
 docker-compose down
 ```
-
-**Run the docker-compose destroy command & delete volumes**
+​
+### 5.2 Remove the Benchmark POV Tool and delete all associated settings & data.
+​
+**Run the docker-compose destroy command & delete data**
 > This commands needs to be run from the same directory as the docker-compose.yaml file
-
+​
 ```console
 docker-compose down -v
 ```
