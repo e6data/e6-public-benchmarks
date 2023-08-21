@@ -1,15 +1,14 @@
+import csv
 import json
 import threading
-from multiprocessing import Pool
-
-from e6data_python_connector import Connection
-import csv
-from utils import get_logger, create_readable_name_from_key_name, read_from_csv, ram_cpu_usage
-from utils.envs import *
 import time
+from multiprocessing import Pool
 from pathlib import Path
 
-import os
+from e6data_python_connector import Connection
+
+from utils import get_logger, create_readable_name_from_key_name, read_from_csv, ram_cpu_usage
+from utils.envs import *
 
 ENGINE = 'e6data'
 
@@ -33,7 +32,7 @@ def e6x_query_method(row):
     local_connection = create_e6x_con()
     logger.info(
         'TIMESTAMP : {} connected with db {} and Engine {}'.format(datetime.datetime.now(), db_name, ENGINE_IP))
-    local_cursor = local_connection.cursor(db_name=db_name,catalog_name=CATALOG_NAME)
+    local_cursor = local_connection.cursor(db_name=db_name, catalog_name=CATALOG_NAME)
     logger.info('TIMESTAMP : {} Executing Query: {}'.format(datetime.datetime.now(), query))
     logger.info('Query alias: {}, Started at: {}'.format(query_alias_name, datetime.datetime.now()))
     status = query_on_e6x(query, local_cursor,
@@ -54,7 +53,7 @@ def e6x_query_method(row):
 
 def query_on_e6x(query, cursor, query_alias=None) -> dict:
     query_start_time = datetime.datetime.now()
-    query_id=None
+    query_id = None
     try:
         logger.info(
             'JUST BEFORE EXECUTION Query alias: {}, Started at: {}'.format(query_alias, datetime.datetime.now()))
@@ -108,12 +107,13 @@ def create_e6x_con(db_name=DB_NAME):
     logger.info(f'TIMESTAMP : {datetime.datetime.now()} Connecting to e6x database...')
     now = time.time()
     try:
-        e6x_connection = Connection(host=ENGINE_IP,
-                                     port=80,
-                                     username=E6_USER,
-                                     database=db_name,
-                                     password=E6_TOKEN,
-                                     )
+        e6x_connection = Connection(
+            host=ENGINE_IP,
+            port=80,
+            username=E6_USER,
+            database=db_name,
+            password=E6_TOKEN,
+        )
         logger.info('TIMESTAMP : {} Connected to e6x in {}'.format(datetime.datetime.now(), time.time() - now))
         return e6x_connection
     except Exception as e:
@@ -198,7 +198,6 @@ class E6XBenchmark:
             raise QueryException('Please set E6_TOKEN environment variable.Refer readme for more information.')
         if not CATALOG_NAME:
             raise QueryException('Please set CATALOG_NAME environment variable.Refer readme for more information.')
-
 
     def _send_V2_summary(self):
         current_timestamp = datetime.datetime.now()
