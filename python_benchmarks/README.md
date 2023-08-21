@@ -14,7 +14,8 @@ export INPUT_CSV_PATH=/Users/dummyuser/folder/query_file.csv # Replace the value
 export QUERYING_MODE=SEQUENTIAL # for concurrency runs, change the value to CONCURRENT
 export E6_USER=<USER_EMAIL> #Replace the value with your email
 export E6_TOKEN=<USER_ACCESS_TOKEN> # Replace the value with your access token
- 
+export CATALOG_NAME=<CATALOG_NAME> # Replace the value with attached catalog.
+
 # In the case of concurrent benchmarking, ensure below variables are set to your requirements
 # The number of queries to be fired at t1 second
 export CONCURRENT_QUERY_COUNT = 20 # Default Value is 5
