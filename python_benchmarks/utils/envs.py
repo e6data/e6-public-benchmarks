@@ -14,6 +14,7 @@ QUERYING_MODE = os.getenv('QUERYING_MODE') or "SEQUENTIAL"
 QUERY_INPUT_TYPE = 'CSV_PATH'  # mysql or csv
 E6_USER = os.getenv("E6_USER")
 E6_TOKEN = os.getenv("E6_TOKEN")
+CATALOG_NAME=os.getenv("CATALOG_NAME")
 """
 For Athena
 """

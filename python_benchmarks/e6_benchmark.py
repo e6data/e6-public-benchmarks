@@ -2,7 +2,7 @@ import json
 import threading
 from multiprocessing import Pool
 
-import e6xdb.e6x as edb
+from e6data_python_connector import Connection
 import csv
 from utils import get_logger, create_readable_name_from_key_name, read_from_csv, ram_cpu_usage
 from utils.envs import *
@@ -33,7 +33,7 @@ def e6x_query_method(row):
     local_connection = create_e6x_con()
     logger.info(
         'TIMESTAMP : {} connected with db {} and Engine {}'.format(datetime.datetime.now(), db_name, ENGINE_IP))
-    local_cursor = local_connection.cursor(db_name=db_name)
+    local_cursor = local_connection.cursor(db_name=db_name,catalog_name=CATALOG_NAME)
     logger.info('TIMESTAMP : {} Executing Query: {}'.format(datetime.datetime.now(), query))
     logger.info('Query alias: {}, Started at: {}'.format(query_alias_name, datetime.datetime.now()))
     status = query_on_e6x(query, local_cursor,
@@ -108,13 +108,12 @@ def create_e6x_con(db_name=DB_NAME):
     logger.info(f'TIMESTAMP : {datetime.datetime.now()} Connecting to e6x database...')
     now = time.time()
     try:
-        e6x_connection = edb.connect(host=ENGINE_IP,
-                                     port=9000,
+        e6x_connection = Connection(host=ENGINE_IP,
+                                     port=80,
                                      username=E6_USER,
                                      database=db_name,
                                      password=E6_TOKEN,
                                      )
-        # self.e6x_cursor = self.e6x_connection.cursor()
         logger.info('TIMESTAMP : {} Connected to e6x in {}'.format(datetime.datetime.now(), time.time() - now))
         return e6x_connection
     except Exception as e:
@@ -197,6 +196,9 @@ class E6XBenchmark:
             raise QueryException('Please set E6_USER environment variable.Refer readme for more information.')
         if not E6_TOKEN:
             raise QueryException('Please set E6_TOKEN environment variable.Refer readme for more information.')
+        if not CATALOG_NAME:
+            raise QueryException('Please set CATALOG_NAME environment variable.Refer readme for more information.')
+
 
     def _send_V2_summary(self):
         current_timestamp = datetime.datetime.now()
