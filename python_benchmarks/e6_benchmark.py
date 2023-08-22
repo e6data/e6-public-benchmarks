@@ -29,27 +29,30 @@ def e6x_query_method(row):
     db_name = row.get('db_name') or DB_NAME
     logger.info(
         'Query alias: {}, FIRED at: {} BEFORE CREATING CONNECTION'.format(query_alias_name, datetime.datetime.now()))
-    local_connection = create_e6x_con()
-    logger.info(
-        'TIMESTAMP : {} connected with db {} and Engine {}'.format(datetime.datetime.now(), db_name, ENGINE_IP))
-    local_cursor = local_connection.cursor(db_name=db_name, catalog_name=CATALOG_NAME)
-    logger.info('TIMESTAMP : {} Executing Query: {}'.format(datetime.datetime.now(), query))
-    logger.info('Query alias: {}, Started at: {}'.format(query_alias_name, datetime.datetime.now()))
-    status = query_on_e6x(query, local_cursor,
-                          query_alias=query_alias_name)
-    client_perceived_time = round(time.time() - client_perceived_start_time, 3)
-    logger.info('Query alias: {}, Ended at: {}'.format(query_alias_name, datetime.datetime.now()))
     try:
-        local_cursor.clear()
+        local_connection = create_e6x_con()
+        logger.info(
+            'TIMESTAMP : {} connected with db {} and Engine {}'.format(datetime.datetime.now(), db_name, ENGINE_IP))
+        local_cursor = local_connection.cursor(db_name=db_name, catalog_name=CATALOG_NAME)
+        logger.info('TIMESTAMP : {} Executing Query: {}'.format(datetime.datetime.now(), query))
+        logger.info('Query alias: {}, Started at: {}'.format(query_alias_name, datetime.datetime.now()))
+        status = query_on_e6x(query, local_cursor,
+                              query_alias=query_alias_name)
+        client_perceived_time = round(time.time() - client_perceived_start_time, 3)
+        logger.info('Query alias: {}, Ended at: {}'.format(query_alias_name, datetime.datetime.now()))
+        try:
+            local_cursor.clear()
+        except Exception as e:
+            logger.error("CURSOR CLEAR FAILED : {}".format(str(e)))
+        try:
+            local_cursor.close()
+            local_connection.close()
+        except Exception as e:
+            logger.error("CURSOR CLOSE FAILED : {}".format(str(e)))
+        return status, query_alias_name, query, db_name, client_perceived_time
     except Exception as e:
-        logger.error("CURSOR CLEAR FAILED : {}".format(str(e)))
-    try:
-        local_cursor.close()
-        local_connection.close()
-    except Exception as e:
-        logger.error("CURSOR CLOSE FAILED : {}".format(str(e)))
-    return status, query_alias_name, query, db_name, client_perceived_time
-
+        logger.error("Error raised {}".format(str(e)))
+        return 'Failure', query_alias_name, query, db_name, 0
 
 def query_on_e6x(query, cursor, query_alias=None) -> dict:
     query_start_time = datetime.datetime.now()
