@@ -65,7 +65,6 @@ def ram_cpu_usage(interval: int):
         cpu_usage = psutil.cpu_percent(interval)
         print(time.time())
         get_logger().info(
-            f"TIMESTAMP : {datetime.datetime.now()} "
             f"RAM USAGE: {mem_usage.used / (1024 ** 3):.2f}G CPU USAGE {cpu_usage}%"
         )
 
