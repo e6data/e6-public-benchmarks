@@ -54,6 +54,12 @@ def e6x_query_method(row):
         logger.error("Error raised {}".format(str(e)))
         return 'Failure', query_alias_name, query, db_name, 0
 
+def get_status_waiting(current_time: float):
+    new_time = current_time * 2
+    if new_time > 5.0:
+        new_time = 5
+    return new_time
+
 def query_on_e6x(query, cursor, query_alias=None) -> dict:
     query_start_time = datetime.datetime.now()
     query_id = None
@@ -62,9 +68,22 @@ def query_on_e6x(query, cursor, query_alias=None) -> dict:
             'JUST BEFORE EXECUTION Query alias: {}, Started at: {}'.format(query_alias, datetime.datetime.now()))
         query_id = cursor.execute(query)
         logger.info(
-            "TIMESTAMP {} FETCH MANY HAS STARTED. Query id of query alias {} is {}.".format(datetime.datetime.now(),
+            "TIMESTAMP {} FETCH ALL HAS STARTED. Query id of query alias {} is {}.".format(datetime.datetime.now(),
                                                                                             query_alias, query_id))
-        cursor.fetchall()
+        status_counter = 0
+        waiting_start_time = 0.5
+        while True:
+            query_status = cursor.status(query_id)
+            if query_status.status:
+                break
+            else:
+                status_counter += 1
+                time.sleep(waiting_start_time)
+                waiting_start_time = get_status_waiting(waiting_start_time)
+
+        records_iterator = cursor.fetchall_buffer()
+        for row in records_iterator:
+            pass
         logger.info(
             'JUST AFTER FETCH MANY Query alias: {}, Ended at: {}'.format(query_alias, datetime.datetime.now()))
         query_end_time = datetime.datetime.now()
@@ -239,7 +258,7 @@ class E6XBenchmark:
         return data
 
     def _perform_query_from_csv(self):
-        logger.info('Performing query on e6x from cloud storage file (eg S3)')
+        logger.info(f'Performing query on e6x from cloud storage file (eg S3) | MODE {QUERYING_MODE}')
 
         all_rows = self._get_query_list_from_csv_file()
         if QUERYING_MODE == "CONCURRENT":
