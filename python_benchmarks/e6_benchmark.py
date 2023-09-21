@@ -18,7 +18,6 @@ logger = get_logger()
 class QueryException(Exception):
     pass
 
-
 def e6x_query_method(row):
     """
     ONLY FOR CONCURRENCY QUERIES
@@ -87,7 +86,13 @@ def query_on_e6x(query, cursor, query_alias=None) -> dict:
         logger.info(
             'JUST AFTER FETCH MANY Query alias: {}, Ended at: {}'.format(query_alias, datetime.datetime.now()))
         query_end_time = datetime.datetime.now()
-        planner_result = json.loads(cursor.explain_analyse())
+        explain_analyse = cursor.explain_analyse()
+        planner_result = explain_analyse.get('planner')
+        is_cached = explain_analyse.get('is_cached')
+        parsing_time = explain_analyse.get('parsing_time')
+        queuing_time = explain_analyse.get('queuing_time')
+        if type(planner_result) == str:
+            planner_result = json.loads(planner_result)
         execution_time = planner_result.get("total_query_time") / 1000 if planner_result.get(
             "total_query_time") != None else "Not Available"
         row_count = planner_result.get('row_count_out') if planner_result.get(
@@ -97,6 +102,8 @@ def query_on_e6x(query, cursor, query_alias=None) -> dict:
         return dict(
             query_id=query_id,
             row_count=row_count,
+            parsing_time=parsing_time,
+            queuing_time=queuing_time,
             execution_time=execution_time,
             query_status=query_status,
             start_time=query_start_time,
@@ -118,6 +125,8 @@ def query_on_e6x(query, cursor, query_alias=None) -> dict:
             query_id=query_id,
             row_count=0,
             execution_time=0,
+            parsing_time=0,
+            queuing_time=0,
             query_status=query_status,
             start_time=query_start_time,
             end_time=query_end_time,
@@ -190,8 +199,10 @@ class E6XBenchmark:
         DB name, Query Alias, Query Text, Query ID, Query Status, Execution Time, Client Perceived Time,
         Row Count , Error message, Start Time, End Time, (edited)
         """
-        column_order = ['db_name', 'query_alias_name', 'query_text', 'query_id', 'query_status', 'execution_time',
-                        'client_perceived_time', 'row_count', 'err_msg', 'start_time', 'end_time']
+        column_order = ['query_alias_name', 'query_text', 'query_id', 'query_status',"parsing_time",
+                        "queuing_time", 'execution_time',
+                        # 'client_perceived_time',
+                        'row_count', 'err_msg', 'start_time', 'end_time']
         path = Path(__file__).resolve().parent
         today = datetime.datetime.now().strftime('%Y-%m-%d_%H_%M_%S')
         file_name = f'e6data_results_{today}.csv'

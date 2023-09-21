@@ -27,7 +27,7 @@ def create_readable_name_from_key_name(key: str) -> str:
     Input: column_name
     Output: Column name
     """
-    return key.lower().replace('_', ' ').capitalize()
+    return " ".join([i.capitalize() for i in key.lower().split("_")])
 
 
 def read_from_csv(file_path: str, shuffle=True):
