@@ -89,12 +89,14 @@ def query_on_e6x(query, cursor, query_alias=None) -> dict:
         explain_analyse = cursor.explain_analyse()
         planner_result = explain_analyse.get('planner')
         is_cached = explain_analyse.get('is_cached')
-        parsing_time = explain_analyse.get('parsing_time')
-        queuing_time = explain_analyse.get('queuing_time')
         if type(planner_result) == str:
             planner_result = json.loads(planner_result)
         execution_time = planner_result.get("total_query_time") / 1000 if planner_result.get(
             "total_query_time") != None else "Not Available"
+        queuing_time = planner_result.get("executionQueueingTime") / 1000 if planner_result.get(
+            "executionQueueingTime") != None else "Not Available"
+        parsing_time = planner_result.get("parsingTime") / 1000 if planner_result.get(
+            "parsingTime") != None else "Not Available"
         row_count = planner_result.get('row_count_out') if planner_result.get(
             "row_count_out") != None else "Not Available"
         query_status = 'Success'
