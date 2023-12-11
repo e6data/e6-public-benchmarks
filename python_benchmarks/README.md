@@ -19,7 +19,7 @@ pip install wheel
 
 ### 2. Install the python dependent libraries.
 ```
-pip install -r requirements.txt
+pip install --no-cache-dir -r requirements.txt
 ```
 ### 3. Set the environment variables.
 ```bash
