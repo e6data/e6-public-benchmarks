@@ -1,4 +1,4 @@
-e6data-python-connector==1.1.7
+e6data-python-connector==2.0.0
 psutil
 trino
 pyathena

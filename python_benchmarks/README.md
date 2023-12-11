@@ -2,11 +2,26 @@
 
 ### Please follow the format of <em>sample.csv</em> file and populate your own queries before starting benchmark scripts.
 
-### 1. Install the python dependent libraries.
+## 1. Dependencies
+### Make sure to install below dependencies and wheel before install e6data-python-connector.
+Amazon Linux / CentOS dependencies
+```bash
+yum install python3-devel gcc-c++ -y
 ```
-pip install -r requirements.txt
+Ubuntu/Debian dependencies
+```bash
+apt install python3-dev g++ -y
 ```
-### 2. Set the environment variables.
+Pip dependencies
+```bash
+pip install wheel
+```
+
+### 2. Install the python dependent libraries.
+```
+pip install --no-cache-dir -r requirements.txt
+```
+### 3. Set the environment variables.
 ```bash
 export ENGINE_IP=127.0.0.1 # Replace the value with your engine host IP
 export DB_NAME=tpcds_1000 # Replace with your preferred Database
@@ -32,7 +47,7 @@ export RESULT_BUCKET=testbucketname # Query results of Athena will be stored in 
 export GLUE_REGION=us-east-1 # Region of AWS Glue. Default Value is us-east-1
 ```
 
-### 3. Run the python script.
+### 4. Run the python script.
 For <em>e6data</em>:
 ```bash
 python3 e6_benchmark.py
