@@ -30,7 +30,7 @@ def create_readable_name_from_key_name(key: str) -> str:
     return " ".join([i.capitalize() for i in key.lower().split("_")])
 
 
-def read_from_csv(file_path: str, shuffle=True):
+def read_from_csv(file_path: str, shuffle=False):
     """
     :param file_path: CSV file absolute path.
     :param shuffle: shuffle the data.
