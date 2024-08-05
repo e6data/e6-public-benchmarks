@@ -1,6 +1,8 @@
 import datetime
 import os
 
+SHUFFLE_QUERY=os.getenv("SHUFFLE_QUERY")=="true"
+
 """
 For e6data
 """

@@ -7,7 +7,7 @@ import random
 
 import psutil
 
-from utils.envs import QUERY_CSV_COLUMN_NAME, DB_NAME
+from utils.envs import QUERY_CSV_COLUMN_NAME, DB_NAME, SHUFFLE_QUERY
 
 logger_set = None
 
@@ -30,7 +30,7 @@ def create_readable_name_from_key_name(key: str) -> str:
     return " ".join([i.capitalize() for i in key.lower().split("_")])
 
 
-def read_from_csv(file_path: str, shuffle=False):
+def read_from_csv(file_path: str):
     """
     :param file_path: CSV file absolute path.
     :param shuffle: shuffle the data.
@@ -39,7 +39,7 @@ def read_from_csv(file_path: str, shuffle=False):
     with open(file_path, 'r') as fh:
         reader = csv.DictReader(fh)
         csv_data = [i for i in reader]
-    if shuffle:
+    if SHUFFLE_QUERY:
         random.shuffle(csv_data)
     data = list()
     for row in csv_data:
