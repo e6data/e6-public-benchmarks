@@ -30,7 +30,7 @@ export QUERYING_MODE=SEQUENTIAL # for concurrency runs, change the value to CONC
 export E6_USER=<USER_EMAIL> #Replace the value with your email
 export E6_TOKEN=<USER_ACCESS_TOKEN> # Replace the value with your access token
 export CATALOG_NAME=<CATALOG_NAME> # Replace the value with attached catalog.
-export SHUFFLE_QUERY="true" #If Query Running needs to be shuffled before execution.Default False
+export SHUFFLE_QUERY="true" #If Query Running needs to be shuffled before execution.Default Value is False
 
 
 # In the case of concurrent benchmarking, ensure below variables are set to your requirements
