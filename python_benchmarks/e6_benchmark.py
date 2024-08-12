@@ -91,6 +91,11 @@ def query_on_e6x(query, cursor, query_alias=None) -> dict:
         is_cached = explain_analyse.get('is_cached')
         if type(planner_result) == str:
             planner_result = json.loads(planner_result)
+            file_name = query_id+".json"
+            with open(file_name, 'w') as json_file:
+                json.dump(planner_result, json_file, indent=4)
+            print(f"planner_result has been written to {file_name}")
+
         execution_time = planner_result.get("total_query_time") / 1000 if planner_result.get(
             "total_query_time") != None else "Not Available"
         queuing_time = planner_result.get("executionQueueingTime") / 1000 if planner_result.get(
