@@ -1,0 +1,20 @@
+# Databricks S-4x4 Cluster Configuration
+# ~120 cores
+
+ENGINE=databricks
+COPY_TO_S3=true
+
+# S3 base path for storing JMeter results (without partitions)
+S3_BASE_PATH=s3://e6-jmeter/jmeter-results
+
+CLUSTER_CONFIG='{
+  "cluster_size": "S-4x4",
+  "estimated_cores": 120,
+  "instance_type": "unknown",
+  "warehouse_size": "Small",
+  "min_clusters": 4,
+  "max_clusters": 4,
+  "serverless": "Y",
+  "spot_instance_policy": "COST_OPTIMIZED",
+  "enable_photon": true
+}'

@@ -1,0 +1,18 @@
+
+# JDBC Jmeter connection properties
+
+#Change below properties to connect to your target machine via JDBC
+HOSTNAME=
+PORT=80
+DATABASE=
+CATALOG=
+
+USER=
+PASSWORD=
+
+#Change below for the JDBC connection URL of your target machine
+CONNECTION_STRING=
+
+#Change below to your JDBC Driver class
+DRIVER_CLASS=io.e6.jdbc.driver.E6Driver
+
