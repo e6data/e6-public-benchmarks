@@ -299,7 +299,27 @@ echo "  ✓ JMeter plugins installed"
 echo ""
 echo "Step 5: Installing custom JDBC drivers..."
 
-# Create jdbc_drivers directory if it doesn't exist
+# Download Databricks JDBC driver from Maven Central
+echo "  Downloading Databricks JDBC driver..."
+DBR_JDBC_VERSION="2.6.36"
+DBR_JDBC_URL="https://repo1.maven.org/maven2/com/databricks/databricks-jdbc/${DBR_JDBC_VERSION}/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
+DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
+
+if command_exists wget; then
+    wget -O "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
+        echo "  WARNING: Failed to download Databricks JDBC driver"
+    }
+elif command_exists curl; then
+    curl -L -o "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
+        echo "  WARNING: Failed to download Databricks JDBC driver"
+    }
+fi
+
+if [ -f "${DBR_JDBC_JAR}" ]; then
+    echo "  ✓ Databricks JDBC driver installed"
+fi
+
+# Copy custom JDBC drivers from jdbc_drivers/ directory
 JDBC_DRIVERS_DIR="${SCRIPT_DIR}/jdbc_drivers"
 if [ -d "${JDBC_DRIVERS_DIR}" ]; then
     # Copy custom JDBC drivers from jdbc_drivers/ to JMeter lib/ext/
