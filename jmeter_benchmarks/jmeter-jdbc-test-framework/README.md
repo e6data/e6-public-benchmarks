@@ -34,6 +34,13 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
 ./setup_jmeter.sh
 ```
+Follow the instructions.
+The setup script will attempt to install the following in your system, If some of them failed to install, please install them manually
+- Java: openjdk version "17.0.16" 2025-07-15 LTS
+- jq: jq-1.5
+- git: git version 2.47.3
+- JMeter: 5.6.3
+
 # Steps to run the Apache Jmeter using standard jmeter CLI command.
 ### Create the connection properties files with the required connection using the template/sample properties file
 
