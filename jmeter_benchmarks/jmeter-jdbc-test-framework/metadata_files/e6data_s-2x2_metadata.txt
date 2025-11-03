@@ -10,7 +10,7 @@ S3_BASE_PATH=s3://e6-jmeter/jmeter-results
 CLUSTER_CONFIG='{
   "cluster_size": "S-2x2",
   "estimated_cores": 60,
-  "instance_type": "graviton",
+  "instance_type": "r6id.8xlarge",
   "executors": 2,
   "cores_per_executor": 30,
   "serverless": "N"
