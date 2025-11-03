@@ -32,7 +32,7 @@ echo "URL: ${JMETER_URL}"
 echo ""
 
 if command -v wget &> /dev/null; then
-    wget -q --show-progress "${JMETER_URL}" || { echo "ERROR: Download failed"; exit 1; }
+    wget -q "${JMETER_URL}" || { echo "ERROR: Download failed"; exit 1; }
 elif command -v curl &> /dev/null; then
     curl -L -# -O "${JMETER_URL}" || { echo "ERROR: Download failed"; exit 1; }
 else
