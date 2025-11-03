@@ -1,0 +1,63 @@
+# Compiled class file
+*.class
+
+# Log file
+*.log
+
+#ignore jmeter docs and logs
+apache-jmeter-5.6.3/printable_docs/
+apache-jmeter-5.6.3/docs
+apache-jmeter-5.6.3/*.log
+apache-jmeter-5.6.3/backups
+
+#ignore reports
+reports
+
+#ignore data files - As it might have sensitive info
+data_files/
+
+#ignore connection properties as it might have sensitive info
+connection_properties/*.properties
+
+#ignore Test Plan auto created backup file
+Test-Plans/*_backup_20*
+
+#ignore backups directory
+backups/
+
+#ignore any backup files anywhere
+*.backup_*
+
+# IDE and system files
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Test input files (environment-specific)
+*_test_input.txt
+*_test_http_input.txt
+
+# Test properties CSV files (environment-specific data)
+test_properties/*.csv
+
+# Kantar test data
+kantar/
+kantar.tar
+
+# Metadata backups (environment-specific)
+metadata_files_backup_*/
+metadata_files_old_*/
+
+# Comparison runs (temporary analysis)
+compare_runs/
+/comparison_*.md
+
+# JDBC driver backups
+apache-jmeter-5.6.3/lib/ext/*.jar.old
+

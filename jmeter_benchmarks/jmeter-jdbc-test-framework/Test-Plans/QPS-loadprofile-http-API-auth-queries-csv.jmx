@@ -1,0 +1,677 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Test Plan">
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="JMETER_HOME" elementType="Argument">
+            <stringProp name="Argument.name">JMETER_HOME</stringProp>
+            <stringProp name="Argument.value">${__P(JMETER_HOME)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="HOSTNAME" elementType="Argument">
+            <stringProp name="Argument.name">HOSTNAME</stringProp>
+            <stringProp name="Argument.value">${__P(HOSTNAME,localhost)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PORT" elementType="Argument">
+            <stringProp name="Argument.name">PORT</stringProp>
+            <stringProp name="Argument.value">${__P(PORT,80)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="USER" elementType="Argument">
+            <stringProp name="Argument.name">USER</stringProp>
+            <stringProp name="Argument.value">${__P(USER,admin)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PASSWORD" elementType="Argument">
+            <stringProp name="Argument.name">PASSWORD</stringProp>
+            <stringProp name="Argument.value">${__P(PASSWORD,admin)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="CATALOG" elementType="Argument">
+            <stringProp name="Argument.name">CATALOG</stringProp>
+            <stringProp name="Argument.value">${__P(CATALOG,espresso_gold_test)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATABASE" elementType="Argument">
+            <stringProp name="Argument.name">DATABASE</stringProp>
+            <stringProp name="Argument.value">${__P(DATABASE,uk_audio)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="SCHEMA" elementType="Argument">
+            <stringProp name="Argument.name">SCHEMA</stringProp>
+            <stringProp name="Argument.value">${__P(SCHEMA,global)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="REPORT_PATH" elementType="Argument">
+            <stringProp name="Argument.name">REPORT_PATH</stringProp>
+            <stringProp name="Argument.value">${__P(REPORT_PATH,reports)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="START_TIME" elementType="Argument">
+            <stringProp name="Argument.name">START_TIME</stringProp>
+            <stringProp name="Argument.value">${__P(START_TIME,${__time(yyyyMMdd-HHmmss)})}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+    </TestPlan>
+    <hashTree>
+      <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="host" elementType="Argument">
+            <stringProp name="Argument.name">host</stringProp>
+            <stringProp name="Argument.value">${mainhost}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="scheme" elementType="Argument">
+            <stringProp name="Argument.name">scheme</stringProp>
+            <stringProp name="Argument.value">${scheme}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="kantarLoginURL" elementType="Argument">
+            <stringProp name="Argument.name">kantarLoginURL</stringProp>
+            <stringProp name="Argument.value">https://kantar.e6.run/</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </Arguments>
+      <hashTree/>
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults" enabled="true">
+        <stringProp name="HTTPSampler.domain">${mainhost}</stringProp>
+        <stringProp name="HTTPSampler.protocol">${scheme}</stringProp>
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.implementation"></stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+      <CookieManager guiclass="CookiePanel" testclass="CookieManager" testname="HTTP Cookie Manager" enabled="true">
+        <collectionProp name="CookieManager.cookies"/>
+        <boolProp name="CookieManager.clearEachIteration">true</boolProp>
+        <boolProp name="CookieManager.controlledByThreadGroup">false</boolProp>
+      </CookieManager>
+      <hashTree/>
+      <CacheManager guiclass="CacheManagerGui" testclass="CacheManager" testname="HTTP Cache Manager" enabled="true">
+        <boolProp name="clearEachIteration">true</boolProp>
+        <boolProp name="useExpires">true</boolProp>
+        <boolProp name="CacheManager.controlledByThread">false</boolProp>
+      </CacheManager>
+      <hashTree/>
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="CSV Data Set Config Selections">
+        <stringProp name="filename">kantar/Products/CSV_Files/Products_25Users.csv</stringProp>
+        <stringProp name="fileEncoding"></stringProp>
+        <stringProp name="variableNames"></stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="Login">
+        <intProp name="ThreadGroup.num_threads">1</intProp>
+        <intProp name="ThreadGroup.ramp_time">1</intProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <stringProp name="LoopController.loops">1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </SetupThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="API Authentication">
+          <intProp name="HTTPSampler.concurrentPool">6</intProp>
+          <stringProp name="HTTPSampler.domain">${__P(mainhost)}</stringProp>
+          <stringProp name="HTTPSampler.port">443</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/api/v1/authenticate</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&quot;user&quot;: &quot;${USER}&quot;, &quot;password&quot;: &quot;${PASSWORD}&quot;}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/json</stringProp>
+              </elementProp>
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">cluster-name</stringProp>
+                <stringProp name="Header.value">${__P(cluster_name)}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract Session ID">
+            <stringProp name="JSONPostProcessor.referenceNames">auth_token</stringProp>
+            <stringProp name="JSONPostProcessor.jsonPathExprs">$.sessionId</stringProp>
+            <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+            <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp>
+            <stringProp name="Scope.variable"></stringProp>
+          </JSONPostProcessor>
+          <hashTree/>
+          <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Copy Token to Properties">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename"></stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="script">// Copy auth_token from thread-local variable to global property for cross-thread access
+String authToken = vars.get(&quot;auth_token&quot;)
+if (authToken != null &amp;&amp; !authToken.equals(&quot;NOT_FOUND&quot;)) {
+    props.put(&quot;auth_token&quot;, authToken)
+    log.info(&quot;Authentication token stored in properties: &quot; + authToken)
+} else {
+    log.error(&quot;Failed to extract authentication token&quot;)
+}</stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+          </JSR223PostProcessor>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+      <com.blazemeter.jmeter.threads.arrivals.FreeFormArrivalsThreadGroup guiclass="com.blazemeter.jmeter.threads.arrivals.FreeFormArrivalsThreadGroupGui" testclass="com.blazemeter.jmeter.threads.arrivals.FreeFormArrivalsThreadGroup" testname="bzm - Free-Form Arrivals Thread Group" enabled="true">
+        <elementProp name="ThreadGroup.main_controller" elementType="com.blazemeter.jmeter.control.VirtualUserController"/>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <collectionProp name="Schedule">
+          <collectionProp name="84474527">
+            <stringProp name="48">1</stringProp>
+            <stringProp name="49">1</stringProp>
+            <stringProp name="50">5</stringProp>
+          </collectionProp>
+          <collectionProp name="84475519">
+            <stringProp name="48">2</stringProp>
+            <stringProp name="49">2</stringProp>
+            <stringProp name="50">5</stringProp>
+          </collectionProp>
+          <collectionProp name="84476511">
+            <stringProp name="48">3</stringProp>
+            <stringProp name="49">3</stringProp>
+            <stringProp name="50">5</stringProp>
+          </collectionProp>
+          <collectionProp name="84477503">
+            <stringProp name="48">4</stringProp>
+            <stringProp name="49">4</stringProp>
+            <stringProp name="50">5</stringProp>
+          </collectionProp>
+          <collectionProp name="84475519">
+            <stringProp name="48">2</stringProp>
+            <stringProp name="49">2</stringProp>
+            <stringProp name="50">5</stringProp>
+          </collectionProp>
+          <collectionProp name="84474527">
+            <stringProp name="48">1</stringProp>
+            <stringProp name="49">1</stringProp>
+            <stringProp name="50">5</stringProp>
+          </collectionProp>
+        </collectionProp>
+        <stringProp name="LogFilename"></stringProp>
+        <stringProp name="Iterations"></stringProp>
+        <boolProp name="same_user_on_next_iteration">false</boolProp>
+        <stringProp name="ConcurrencyLimit"></stringProp>
+        <stringProp name="Unit">S</stringProp>
+      </com.blazemeter.jmeter.threads.arrivals.FreeFormArrivalsThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="${Selection}/api/GetProductSummaryDUSTrendOutput_DB">
+          <stringProp name="HTTPSampler.domain">${__P(mainhost)}</stringProp>
+          <stringProp name="HTTPSampler.port">443</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <stringProp name="HTTPSampler.path">/api/v1/execute</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&#xd;
+  &quot;statement&quot;: &quot;with rel_week as ( select earliest_release_date, b.date_dbid, a.product_class_dbid from espresso_gold_test.uk_audio.mv_product_filter a join espresso_gold_test.\&quot;global\&quot;.dim_date b on CAST(a.earliest_release_date AS DATE) = CAST(b.\&quot;date\&quot; AS DATE) where product_dbid = ${product_dbid} and b.country_id = 1 and b.audio_video_flag = &apos;Audio&apos; ), t2 as ( select date_dbid, timeperiod_type, timeperiod_value, \&quot;year\&quot;, \&quot;week\&quot;, \&quot;quarter\&quot;, \&quot;month\&quot;, \&quot;period\&quot;, is_current from espresso_gold_test.uk_audio.dus_trend_timeperiod where timeperiod_type = &apos;Weekly&apos; ), t8 as ( select a.date_dbid, a.current_position as pos, a.product_dbid, b.\&quot;period\&quot;, b.timeperiod_type from espresso_gold_test.default.chart_entries_optimised a join espresso_gold_test.\&quot;global\&quot;.default_charts c on a.chart_dbid = c.chart_dbid and a.country_id = c.country_id join t2 b on a.date_dbid = b.date_dbid and c.audio_video_flag in (&apos;Audio&apos;, &apos;Both&apos;) where c.tab_name = &apos;Dus Treand&apos; and a.country_id = 1 and a.product_dbid = ${product_dbid} and a.audio_video_flag in (&apos;Audio&apos;, &apos;Both&apos;) and a.current_position &lt;= c.published_num and b.timeperiod_type = &apos;Weekly&apos; group by a.date_dbid, a.current_position, a.product_dbid, b.\&quot;period\&quot;, b.timeperiod_type ), trt as ( select distinct subcom_dbid, com_grp_dbid, com_grp_name from espresso_gold_test.\&quot;global\&quot;.mv_map_cla_com_grp_to_transaction_type where country_id = 1 and audio_video_flag in (&apos;Audio&apos;, &apos;Both&apos;) and product_class_dbid =( select product_class_dbid from rel_week ) ), main as( select date_dbid, \&quot;year\&quot;, \&quot;week\&quot;, timeperiod_type, timeperiod_value, is_current, com_grp_dbid, subcom_dbid, com_grp_name from trt cross join t2 ), t7 AS ( SELECT b.date_dbid, b.\&quot;year\&quot;, b.\&quot;week\&quot;, b.timeperiod_type, b.timeperiod_value, b.is_current, case when b.com_grp_dbid in (6, 7, 9, 15, 16, 18, 24, 25, 27) then ROUND(SUM(a.pre_ratio_sales)) else ROUND(SUM(a.weighted_sales)) end as DUS, case when b.com_grp_dbid in (6, 7, 9, 15, 16, 18, 24, 25, 27) then ROUND(SUM(a.pre_ratio_sales)) else ROUND(SUM(a.bva_weighted_sales)) end AS BVA, b.com_grp_dbid, b.com_grp_name FROM espresso_gold_test.uk_audio.agg_sub_com3 a right join main b ON a.date_dbid = b.date_dbid and a.product_dbid = ${product_dbid} and a.subcom_dbid = b.subcom_dbid GROUP BY b.date_dbid, b.\&quot;year\&quot;, b.\&quot;week\&quot;, b.timeperiod_type, b.timeperiod_value, b.is_current, b.com_grp_dbid, b.com_grp_name ), t_final as ( select a.date_dbid, a.\&quot;year\&quot;, a.\&quot;week\&quot;, a.timeperiod_type, a.timeperiod_value, a.is_current, a.DUS, a.BVA, a.com_grp_dbid, a.com_grp_name, case when DUS is null then null else b.pos end as Pos from t7 a left join t8 b on a.date_dbid = b.date_dbid and a.timeperiod_type = b.timeperiod_type ), t9_sub as ( select a.date_dbid, a.timeperiod_type, a.timeperiod_value, a.is_current, case when a.date_dbid &gt;= c.date_dbid then ifnull(a.DUS, 0) else null end as DUS, case when a.date_dbid &gt;= c.date_dbid then ifnull(a.BVA, 0) else null end as BVA, ((a.DUS - b.DUS) * 100 / b.DUS) as change_percentage, ((a.BVA - b.BVA) * 100 / b.BVA) as change_percentage_bva, a.com_grp_dbid, a.com_grp_name as commercial_model, a.Pos from t_final a left join t_final b on a.\&quot;year\&quot; -1 = b.\&quot;year\&quot; and a.com_grp_dbid = b.com_grp_dbid and a.timeperiod_type = b.timeperiod_type and a.\&quot;week\&quot; = b.\&quot;week\&quot; left join rel_week c on true ), t9 as ( select date_dbid, timeperiod_type, timeperiod_value, is_current, DUS, BVA, change_percentage, change_percentage_bva, com_grp_dbid, commercial_model, Pos, row_number() over( partition by timeperiod_type, is_current, com_grp_dbid order by date_dbid ) as display_order from t9_sub ) select 1 as country_id, &apos;Audio&apos; as audio_video_flag, b.*, null as var_percentage from t9 b order by is_current asc, date_dbid asc&quot;,&#xd;
+  &quot;catalog&quot;: &quot;${CATALOG}&quot;,&#xd;
+  &quot;schema&quot;: &quot;${SCHEMA}&quot;&#xd;
+}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="Sec-Fetch-Mode" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Mode</stringProp>
+                <stringProp name="Header.value">cors</stringProp>
+              </elementProp>
+              <elementProp name="Referer" elementType="Header">
+                <stringProp name="Header.name">Referer</stringProp>
+                <stringProp name="Header.value">https://espresso-dev.kantar.com/</stringProp>
+              </elementProp>
+              <elementProp name="Sec-Fetch-Site" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Site</stringProp>
+                <stringProp name="Header.value">cross-site</stringProp>
+              </elementProp>
+              <elementProp name="Accept-Language" elementType="Header">
+                <stringProp name="Header.name">Accept-Language</stringProp>
+                <stringProp name="Header.value">en-US,en;q=0.9</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Headers" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Headers</stringProp>
+                <stringProp name="Header.value">Content-Type</stringProp>
+              </elementProp>
+              <elementProp name="Origin" elementType="Header">
+                <stringProp name="Header.name">Origin</stringProp>
+                <stringProp name="Header.value">https://espresso-dev.kantar.com</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Methods" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Methods</stringProp>
+                <stringProp name="Header.value">POST</stringProp>
+              </elementProp>
+              <elementProp name="Accept" elementType="Header">
+                <stringProp name="Header.name">Accept</stringProp>
+                <stringProp name="Header.value">application/json, text/plain, */*</stringProp>
+              </elementProp>
+              <elementProp name="Authorization" elementType="Header">
+                <stringProp name="Header.name">Authorization</stringProp>
+                <stringProp name="Header.value">Bearer ${__P(auth_token)}</stringProp>
+              </elementProp>
+              <elementProp name="cluster-name" elementType="Header">
+                <stringProp name="Header.name">cluster-name</stringProp>
+                <stringProp name="Header.value">${__P(cluster_name)}</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Origin" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Origin</stringProp>
+                <stringProp name="Header.value">*</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua</stringProp>
+                <stringProp name="Header.value">&quot;Not)A;Brand&quot;;v=&quot;8&quot;, &quot;Chromium&quot;;v=&quot;138&quot;, &quot;Google Chrome&quot;;v=&quot;138&quot;</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua-mobile" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua-mobile</stringProp>
+                <stringProp name="Header.value">?0</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua-platform" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua-platform</stringProp>
+                <stringProp name="Header.value">&quot;Windows&quot;</stringProp>
+              </elementProp>
+              <elementProp name="Content-Type" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/json</stringProp>
+              </elementProp>
+              <elementProp name="Accept-Encoding" elementType="Header">
+                <stringProp name="Header.name">Accept-Encoding</stringProp>
+                <stringProp name="Header.value">gzip, deflate, br, zstd</stringProp>
+              </elementProp>
+              <elementProp name="User-Agent" elementType="Header">
+                <stringProp name="Header.name">User-Agent</stringProp>
+                <stringProp name="Header.value">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36</stringProp>
+              </elementProp>
+              <elementProp name="Sec-Fetch-Dest" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Dest</stringProp>
+                <stringProp name="Header.value">empty</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Response Assertion" enabled="false">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message"></stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="${Selection}/api/GetProductSummary_ProductAnalysis_DB">
+          <stringProp name="HTTPSampler.domain">${__P(mainhost)}</stringProp>
+          <stringProp name="HTTPSampler.port">443</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <stringProp name="HTTPSampler.path">/api/v1/execute</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&#xd;
+  &quot;statement&quot;: &quot;with mv_sales_inline_ctes as ( select item_dbid,transaction_type_dbid,weighted_sales,bva_weighted_sales,retail_Value,bva_retail_value,pre_ratio_sales,product_class_dbid from espresso_gold_test.default.cum_fact_sales_items_optimised ), agg_item_inline_ctes as ( select item_dbid,subcom_dbid,weighted_sales,pre_ratio_sales,retail_value,date_dbid from espresso_gold_test.uk_audio.agg_item_sub_com_weekly ), opt1_inline_ctes as ( select product_dbid, item_dbid, isrc, title, volume, side, sequence, item_dbid_release, product_dbid_release from espresso_gold_test.uk_audio.mv_tracklist_opt1 ), t1_base AS ( SELECT a.product_dbid AS product_dbid_release, a.product_dbid product_dbid, a.item_dbid AS item_dbid_release, a.item_dbid as item_dbid, p.product_class_dbid, a.country_id, a.catalogue_number, a.\&quot;format\&quot; AS \&quot;format\&quot;, a.\&quot;variant\&quot;, a.label, a.record_company_name, a.corp_name, a.distributor_name, p.artist, a.subtitle AS mix_name, a.release_date as app_date, a.barcode_or_isrc, a.orphan_barcodes, a.deletion_flag AS Deleted, a.audio_video_calc_flag FROM espresso_gold_test.uk_audio.mv_product_filter p JOIN espresso_gold_test.uk_audio.mv_all_itms_opt a ON p.product_dbid = a.product_dbid AND ((p.product_class_dbid = 1 AND a.format_dbid NOT IN (12, 48)) OR (p.product_class_dbid IN (2, 3)) ) WHERE p.product_dbid = ${product_dbid} ) , t1 as( select a.product_dbid_release,COALESCE(b.product_dbid, a.product_dbid) AS product_dbid, a.item_dbid AS item_dbid_release, COALESCE(b.item_dbid, a.item_dbid) AS item_dbid, a.product_class_dbid, a.country_id, a.catalogue_number, a.format AS format, a.\&quot;variant\&quot;, a.label, a.record_company_name, a.corp_name, a.distributor_name, a.artist, a.mix_name, a.app_date, a.barcode_or_isrc, a.orphan_barcodes, b.isrc AS primary_isrc, b.isrc, b.title, a.Deleted, b.volume, b.side, b.sequence, a.audio_video_calc_flag from t1_base a left join opt1_inline_ctes b on a.item_dbid = b.item_dbid_release and a.product_dbid_release=b.product_dbid_release ) , t4 AS ( SELECT distinct transaction_type_dbid,subcom_dbid,subcom_name FROM espresso_gold_test.\&quot;global\&quot;.mv_map_com_grp_to_transaction_type WHERE country_id = 1 AND audio_video_flag = &apos;Audio&apos; ) , t3_base as(select item_dbid,transaction_type_dbid,weighted_sales,bva_weighted_sales,retail_Value,bva_retail_value,pre_ratio_sales,product_class_dbid from mv_sales_inline_ctes a where item_dbid in (select distinct item_dbid_release from t1) ) ,t3 AS ( SELECT a.item_dbid as item_dbid_release, CASE WHEN c.subcom_dbid in (1,3,5) THEN ROUND(SUM(a.weighted_sales)) WHEN c.subcom_dbid &lt;&gt; 1 AND a.product_class_dbid IN (3, 6) THEN ROUND(SUM(a.weighted_sales)) ELSE ROUND(SUM(a.pre_ratio_sales)) END AS cummulative_DUS, CASE WHEN c.subcom_dbid = 1 THEN ROUND(SUM(a.bva_weighted_sales)) WHEN c.subcom_dbid &lt;&gt; 1 AND a.product_class_dbid IN (3, 6) THEN ROUND(SUM(a.bva_weighted_sales)) ELSE ROUND(SUM(a.pre_ratio_sales)) END AS cummulative_BVA, CASE WHEN c.subcom_dbid NOT IN (1, 3, 5) THEN ROUND(SUM(a.weighted_sales)) ELSE NULL END AS cummulative_DUS_calc, CASE WHEN c.subcom_dbid NOT IN (1, 3, 5) THEN ROUND(SUM(a.bva_weighted_sales)) ELSE NULL END AS cummulative_BVA_calc, c.subcom_dbid, c.subcom_name FROM t3_base a JOIN t4 c ON a.transaction_type_dbid = c.transaction_type_dbid GROUP BY a.item_dbid,c.subcom_dbid,c.subcom_name,a.product_class_dbid ) , main AS ( SELECT DISTINCT a.*, t3.subcom_dbid, t3.subcom_name FROM ( SELECT DISTINCT product_dbid_release, product_dbid, item_dbid_release, item_dbid FROM t1 ) a CROSS JOIN t3 ) ,main_data as ( select item_dbid,subcom_dbid,weighted_sales,pre_ratio_sales,retail_value,date_dbid from agg_item_inline_ctes where item_dbid in (select distinct item_dbid_release from main) and date_dbid=27209 ) ,t4_final as ( select b.product_dbid, b.item_dbid_release, a.date_dbid, b.subcom_dbid, a.weighted_sales, 2 as product_class_dbid, a.pre_ratio_sales, b.subcom_name, null as bva_weighted_sales, d.cummulative_DUS, d.cummulative_BVA, d.cummulative_DUS_calc, d.cummulative_BVA_calc from main_data a RIGHT JOIN main b ON b.item_dbid_release = a.item_dbid AND b.subcom_dbid = a.subcom_dbid LEFT JOIN t3 d ON b.item_dbid_release = d.item_dbid_release AND b.subcom_dbid = d.subcom_dbid ) , t5 AS ( SELECT a.product_dbid, a.item_dbid_release, a.date_dbid, CASE WHEN a.subcom_dbid in (1,3,5) THEN ROUND(SUM(a.weighted_sales)) WHEN a.subcom_dbid &lt;&gt; 1 AND a.product_class_dbid IN (3, 6) THEN ROUND(SUM(a.weighted_sales)) ELSE ROUND(SUM(a.pre_ratio_sales)) END AS DUS, CASE WHEN a.subcom_dbid NOT IN (1, 3, 5) THEN ROUND(SUM(a.weighted_sales)) ELSE NULL END AS DUS_calc, CASE WHEN a.subcom_dbid NOT IN (1, 3, 5) THEN ROUND(SUM(a.bva_weighted_sales)) ELSE NULL END AS BVA_calc, CASE WHEN a.subcom_dbid = 1 THEN ROUND(SUM(a.bva_weighted_sales)) WHEN a.subcom_dbid &lt;&gt; 1 AND a.product_class_dbid IN (3, 6) THEN ROUND(SUM(a.bva_weighted_sales)) ELSE ROUND(SUM(a.pre_ratio_sales)) END AS BVA, a.subcom_dbid AS com_grp_dbid, a.subcom_name AS commercial_model, SUM(a.cummulative_DUS) AS cummulative_DUS, SUM(a.cummulative_BVA) AS cummulative_BVA, SUM(a.cummulative_DUS_calc) AS cummulative_DUS_calc, SUM(a.cummulative_BVA_calc) AS cummulative_BVA_calc FROM t4_final a GROUP BY a.product_dbid, a.item_dbid_release, a.subcom_dbid, a.subcom_name, a.date_dbid, a.product_class_dbid ) , t6 AS ( SELECT DISTINCT b.product_dbid_release, b.product_dbid, b.product_class_dbid, b.item_dbid_release, a.date_dbid, b.format AS Format, b.\&quot;variant\&quot; AS \&quot;variant\&quot;, b.label AS Label, b.record_company_name AS Company, b.corp_name AS \&quot;Corp.Group\&quot;, b.distributor_name AS Distributor, b.catalogue_number AS \&quot;Cat.No.\&quot;, b.barcode_or_isrc AS Barcode, b.orphan_barcodes, b.primary_isrc, b.artist AS Artist, b.app_date AS \&quot;App. Date\&quot;, Deleted, a.com_grp_dbid, a.commercial_model, b.title AS Title, b.mix_name, CAST(b.side AS INT) AS Side, CAST(b.sequence AS INT) AS Sequence, b.volume AS Volume, b.ISRC, IFNULL(a.DUS, 0) AS DUS, IFNULL(a.DUS_calc, 0) AS DUS_calc, IFNULL(a.cummulative_DUS, 0) AS cummulative_DUS, IFNULL(a.cummulative_DUS_calc, 0) AS cummulative_DUS_calc, IFNULL(a.BVA, 0) AS BVA, IFNULL(a.BVA_calc, 0) AS BVA_calc, IFNULL(a.cummulative_BVA, 0) AS cummulative_BVA, IFNULL(a.cummulative_BVA_calc, 0) AS cummulative_BVA_calc FROM t5 a LEFT JOIN t1 b ON a.item_dbid_release = b.item_dbid_release and a.product_dbid = b.product_dbid ) , t9 AS ( SELECT product_dbid_release, product_dbid, product_class_dbid, item_dbid_release, date_dbid, Format, \&quot;variant\&quot;, Label, Company, \&quot;Corp.Group\&quot;, Distributor, \&quot;Cat.No.\&quot;, Barcode, orphan_barcodes, primary_isrc, Artist, \&quot;App. Date\&quot;, null as price_band, Deleted, com_grp_dbid, commercial_model, Title, mix_name, Side, Sequence, Volume, ISRC, DUS, cummulative_DUS, BVA, cummulative_BVA FROM t6 UNION SELECT product_dbid_release, product_dbid, product_class_dbid, item_dbid_release, date_dbid, Format, \&quot;variant\&quot;, Label, Company, \&quot;Corp.Group\&quot;, Distributor, \&quot;Cat.No.\&quot;, Barcode, orphan_barcodes, primary_isrc, Artist, \&quot;App. Date\&quot;, null as price_band, Deleted, com_grp_dbid, CONCAT(commercial_model, &apos;_calc&apos;) AS commercial_model, Title, mix_name, Side, Sequence, Volume, ISRC, DUS_calc, cummulative_DUS_calc, BVA_calc, cummulative_BVA_calc FROM t6 WHERE com_grp_dbid NOT IN (1, 3, 5) ) SELECT * FROM t9&quot;,&#xd;
+  &quot;catalog&quot;: &quot;${CATALOG}&quot;,&#xd;
+  &quot;schema&quot;: &quot;${SCHEMA}&quot;&#xd;
+}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="Sec-Fetch-Mode" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Mode</stringProp>
+                <stringProp name="Header.value">cors</stringProp>
+              </elementProp>
+              <elementProp name="Sec-Fetch-Site" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Site</stringProp>
+                <stringProp name="Header.value">cross-site</stringProp>
+              </elementProp>
+              <elementProp name="Accept-Language" elementType="Header">
+                <stringProp name="Header.name">Accept-Language</stringProp>
+                <stringProp name="Header.value">en-US,en;q=0.9</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Headers" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Headers</stringProp>
+                <stringProp name="Header.value">Content-Type</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Methods" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Methods</stringProp>
+                <stringProp name="Header.value">POST</stringProp>
+              </elementProp>
+              <elementProp name="Accept" elementType="Header">
+                <stringProp name="Header.name">Accept</stringProp>
+                <stringProp name="Header.value">application/json, text/plain, */*</stringProp>
+              </elementProp>
+              <elementProp name="Authorization" elementType="Header">
+                <stringProp name="Header.name">Authorization</stringProp>
+                <stringProp name="Header.value">Bearer ${__P(auth_token)}</stringProp>
+              </elementProp>
+              <elementProp name="cluster-name" elementType="Header">
+                <stringProp name="Header.name">cluster-name</stringProp>
+                <stringProp name="Header.value">${__P(cluster_name)}</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Origin" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Origin</stringProp>
+                <stringProp name="Header.value">*</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua</stringProp>
+                <stringProp name="Header.value">&quot;Not)A;Brand&quot;;v=&quot;8&quot;, &quot;Chromium&quot;;v=&quot;138&quot;, &quot;Google Chrome&quot;;v=&quot;138&quot;</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua-mobile" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua-mobile</stringProp>
+                <stringProp name="Header.value">?0</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua-platform" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua-platform</stringProp>
+                <stringProp name="Header.value">&quot;Windows&quot;</stringProp>
+              </elementProp>
+              <elementProp name="Content-Type" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/json</stringProp>
+              </elementProp>
+              <elementProp name="Accept-Encoding" elementType="Header">
+                <stringProp name="Header.name">Accept-Encoding</stringProp>
+                <stringProp name="Header.value">gzip, deflate, br, zstd</stringProp>
+              </elementProp>
+              <elementProp name="User-Agent" elementType="Header">
+                <stringProp name="Header.name">User-Agent</stringProp>
+                <stringProp name="Header.value">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36</stringProp>
+              </elementProp>
+              <elementProp name="Sec-Fetch-Dest" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Dest</stringProp>
+                <stringProp name="Header.value">empty</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Response Assertion" enabled="false">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message"></stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="${Selection}/api/GetProductSummary_ItemsFormat_DB">
+          <stringProp name="HTTPSampler.domain">${__P(mainhost)}</stringProp>
+          <stringProp name="HTTPSampler.port">443</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+          <stringProp name="HTTPSampler.path">/api/v1/execute</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{&#xd;
+  &quot;statement&quot;: &quot;with mv_items_inline_ctes as ( select item_dbid, product_dbid from espresso_gold_test.uk_audio.mv_items ), t2 as ( select item_dbid, b.product_class_dbid from mv_items_inline_ctes a join espresso_gold_test.uk_audio.mv_product_filter b on a.product_dbid = b.product_dbid where a.product_dbid = ${product_dbid} ), trt as ( select com_grp_dbid, com_grp_name, subcom_dbid, subcom_name from espresso_gold_test.\&quot;global\&quot;.mv_map_cla_com_grp_to_transaction_type where country_id = 1 and audio_video_flag in(&apos;Audio&apos;, &apos;Both&apos;) and product_class_dbid in ( select distinct product_class_dbid from t2 ) group by com_grp_dbid, com_grp_name, subcom_dbid, subcom_name ), trt2 as ( select com_grp_dbid, com_grp_name, subcom_dbid, subcom_name, transaction_type_dbid from espresso_gold_test.\&quot;global\&quot;.mv_map_cla_com_grp_to_transaction_type where country_id = 1 and audio_video_flag in(&apos;Audio&apos;, &apos;Both&apos;) and product_class_dbid in ( select distinct product_class_dbid from t2 ) group by com_grp_dbid, com_grp_name, subcom_dbid, subcom_name, transaction_type_dbid ), sales as ( select a.weighted_sales, null as bva_weighted_sales, c.com_grp_dbid, c.com_grp_name, c.subcom_dbid, c.subcom_name from espresso_gold_test.uk_audio.agg_item_sub_com a join trt c on a.subcom_dbid = c.subcom_dbid where a.date_dbid between 27209 and 27209 and a.item_dbid in ( select item_dbid from t2 ) ), t3 as ( select round(sum(weighted_sales)) as product_dus, round(sum(bva_weighted_sales)) as product_bva, com_grp_dbid, com_grp_name, subcom_dbid, subcom_name from sales group by com_grp_dbid, com_grp_name, subcom_dbid, subcom_name ), t4 as ( select round(sum(a.sales_index)) as market_dus, round(sum(a.bva_sales_index)) as market_bva, tt.com_grp_dbid, tt.com_grp_name, tt.subcom_dbid, tt.subcom_name from espresso_gold_test.default.fact_market_optimised a join trt2 tt on a.transaction_type_dbid = tt.transaction_type_dbid where a.product_class_dbid in ( select distinct product_class_dbid from t2 ) and a.date_dbid between 27209 and 27209 and a.country_id = 1 and a.audio_video_flag in (&apos;Audio&apos;, &apos;Both&apos;) group by tt.com_grp_dbid, tt.com_grp_name, tt.subcom_dbid, tt.subcom_name ), t5 as ( select sum(product_dus) as total_product_dus, sum(product_bva) as total_product_bva, sum(market_dus) as total_market_dus, sum(market_bva) as total_market_bva, t4.com_grp_dbid from t4 left join t3 on t3.com_grp_dbid = t4.com_grp_dbid and t3.subcom_dbid = t4.subcom_dbid group by t4.com_grp_dbid ) select t4.com_grp_dbid, t4.com_grp_name, ifnull(t4.market_dus, 0) as market_dus, ifnull(t3.product_dus, 0) as product_dus, ifnull(t4.market_bva, 0) as market_bva, ifnull(t3.product_bva, 0) as product_bva, t4.subcom_dbid as breakdown_id, t4.subcom_name as breakdown, (t4.market_dus / t5.total_market_dus) * 100 as \&quot;Market_DUSPercent\&quot;, (t4.market_bva / t5.total_market_bva) * 100 as \&quot;Market_BVAPercent\&quot;, (t3.product_dus / t5.total_product_dus) * 100 as \&quot;Product_DUSPercent\&quot;, (t3.product_bva / t5.total_product_bva) * 100 as \&quot;Product_BVAPercent\&quot;, ((t3.product_dus / t5.total_product_dus) * 100) /((t4.market_dus / t5.total_market_dus) * 100) as Score, ((t3.product_bva / t5.total_product_bva) * 100) /((t4.market_bva / t5.total_market_bva) * 100) as Score_bva from t3 right join t4 on t4.com_grp_dbid = t3.com_grp_dbid and t4.subcom_dbid = t3.subcom_dbid left join t5 on t4.com_grp_dbid = t5.com_grp_dbid&quot;,&#xd;
+  &quot;catalog&quot;: &quot;${CATALOG}&quot;,&#xd;
+  &quot;schema&quot;: &quot;${SCHEMA}&quot;&#xd;
+}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="Sec-Fetch-Mode" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Mode</stringProp>
+                <stringProp name="Header.value">cors</stringProp>
+              </elementProp>
+              <elementProp name="Referer" elementType="Header">
+                <stringProp name="Header.name">Referer</stringProp>
+                <stringProp name="Header.value">https://espresso-dev.kantar.com/</stringProp>
+              </elementProp>
+              <elementProp name="Sec-Fetch-Site" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Site</stringProp>
+                <stringProp name="Header.value">cross-site</stringProp>
+              </elementProp>
+              <elementProp name="Accept-Language" elementType="Header">
+                <stringProp name="Header.name">Accept-Language</stringProp>
+                <stringProp name="Header.value">en-US,en;q=0.9</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Headers" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Headers</stringProp>
+                <stringProp name="Header.value">Content-Type</stringProp>
+              </elementProp>
+              <elementProp name="Origin" elementType="Header">
+                <stringProp name="Header.name">Origin</stringProp>
+                <stringProp name="Header.value">https://espresso-dev.kantar.com</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Methods" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Methods</stringProp>
+                <stringProp name="Header.value">POST</stringProp>
+              </elementProp>
+              <elementProp name="Accept" elementType="Header">
+                <stringProp name="Header.name">Accept</stringProp>
+                <stringProp name="Header.value">application/json, text/plain, */*</stringProp>
+              </elementProp>
+              <elementProp name="Authorization" elementType="Header">
+                <stringProp name="Header.name">Authorization</stringProp>
+                <stringProp name="Header.value">Bearer ${__P(auth_token)}</stringProp>
+              </elementProp>
+              <elementProp name="cluster-name" elementType="Header">
+                <stringProp name="Header.name">cluster-name</stringProp>
+                <stringProp name="Header.value">${__P(cluster_name)}</stringProp>
+              </elementProp>
+              <elementProp name="Access-Control-Allow-Origin" elementType="Header">
+                <stringProp name="Header.name">Access-Control-Allow-Origin</stringProp>
+                <stringProp name="Header.value">*</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua</stringProp>
+                <stringProp name="Header.value">&quot;Not)A;Brand&quot;;v=&quot;8&quot;, &quot;Chromium&quot;;v=&quot;138&quot;, &quot;Google Chrome&quot;;v=&quot;138&quot;</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua-mobile" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua-mobile</stringProp>
+                <stringProp name="Header.value">?0</stringProp>
+              </elementProp>
+              <elementProp name="sec-ch-ua-platform" elementType="Header">
+                <stringProp name="Header.name">sec-ch-ua-platform</stringProp>
+                <stringProp name="Header.value">&quot;Windows&quot;</stringProp>
+              </elementProp>
+              <elementProp name="Content-Type" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/json</stringProp>
+              </elementProp>
+              <elementProp name="Accept-Encoding" elementType="Header">
+                <stringProp name="Header.name">Accept-Encoding</stringProp>
+                <stringProp name="Header.value">gzip, deflate, br, zstd</stringProp>
+              </elementProp>
+              <elementProp name="User-Agent" elementType="Header">
+                <stringProp name="Header.name">User-Agent</stringProp>
+                <stringProp name="Header.value">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36</stringProp>
+              </elementProp>
+              <elementProp name="Sec-Fetch-Dest" elementType="Header">
+                <stringProp name="Header.name">Sec-Fetch-Dest</stringProp>
+                <stringProp name="Header.value">empty</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Response Assertion" enabled="false">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message"></stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>false</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>false</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>true</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <hostname>true</hostname>
+            <threadCounts>true</threadCounts>
+            <sampleCount>true</sampleCount>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+      </ResultCollector>
+      <hashTree/>
+      <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector" testname="Aggregate Report">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename">${REPORT_PATH}/AggregateReport_${START_TIME}.csv</stringProp>
+      </ResultCollector>
+      <hashTree/>
+      <kg.apc.jmeter.vizualizers.CorrectedResultCollector guiclass="kg.apc.jmeter.vizualizers.ThreadsStateOverTimeGui" testclass="kg.apc.jmeter.vizualizers.CorrectedResultCollector" testname="jp@gc - Active Threads Over Time" enabled="false">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+        <longProp name="interval_grouping">500</longProp>
+        <boolProp name="graph_aggregated">false</boolProp>
+        <stringProp name="include_sample_labels"></stringProp>
+        <stringProp name="exclude_sample_labels"></stringProp>
+        <stringProp name="start_offset"></stringProp>
+        <stringProp name="end_offset"></stringProp>
+        <boolProp name="include_checkbox_state">false</boolProp>
+        <boolProp name="exclude_checkbox_state">false</boolProp>
+      </kg.apc.jmeter.vizualizers.CorrectedResultCollector>
+      <hashTree/>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

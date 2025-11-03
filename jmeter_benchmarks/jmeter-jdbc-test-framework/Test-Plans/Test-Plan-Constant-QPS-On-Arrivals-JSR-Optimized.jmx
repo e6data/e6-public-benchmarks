@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Test-Plan-Constant-QPS-On-Arrivals-JSR">
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="JMETER_HOME" elementType="Argument">
+            <stringProp name="Argument.name">JMETER_HOME</stringProp>
+            <stringProp name="Argument.value">${__P(JMETER_HOME)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="HOSTNAME" elementType="Argument">
+            <stringProp name="Argument.name">HOSTNAME</stringProp>
+            <stringProp name="Argument.value">${__P(HOSTNAME,localhost)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PORT" elementType="Argument">
+            <stringProp name="Argument.name">PORT</stringProp>
+            <stringProp name="Argument.value">${__P(PORT,80)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="USER" elementType="Argument">
+            <stringProp name="Argument.name">USER</stringProp>
+            <stringProp name="Argument.value">${__P(USER,admin)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PASSWORD" elementType="Argument">
+            <stringProp name="Argument.name">PASSWORD</stringProp>
+            <stringProp name="Argument.value">${__P(PASSWORD,admin)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="CATALOG" elementType="Argument">
+            <stringProp name="Argument.name">CATALOG</stringProp>
+            <stringProp name="Argument.value">${__P(CATALOG,glue)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DATABASE" elementType="Argument">
+            <stringProp name="Argument.name">DATABASE</stringProp>
+            <stringProp name="Argument.value">${__P(DATABASE,tpcds_1000_delta)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="CONNECTION_STRING" elementType="Argument">
+            <stringProp name="Argument.name">CONNECTION_STRING</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+            <stringProp name="Argument.value">${__P(CONNECTION_STRING,&quot;jdbc:e6data://${HOSTNAME}:${PORT}/database=${DATABASE}&amp;catalog=${CATALOG})}</stringProp>
+          </elementProp>
+          <elementProp name="QUERY_PATH" elementType="Argument">
+            <stringProp name="Argument.name">QUERY_PATH</stringProp>
+            <stringProp name="Argument.value">${__P(QUERY_PATH,test_query.csv)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="CONCURRENT_QUERY_COUNT" elementType="Argument">
+            <stringProp name="Argument.name">CONCURRENT_QUERY_COUNT</stringProp>
+            <stringProp name="Argument.value">${__P(CONCURRENT_QUERY_COUNT,10)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="HOLD_PERIOD" elementType="Argument">
+            <stringProp name="Argument.name">HOLD_PERIOD</stringProp>
+            <stringProp name="Argument.value">${__P(HOLD_PERIOD,10)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="QUERY_TIMEOUT" elementType="Argument">
+            <stringProp name="Argument.name">QUERY_TIMEOUT</stringProp>
+            <stringProp name="Argument.value">${__P(QUERY_TIMEOUT,10)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="LIMIT_RESULTSET" elementType="Argument">
+            <stringProp name="Argument.name">LIMIT_RESULTSET</stringProp>
+            <stringProp name="Argument.value">${__P(LIMIT_RESULTSET,100)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="MAX_CONCURRANCY" elementType="Argument">
+            <stringProp name="Argument.name">MAX_CONCURRANCY</stringProp>
+            <stringProp name="Argument.value">${__P(MAX_CONCURRANCY,10)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="REPORT_PATH" elementType="Argument">
+            <stringProp name="Argument.name">REPORT_PATH</stringProp>
+            <stringProp name="Argument.value">${__P(REPORT_PATH,reports)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="DRIVER_CLASS" elementType="Argument">
+            <stringProp name="Argument.name">DRIVER_CLASS</stringProp>
+            <stringProp name="Argument.value">${__P(DRIVER_CLASS,&quot;io.e6.jdbc.driver.E6Driver&quot;)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="START_TIME" elementType="Argument">
+            <stringProp name="Argument.name">START_TIME</stringProp>
+            <stringProp name="Argument.value">${__P(START_TIME,${__time(yyyyMMdd-HHmmss)})}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="RAMP_UP_TIME" elementType="Argument">
+            <stringProp name="Argument.name">RAMP_UP_TIME</stringProp>
+            <stringProp name="Argument.value">${__P(RAMP_UP_TIME,10)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="RAMP_UP_STEPS" elementType="Argument">
+            <stringProp name="Argument.name">RAMP_UP_STEPS</stringProp>
+            <stringProp name="Argument.value">${__P(RAMP_UP_STEPS,3)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="QPS" elementType="Argument">
+            <stringProp name="Argument.value">${__P(QPS,3)}</stringProp>
+            <stringProp name="Argument.name">QPS</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="RECYCLE_ON_EOF" elementType="Argument">
+            <stringProp name="Argument.name">RECYCLE_ON_EOF</stringProp>
+            <stringProp name="Argument.value">${__P(RECYCLE_ON_EOF,false)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="RANDOM_ORDER" elementType="Argument">
+            <stringProp name="Argument.name">RANDOM_ORDER</stringProp>
+            <stringProp name="Argument.value">${__P(RANDOM_ORDER,false)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+    </TestPlan>
+    <hashTree>
+      <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector" testname="Aggregate Report">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>false</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>false</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename">${REPORT_PATH}/AggregateReport_${START_TIME}.csv</stringProp>
+      </ResultCollector>
+      <hashTree/>
+      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>false</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>false</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename">${REPORT_PATH}/SummaryReport_${START_TIME}.csv</stringProp>
+      </ResultCollector>
+      <hashTree/>
+      <JDBCDataSource guiclass="TestBeanGUI" testclass="JDBCDataSource" testname="JDBC Connection Configuration" enabled="true">
+        <boolProp name="autocommit">true</boolProp>
+        <stringProp name="checkQuery"></stringProp>
+        <stringProp name="connectionAge">300000</stringProp>
+        <stringProp name="dataSource">jdbcConfig</stringProp>
+        <stringProp name="dbUrl">${CONNECTION_STRING}</stringProp>
+        <stringProp name="driver">${DRIVER_CLASS}</stringProp>
+        <boolProp name="keepAlive">true</boolProp>
+        <stringProp name="password">${PASSWORD}</stringProp>
+        <stringProp name="poolMax">10</stringProp>
+        <stringProp name="timeout">30000</stringProp>
+        <stringProp name="transactionIsolation">DEFAULT</stringProp>
+        <stringProp name="trimInterval">300000</stringProp>
+        <stringProp name="username">${USER}</stringProp>
+        <boolProp name="preinit">true</boolProp>
+        <stringProp name="initQuery"></stringProp>
+        <stringProp name="connectionProperties"></stringProp>
+      </JDBCDataSource>
+      <hashTree/>
+      <ConfigTestElement guiclass="PropertyControlGui" testclass="ConfigTestElement" testname="Property Display" enabled="true"/>
+      <hashTree/>
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="setUp Thread Group" enabled="true">
+        <intProp name="ThreadGroup.num_threads">1</intProp>
+        <intProp name="ThreadGroup.ramp_time">1</intProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <stringProp name="LoopController.loops">1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </SetupThreadGroup>
+      <hashTree>
+        <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Load and Parse Query File">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="filename">JSR_scripts/query_file_loader.groovy</stringProp>
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="script"></stringProp>
+        </JSR223PreProcessor>
+        <hashTree/>
+        <DebugSampler guiclass="TestBeanGUI" testclass="DebugSampler" testname="Setup-Query-Loader-Trigger">
+          <boolProp name="displayJMeterProperties">false</boolProp>
+          <boolProp name="displayJMeterVariables">false</boolProp>
+          <boolProp name="displaySystemProperties">false</boolProp>
+        </DebugSampler>
+        <hashTree/>
+      </hashTree>
+      <com.blazemeter.jmeter.threads.arrivals.ArrivalsThreadGroup guiclass="com.blazemeter.jmeter.threads.arrivals.ArrivalsThreadGroupGui" testclass="com.blazemeter.jmeter.threads.arrivals.ArrivalsThreadGroup" testname="Constant Queries as per QPS on Arrivals" enabled="true">
+        <elementProp name="ThreadGroup.main_controller" elementType="com.blazemeter.jmeter.control.VirtualUserController"/>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <stringProp name="TargetLevel">${QPS}</stringProp>
+        <stringProp name="RampUp">${RAMP_UP_TIME}</stringProp>
+        <stringProp name="Steps">${RAMP_UP_STEPS}</stringProp>
+        <stringProp name="Hold">${HOLD_PERIOD}</stringProp>
+        <stringProp name="LogFilename"></stringProp>
+        <stringProp name="Iterations"></stringProp>
+        <stringProp name="ConcurrencyLimit">${MAX_CONCURRANCY}</stringProp>
+        <stringProp name="Unit">S</stringProp>
+        <stringProp name="TestPlan.comments">This group will send queries as per the QPS defined in the test.properties file using JSR223 for query selection. Multi-line queries with comments are supported. For example If QPS=3, it will send 3 Queries per second. If Ramp up time is mentioned, it will take that much time to reach QPS. If Ramp up steps is mentioned, it will take that many steps to reach QPS. Test will hold the load for the mentioned Hold time. Hold time is after ramp up time, so Total duration = Ramp up time + Hold time</stringProp>
+        <boolProp name="same_user_on_next_iteration">true</boolProp>
+      </com.blazemeter.jmeter.threads.arrivals.ArrivalsThreadGroup>
+      <hashTree>
+        <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Query Executor (Selection + EOF Handling)">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="filename">JSR_scripts/query_executor.groovy</stringProp>
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="script"></stringProp>
+        </JSR223PreProcessor>
+        <hashTree/>
+        <JDBCSampler guiclass="TestBeanGUI" testclass="JDBCSampler" testname="${QUERY_ALIAS}">
+          <stringProp name="dataSource">jdbcConfig</stringProp>
+          <stringProp name="query">${QUERY}</stringProp>
+          <stringProp name="queryArguments"></stringProp>
+          <stringProp name="queryArgumentsTypes"></stringProp>
+          <stringProp name="queryType">Select Statement</stringProp>
+          <stringProp name="resultVariable">result</stringProp>
+          <stringProp name="variableNames">col1</stringProp>
+          <stringProp name="queryTimeout">${QUERY_TIMEOUT}</stringProp>
+          <stringProp name="resultSetMaxRows">${LIMIT_RESULTSET}</stringProp>
+          <stringProp name="resultSetHandler">Store as Object</stringProp>
+        </JDBCSampler>
+        <hashTree/>
+      </hashTree>
+      <PostThreadGroup guiclass="PostThreadGroupGui" testclass="PostThreadGroup" testname="tearDown Thread Group" enabled="false">
+        <intProp name="ThreadGroup.num_threads">1</intProp>
+        <intProp name="ThreadGroup.ramp_time">1</intProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
+          <stringProp name="LoopController.loops">1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </PostThreadGroup>
+      <hashTree/>
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree" enabled="false">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>false</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>false</responseData>
+            <samplerData>false</samplerData>
+            <xml>false</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders>
+            <requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+      </ResultCollector>
+      <hashTree/>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>
