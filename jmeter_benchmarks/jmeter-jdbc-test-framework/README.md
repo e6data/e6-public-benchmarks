@@ -28,69 +28,12 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 
 ## Prerequisites
 
-### Java 17 should be installed
-
-#### Steps to install java - Option 1 using package manager
-
-**Amazon Linux 2:**
+### Take a git checkout of this repo and run the setup_jmeter script
+  This setup script installs the apache jmeter and other dependencies in the system. It will download and do all the required setup.
+  
 ```bash
-sudo amazon-linux-extras enable corretto8
-sudo yum install java-17-amazon-corretto-devel
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install openjdk-17-jdk
-```
-
-#### Steps to install java - Option 2: Manual Installation
-```bash
-wget https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz
-tar -xvf openjdk-17.0.2_linux-x64_bin.tar.gz
-sudo mv jdk-17.0.2 /usr/local/
-```
-
-#### Set the JAVA_HOME:
-```bash
-java -version
-export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto.aarch64
-echo "export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto.aarch64" >> ~/.bashrc
-source ~/.bashrc
-```
-
-### jq Installation
-
-**Amazon Linux:**
-```bash
-# For Amazon Linux 2:
-sudo yum install -y jq
-
-# For Amazon Linux 2023:
-sudo dnf install -y jq
-
-# Verify:
-jq -V
-```
-
-### Install git - If not installed
-```
-sudo yum install git
-```
-
-### Clone the repo
-```
-git clone https://github.com/george-pc/jmeter-jdbc-test-framework.git
-```
-
-### change to the cloned directory
-```
-cd jmeter-jdbc-test-plans/
-```
-
-### create a reports directory if not exists
-```
-mkdir reports
+cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
+./setup_jmeter.sh
 ```
 
 # Running Tests using standard jmeter CLI command.
@@ -108,6 +51,10 @@ cp sample_test.properties <YOUR_TEST>_test.properties```
 ```
 
 ### Create/copy the queries to the data_files folder as a .csv file
+  The queries are expected in a csv format with 2 columns QUERY_ALIAS,QUERY
+  The csv file should be single line csv. Newline characters should not be there in the csv file
+  If at all required, you can use convert_multiline_csv.sh script in utilities folder to convert multi line csv to single line csv. 
+  
 ```bash
 cd data_files
 cp <YOUR_TEST_QUERIES>.csv data_files
