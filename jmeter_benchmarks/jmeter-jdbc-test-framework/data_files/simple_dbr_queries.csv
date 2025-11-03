@@ -1,0 +1,2 @@
+Q0,"SELECT cc.* FROM hive_metastore.tpcds_1000_delta.call_center AS cc LIMIT 10;"
+Q2,"select * from call_center limit 10;"
