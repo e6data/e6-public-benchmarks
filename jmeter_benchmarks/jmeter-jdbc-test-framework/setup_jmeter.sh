@@ -262,7 +262,42 @@ else
 fi
 
 echo ""
-echo "Step 5: Creating reports directory..."
+echo "Step 5: Configuring minimal logging..."
+
+# Configure log4j2 to reduce logging verbosity
+LOG4J_CONFIG="${JMETER_DIR}/bin/log4j2.xml"
+if [ -f "$LOG4J_CONFIG" ]; then
+    # Backup original config
+    cp "$LOG4J_CONFIG" "$LOG4J_CONFIG.backup"
+
+    # Set root logger to WARN level (was INFO by default)
+    sed -i.tmp 's/<Root level="info">/<Root level="warn">/' "$LOG4J_CONFIG" || \
+    sed -i '' 's/<Root level="info">/<Root level="warn">/' "$LOG4J_CONFIG" 2>/dev/null
+
+    # Set JMeter core loggers to WARN
+    sed -i.tmp 's/<Logger name="org.apache.jmeter" level="info"/<Logger name="org.apache.jmeter" level="warn"/' "$LOG4J_CONFIG" || \
+    sed -i '' 's/<Logger name="org.apache.jmeter" level="info"/<Logger name="org.apache.jmeter" level="warn"/' "$LOG4J_CONFIG" 2>/dev/null
+
+    # Clean up temp files
+    rm -f "$LOG4J_CONFIG.tmp" 2>/dev/null
+
+    echo "  ✓ Configured JMeter logging to WARN level (reduces log file size)"
+else
+    echo "  WARNING: log4j2.xml not found, skipping logging configuration"
+fi
+
+# Configure jmeter.properties for minimal dashboard generation
+JMETER_PROPS="${JMETER_DIR}/bin/jmeter.properties"
+if [ -f "$JMETER_PROPS" ]; then
+    # Add comment about dashboard generation
+    echo "" >> "$JMETER_PROPS"
+    echo "# Dashboard generation disabled by default (can be enabled via -e -o flags)" >> "$JMETER_PROPS"
+    echo "# To enable: add '-e -o /path/to/dashboard' to jmeter command" >> "$JMETER_PROPS"
+    echo "  ✓ Added dashboard generation notes to jmeter.properties"
+fi
+
+echo ""
+echo "Step 6: Creating reports directory..."
 mkdir -p "${SCRIPT_DIR}/reports"
 
 echo ""

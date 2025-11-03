@@ -235,6 +235,16 @@ for file in "$TEST_PLAN" "$TEST_PROPERTIES" "$CONNECTION_PROPERTIES"; do
 done
 
 
+# Check if dashboard generation is enabled (default: false to save disk space)
+GENERATE_DASHBOARD=${GENERATE_DASHBOARD:-false}
+if [[ "$GENERATE_DASHBOARD" == "true" ]]; then
+    DASHBOARD_FLAGS="-e -o $REPORT_PATH/dashboard_${START_TIME}"
+    echo "Dashboard generation: ENABLED (will create HTML dashboard in reports/)"
+else
+    DASHBOARD_FLAGS=""
+    echo "Dashboard generation: DISABLED (set GENERATE_DASHBOARD=true in test properties to enable)"
+fi
+
 # Start the Jmeter run
 
 "$JMETER_BIN/jmeter" -n -t "$TEST_PLAN"\
@@ -243,7 +253,7 @@ done
     -JSTART_TIME="$START_TIME" \
     -JQUERY_PATH="$QUERIES_FILE" \
     -l "$JMETER_RESULT_FILE" \
-    -e -o "$REPORT_PATH/dashboard_${START_TIME}" \
+    $DASHBOARD_FLAGS \
     -j "$JMETER_LOG" 2>&1 | tee "$CONSOLE_LOG"
 
 # Extract final summary line
@@ -260,7 +270,11 @@ fi
 END_TIME=$(date +%Y%m%d_%H%M%S)
 
 # Capture JMeter CLI command used (sanitize any passwords)
-JMETER_CLI_COMMAND="jmeter -n -t $(basename "$TEST_PLAN") -q $(basename "$TEST_PROPERTIES") -q $(basename "$CONNECTION_PROPERTIES") -JSTART_TIME=$START_TIME -JQUERY_PATH=$(basename "$QUERIES_FILE") -l $(basename "$JMETER_RESULT_FILE") -e -o dashboard_${START_TIME} -j jmeter_${START_TIME}.log"
+if [[ "$GENERATE_DASHBOARD" == "true" ]]; then
+    JMETER_CLI_COMMAND="jmeter -n -t $(basename "$TEST_PLAN") -q $(basename "$TEST_PROPERTIES") -q $(basename "$CONNECTION_PROPERTIES") -JSTART_TIME=$START_TIME -JQUERY_PATH=$(basename "$QUERIES_FILE") -l $(basename "$JMETER_RESULT_FILE") -e -o dashboard_${START_TIME} -j jmeter_${START_TIME}.log"
+else
+    JMETER_CLI_COMMAND="jmeter -n -t $(basename "$TEST_PLAN") -q $(basename "$TEST_PROPERTIES") -q $(basename "$CONNECTION_PROPERTIES") -JSTART_TIME=$START_TIME -JQUERY_PATH=$(basename "$QUERIES_FILE") -l $(basename "$JMETER_RESULT_FILE") -j jmeter_${START_TIME}.log"
+fi
 
 # Capture all input file absolute paths
 INPUT_FILES_JSON=$(jq -n \
