@@ -1,0 +1,3 @@
+Q1,"select count(*) from call_center"
+Q2,"select * from call_center limit 10"
+
