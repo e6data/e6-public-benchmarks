@@ -247,7 +247,57 @@ tar -xzf "${JMETER_ARCHIVE}"
 rm "${JMETER_ARCHIVE}"
 
 echo ""
-echo "Step 4: Installing custom JDBC drivers..."
+echo "Step 4: Installing JMeter plugins..."
+
+# Download JMeter Plugins Manager
+PLUGINS_MANAGER_URL="https://jmeter-plugins.org/get/"
+PLUGINS_MANAGER_JAR="${JMETER_DIR}/lib/ext/jmeter-plugins-manager-1.10.jar"
+
+echo "  Downloading JMeter Plugins Manager..."
+if command_exists wget; then
+    wget -O "${PLUGINS_MANAGER_JAR}" "${PLUGINS_MANAGER_URL}" || {
+        echo "  WARNING: Failed to download Plugins Manager"
+    }
+elif command_exists curl; then
+    curl -L -o "${PLUGINS_MANAGER_JAR}" "${PLUGINS_MANAGER_URL}" || {
+        echo "  WARNING: Failed to download Plugins Manager"
+    }
+fi
+
+# Download required Blazemeter plugins directly
+echo "  Downloading Blazemeter Custom Thread Groups plugin..."
+CASUTG_URL="https://repo1.maven.org/maven2/kg/apc/jmeter-plugins-casutg/2.10/jmeter-plugins-casutg-2.10.jar"
+CASUTG_JAR="${JMETER_DIR}/lib/ext/jmeter-plugins-casutg-2.10.jar"
+
+if command_exists wget; then
+    wget -O "${CASUTG_JAR}" "${CASUTG_URL}" || {
+        echo "  WARNING: Failed to download Custom Thread Groups plugin"
+    }
+elif command_exists curl; then
+    curl -L -o "${CASUTG_JAR}" "${CASUTG_URL}" || {
+        echo "  WARNING: Failed to download Custom Thread Groups plugin"
+    }
+fi
+
+# Download common jmeter-plugins dependency
+echo "  Downloading JMeter Plugins Common library..."
+COMMON_URL="https://repo1.maven.org/maven2/kg/apc/jmeter-plugins-cmn-jmeter/0.7/jmeter-plugins-cmn-jmeter-0.7.jar"
+COMMON_JAR="${JMETER_DIR}/lib/ext/jmeter-plugins-cmn-jmeter-0.7.jar"
+
+if command_exists wget; then
+    wget -O "${COMMON_JAR}" "${COMMON_URL}" || {
+        echo "  WARNING: Failed to download Plugins Common library"
+    }
+elif command_exists curl; then
+    curl -L -o "${COMMON_JAR}" "${COMMON_URL}" || {
+        echo "  WARNING: Failed to download Plugins Common library"
+    }
+fi
+
+echo "  ✓ JMeter plugins installed"
+
+echo ""
+echo "Step 5: Installing custom JDBC drivers..."
 
 # Create jdbc_drivers directory if it doesn't exist
 JDBC_DRIVERS_DIR="${SCRIPT_DIR}/jdbc_drivers"
@@ -262,7 +312,7 @@ else
 fi
 
 echo ""
-echo "Step 5: Configuring minimal logging..."
+echo "Step 6: Configuring minimal logging..."
 
 # Configure log4j2 to reduce logging verbosity
 LOG4J_CONFIG="${JMETER_DIR}/bin/log4j2.xml"
@@ -297,7 +347,7 @@ if [ -f "$JMETER_PROPS" ]; then
 fi
 
 echo ""
-echo "Step 6: Creating reports directory..."
+echo "Step 7: Creating reports directory..."
 mkdir -p "${SCRIPT_DIR}/reports"
 
 echo ""
