@@ -215,36 +215,36 @@ else
     install_git
 fi
 
-# Check if JMeter is already set up
+# Check if JMeter is already installed
+JMETER_ALREADY_INSTALLED=false
 if [ -d "${SCRIPT_DIR}/${JMETER_DIR}/lib" ] && [ -f "${SCRIPT_DIR}/${JMETER_DIR}/bin/jmeter" ]; then
     echo "✓ JMeter ${JMETER_VERSION} is already installed"
     echo ""
-    echo "To reinstall, run: rm -rf ${JMETER_DIR} && ./setup_jmeter.sh"
-    exit 0
-fi
-
-echo "=================================================="
-echo "Installing Apache JMeter ${JMETER_VERSION}"
-echo "=================================================="
-echo ""
-
-echo "Step 2: Downloading Apache JMeter ${JMETER_VERSION}..."
-echo "URL: ${JMETER_URL}"
-echo ""
-
-if command_exists wget; then
-    wget "${JMETER_URL}" || { echo "ERROR: Download failed"; exit 1; }
-elif command_exists curl; then
-    curl -L -# -O "${JMETER_URL}" || { echo "ERROR: Download failed"; exit 1; }
+    JMETER_ALREADY_INSTALLED=true
 else
-    echo "ERROR: Neither wget nor curl found. Please install one of them."
-    exit 1
-fi
+    echo "=================================================="
+    echo "Installing Apache JMeter ${JMETER_VERSION}"
+    echo "=================================================="
+    echo ""
 
-echo ""
-echo "Step 3: Extracting JMeter..."
-tar -xzf "${JMETER_ARCHIVE}"
-rm "${JMETER_ARCHIVE}"
+    echo "Step 2: Downloading Apache JMeter ${JMETER_VERSION}..."
+    echo "URL: ${JMETER_URL}"
+    echo ""
+
+    if command_exists wget; then
+        wget "${JMETER_URL}" || { echo "ERROR: Download failed"; exit 1; }
+    elif command_exists curl; then
+        curl -L -# -O "${JMETER_URL}" || { echo "ERROR: Download failed"; exit 1; }
+    else
+        echo "ERROR: Neither wget nor curl found. Please install one of them."
+        exit 1
+    fi
+
+    echo ""
+    echo "Step 3: Extracting JMeter..."
+    tar -xzf "${JMETER_ARCHIVE}"
+    rm "${JMETER_ARCHIVE}"
+fi
 
 echo ""
 echo "Step 4: Installing JMeter plugins..."
@@ -253,70 +253,86 @@ echo "Step 4: Installing JMeter plugins..."
 PLUGINS_MANAGER_URL="https://jmeter-plugins.org/get/"
 PLUGINS_MANAGER_JAR="${JMETER_DIR}/lib/ext/jmeter-plugins-manager-1.10.jar"
 
-echo "  Downloading JMeter Plugins Manager..."
-if command_exists wget; then
-    wget -O "${PLUGINS_MANAGER_JAR}" "${PLUGINS_MANAGER_URL}" || {
-        echo "  WARNING: Failed to download Plugins Manager"
-    }
-elif command_exists curl; then
-    curl -L -o "${PLUGINS_MANAGER_JAR}" "${PLUGINS_MANAGER_URL}" || {
-        echo "  WARNING: Failed to download Plugins Manager"
-    }
+if [ ! -f "${PLUGINS_MANAGER_JAR}" ]; then
+    echo "  Downloading JMeter Plugins Manager..."
+    if command_exists wget; then
+        wget -O "${PLUGINS_MANAGER_JAR}" "${PLUGINS_MANAGER_URL}" || {
+            echo "  WARNING: Failed to download Plugins Manager"
+        }
+    elif command_exists curl; then
+        curl -L -o "${PLUGINS_MANAGER_JAR}" "${PLUGINS_MANAGER_URL}" || {
+            echo "  WARNING: Failed to download Plugins Manager"
+        }
+    fi
+else
+    echo "  ✓ JMeter Plugins Manager already installed"
 fi
 
 # Download required Blazemeter plugins directly
-echo "  Downloading Blazemeter Custom Thread Groups plugin..."
 CASUTG_URL="https://repo1.maven.org/maven2/kg/apc/jmeter-plugins-casutg/2.10/jmeter-plugins-casutg-2.10.jar"
 CASUTG_JAR="${JMETER_DIR}/lib/ext/jmeter-plugins-casutg-2.10.jar"
 
-if command_exists wget; then
-    wget -O "${CASUTG_JAR}" "${CASUTG_URL}" || {
-        echo "  WARNING: Failed to download Custom Thread Groups plugin"
-    }
-elif command_exists curl; then
-    curl -L -o "${CASUTG_JAR}" "${CASUTG_URL}" || {
-        echo "  WARNING: Failed to download Custom Thread Groups plugin"
-    }
+if [ ! -f "${CASUTG_JAR}" ]; then
+    echo "  Downloading Blazemeter Custom Thread Groups plugin..."
+    if command_exists wget; then
+        wget -O "${CASUTG_JAR}" "${CASUTG_URL}" || {
+            echo "  WARNING: Failed to download Custom Thread Groups plugin"
+        }
+    elif command_exists curl; then
+        curl -L -o "${CASUTG_JAR}" "${CASUTG_URL}" || {
+            echo "  WARNING: Failed to download Custom Thread Groups plugin"
+        }
+    fi
+else
+    echo "  ✓ Blazemeter Custom Thread Groups plugin already installed"
 fi
 
 # Download common jmeter-plugins dependency
-echo "  Downloading JMeter Plugins Common library..."
 COMMON_URL="https://repo1.maven.org/maven2/kg/apc/jmeter-plugins-cmn-jmeter/0.7/jmeter-plugins-cmn-jmeter-0.7.jar"
 COMMON_JAR="${JMETER_DIR}/lib/ext/jmeter-plugins-cmn-jmeter-0.7.jar"
 
-if command_exists wget; then
-    wget -O "${COMMON_JAR}" "${COMMON_URL}" || {
-        echo "  WARNING: Failed to download Plugins Common library"
-    }
-elif command_exists curl; then
-    curl -L -o "${COMMON_JAR}" "${COMMON_URL}" || {
-        echo "  WARNING: Failed to download Plugins Common library"
-    }
+if [ ! -f "${COMMON_JAR}" ]; then
+    echo "  Downloading JMeter Plugins Common library..."
+    if command_exists wget; then
+        wget -O "${COMMON_JAR}" "${COMMON_URL}" || {
+            echo "  WARNING: Failed to download Plugins Common library"
+        }
+    elif command_exists curl; then
+        curl -L -o "${COMMON_JAR}" "${COMMON_URL}" || {
+            echo "  WARNING: Failed to download Plugins Common library"
+        }
+    fi
+else
+    echo "  ✓ JMeter Plugins Common library already installed"
 fi
 
-echo "  ✓ JMeter plugins installed"
+echo "  ✓ JMeter plugins check complete"
 
 echo ""
 echo "Step 5: Installing custom JDBC drivers..."
 
 # Download Databricks JDBC driver from Maven Central
-echo "  Downloading Databricks JDBC driver..."
 DBR_JDBC_VERSION="2.6.36"
 DBR_JDBC_URL="https://repo1.maven.org/maven2/com/databricks/databricks-jdbc/${DBR_JDBC_VERSION}/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
 DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
 
-if command_exists wget; then
-    wget -O "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
-        echo "  WARNING: Failed to download Databricks JDBC driver"
-    }
-elif command_exists curl; then
-    curl -L -o "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
-        echo "  WARNING: Failed to download Databricks JDBC driver"
-    }
-fi
+if [ ! -f "${DBR_JDBC_JAR}" ]; then
+    echo "  Downloading Databricks JDBC driver ${DBR_JDBC_VERSION}..."
+    if command_exists wget; then
+        wget -O "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
+            echo "  WARNING: Failed to download Databricks JDBC driver"
+        }
+    elif command_exists curl; then
+        curl -L -o "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
+            echo "  WARNING: Failed to download Databricks JDBC driver"
+        }
+    fi
 
-if [ -f "${DBR_JDBC_JAR}" ]; then
-    echo "  ✓ Databricks JDBC driver installed"
+    if [ -f "${DBR_JDBC_JAR}" ]; then
+        echo "  ✓ Databricks JDBC driver installed"
+    fi
+else
+    echo "  ✓ Databricks JDBC driver already installed"
 fi
 
 # Copy custom JDBC drivers from jdbc_drivers/ directory
