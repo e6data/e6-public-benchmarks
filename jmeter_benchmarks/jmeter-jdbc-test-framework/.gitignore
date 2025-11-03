@@ -4,11 +4,8 @@
 # Log file
 *.log
 
-#ignore jmeter docs and logs
-apache-jmeter-5.6.3/printable_docs/
-apache-jmeter-5.6.3/docs
-apache-jmeter-5.6.3/*.log
-apache-jmeter-5.6.3/backups
+#ignore entire jmeter installation (downloaded via setup script)
+apache-jmeter-5.6.3/
 
 #ignore reports
 reports
