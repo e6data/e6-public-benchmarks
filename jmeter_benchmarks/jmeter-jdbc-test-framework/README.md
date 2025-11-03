@@ -28,72 +28,13 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 
 ## Prerequisites
 
-### Java 17 should be installed
+#### Take checkout of this repo and run the setup_jmeter.sh script. It will install Apache Jmeter and its dependencies
 
-#### Steps to install java - Option 1 using package manager
-
-**Amazon Linux 2:**
 ```bash
-sudo amazon-linux-extras enable corretto8
-sudo yum install java-17-amazon-corretto-devel
+cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
+./setup_jmeter.sh
 ```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install openjdk-17-jdk
-```
-
-#### Steps to install java - Option 2: Manual Installation
-```bash
-wget https://download.java.net/java/GA/jdk17.0.2/dfd4a8d0985749f896bed50d7138ee7f/8/GPL/openjdk-17.0.2_linux-x64_bin.tar.gz
-tar -xvf openjdk-17.0.2_linux-x64_bin.tar.gz
-sudo mv jdk-17.0.2 /usr/local/
-```
-
-#### Set the JAVA_HOME:
-```bash
-java -version
-export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto.aarch64
-echo "export JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto.aarch64" >> ~/.bashrc
-source ~/.bashrc
-```
-
-### jq Installation
-
-**Amazon Linux:**
-```bash
-# For Amazon Linux 2:
-sudo yum install -y jq
-
-# For Amazon Linux 2023:
-sudo dnf install -y jq
-
-# Verify:
-jq -V
-```
-
-### Install git - If not installed
-```
-sudo yum install git
-```
-
-### Clone the repo
-```
-git clone https://github.com/george-pc/jmeter-jdbc-test-framework.git
-```
-
-### change to the cloned directory
-```
-cd jmeter-jdbc-test-plans/
-```
-
-### create a reports directory if not exists
-```
-mkdir reports
-```
-
-# Running Tests using standard jmeter CLI command.
+# Steps to run the Apache Jmeter using standard jmeter CLI command.
 ### Create the connection properties files with the required connection using the template/sample properties file
 
 ```bash
@@ -121,11 +62,11 @@ $JMETER_BIN/jmeter -n -t "$TEST_PLAN" -l "$REPORT_PATH/results.jtl" -q "$TEST_PR
 
 ## Example - Run Jmeter in GUI mode:
 ```bash
-./apache-jmeter-5.6.3/bin/jmeter -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx -q connection_properties/sample_connection.properties -q test_properties/sample_test.properties
+./apache-jmeter-5.6.3/bin/jmeter -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx -q connection_properties/sample_connection.properties -q test_properties/sample_test.properties -JQUERY_PATH=data_files/E6_TPCDS_1TB_Optimised_51_Jmeter_queries.csv
 ```
 ## Example - Run Jmeter in Non GUI mode:
 ```bash
-./apache-jmeter-5.6.3/bin/jmeter -n -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx -q connection_properties/sample_connection.properties  -q test_properties/sample_test.properties
+./apache-jmeter-5.6.3/bin/jmeter -n -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx -q connection_properties/sample_connection.properties  -q test_properties/sample_test.properties -JQUERY_PATH=data_files/E6_TPCDS_1TB_Optimised_51_Jmeter_queries.csv
 ```
 
 
