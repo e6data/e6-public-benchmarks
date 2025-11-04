@@ -68,7 +68,7 @@ class JMeterS3Path:
 
     @property
     def engine(self) -> str:
-        """Get engine name (e6data, databricks, etc.)."""
+        """Get engine name (e6data, dbr, etc.)."""
         return self.metadata['engine']
 
     @property
@@ -278,7 +278,7 @@ def normalize_query_name(query_name: str, source_engine: str) -> str:
     Normalize query names between different engines.
 
     E6Data format: query-2-TPCDS-2
-    Databricks format: TPCDS-2
+    DBR format: TPCDS-2
     """
     # If already in TPCDS-X format, return as-is
     if query_name.startswith('TPCDS-'):
@@ -326,7 +326,7 @@ def create_query_mapping(stats1: Dict, stats2: Dict, engine1: str, engine2: str)
 
 if __name__ == '__main__':
     # Test S3 path parsing
-    test_path = "s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/"
+    test_path = "s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/"
 
     try:
         parsed = JMeterS3Path(test_path)

@@ -7,7 +7,7 @@ within a specific engine/cluster_size/benchmark configuration.
 
 Usage:
     python utilities/summarize_concurrency_runs.py \
-        --engine databricks \
+        --engine dbr \
         --cluster-size M \
         --benchmark tpcds_29_1tb
 
@@ -306,8 +306,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Summarize Databricks Medium cluster runs
-  python utilities/summarize_concurrency_runs.py --engine databricks --cluster-size M --benchmark tpcds_29_1tb
+  # Summarize DBR Medium cluster runs
+  python utilities/summarize_concurrency_runs.py --engine dbr --cluster-size M --benchmark tpcds_29_1tb
 
   # Generate markdown report for E6Data
   python utilities/summarize_concurrency_runs.py --engine e6data --cluster-size M --benchmark tpcds_29_1tb --format markdown > report.md
@@ -318,7 +318,7 @@ Examples:
     )
 
     parser.add_argument('--engine', required=True,
-                       help='Engine name (e.g., databricks, e6data)')
+                       help='Engine name (e.g., dbr, e6data)')
     parser.add_argument('--cluster-size', required=True,
                        help='Cluster size (e.g., M, L, XL)')
     parser.add_argument('--benchmark', required=True,

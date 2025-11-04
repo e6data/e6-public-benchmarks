@@ -18,7 +18,7 @@ print_usage() {
     echo ""
     echo "Examples:"
     echo "  $0 connection_properties/sample_connection.properties"
-    echo "  $0 connection_properties/databricks_sample_connection.properties \"SELECT current_timestamp()\""
+    echo "  $0 connection_properties/dbr_sample_connection.properties \"SELECT current_timestamp()\""
     echo "  $0 connection_properties/kantar_e6_connection.properties \"SELECT version()\""
     echo ""
     echo "Available connection property files:"

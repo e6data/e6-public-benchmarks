@@ -311,28 +311,28 @@ echo "  ✓ JMeter plugins check complete"
 echo ""
 echo "Step 5: Installing custom JDBC drivers..."
 
-# Download Databricks JDBC driver from Maven Central
+# Download DBR JDBC driver from Maven Central
 DBR_JDBC_VERSION="2.6.36"
-DBR_JDBC_URL="https://repo1.maven.org/maven2/com/databricks/databricks-jdbc/${DBR_JDBC_VERSION}/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
-DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
+DBR_JDBC_URL="https://repo1.maven.org/maven2/com/dbr/dbr-jdbc/${DBR_JDBC_VERSION}/dbr-jdbc-${DBR_JDBC_VERSION}.jar"
+DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/dbr-jdbc-${DBR_JDBC_VERSION}.jar"
 
 if [ ! -f "${DBR_JDBC_JAR}" ]; then
-    echo "  Downloading Databricks JDBC driver ${DBR_JDBC_VERSION}..."
+    echo "  Downloading DBR JDBC driver ${DBR_JDBC_VERSION}..."
     if command_exists wget; then
         wget -O "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
-            echo "  WARNING: Failed to download Databricks JDBC driver"
+            echo "  WARNING: Failed to download DBR JDBC driver"
         }
     elif command_exists curl; then
         curl -L -o "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
-            echo "  WARNING: Failed to download Databricks JDBC driver"
+            echo "  WARNING: Failed to download DBR JDBC driver"
         }
     fi
 
     if [ -f "${DBR_JDBC_JAR}" ]; then
-        echo "  ✓ Databricks JDBC driver installed"
+        echo "  ✓ DBR JDBC driver installed"
     fi
 else
-    echo "  ✓ Databricks JDBC driver already installed"
+    echo "  ✓ DBR JDBC driver already installed"
 fi
 
 # Copy custom JDBC drivers from jdbc_drivers/ directory

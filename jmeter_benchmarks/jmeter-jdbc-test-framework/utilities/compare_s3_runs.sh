@@ -26,19 +26,19 @@ OPTIONS:
 
 COMPARISON MODES:
     --latest                Compare latest runs between two engines
-                            Example: $0 --latest --engine1 e6data --engine2 databricks --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential
+                            Example: $0 --latest --engine1 e6data --engine2 dbr --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential
 
     --run-id                Compare specific run IDs
                             Example: $0 --run-id --id1 20251029-204836 --id2 20251029-172220
 
     --best                  Compare best runs (lowest avg response time)
-                            Example: $0 --best --engine1 e6data --engine2 databricks --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential
+                            Example: $0 --best --engine1 e6data --engine2 dbr --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential
 
     --list                  List available runs
                             Example: $0 --list --engine e6data --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential
 
 PARAMETERS:
-    --engine1 <name>        First engine name (e6data, databricks, etc.)
+    --engine1 <name>        First engine name (e6data, dbr, etc.)
     --engine2 <name>        Second engine name
     --engine <name>         Engine name (for --list mode)
     --cluster-size <size>   Cluster size (XS, S, M, L, etc.)
@@ -51,7 +51,7 @@ PARAMETERS:
 
 EXAMPLES:
     # Compare latest cold-start runs
-    $0 --latest --engine1 e6data --engine2 databricks --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential --tag run-1
+    $0 --latest --engine1 e6data --engine2 dbr --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential --tag run-1
 
     # Compare specific run IDs
     $0 --run-id --id1 20251029-204836 --id2 20251029-172220
@@ -60,7 +60,7 @@ EXAMPLES:
     $0 --list --engine e6data --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential
 
     # Compare best runs (lowest average response time)
-    $0 --best --engine1 e6data --engine2 databricks --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential
+    $0 --best --engine1 e6data --engine2 dbr --cluster-size XS --benchmark tpcds_29_1tb --run-type sequential
 
 EOF
     exit 0

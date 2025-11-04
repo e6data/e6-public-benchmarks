@@ -37,8 +37,8 @@ S3_BASE_PATH="s3://e6-jmeter/jmeter-results"
 
 # Cluster size descriptions
 declare -A CLUSTER_DESCRIPTIONS
-CLUSTER_DESCRIPTIONS["S-2x2"]="60 cores (2 executors × 30 cores) - Matches Databricks S-2x2"
-CLUSTER_DESCRIPTIONS["M-4x4"]="120 cores (4 executors × 30 cores) - Matches Databricks S-4x4"
+CLUSTER_DESCRIPTIONS["S-2x2"]="60 cores (2 executors × 30 cores) - Matches DBR S-2x2"
+CLUSTER_DESCRIPTIONS["M-4x4"]="120 cores (4 executors × 30 cores) - Matches DBR S-4x4"
 
 # Colors
 GREEN='\033[0;32m'
@@ -172,6 +172,6 @@ echo ""
 echo "Next steps:"
 echo "  1. Check S3 for uploaded results:"
 echo "     ${S3_BASE_PATH}/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=concurrency_X/run_id=YYYYMMDD-HHMMSS/"
-echo "  2. Compare with Databricks results (if applicable)"
+echo "  2. Compare with DBR results (if applicable)"
 echo "  3. Generate comparison report using utilities/compare_* scripts"
 echo ""

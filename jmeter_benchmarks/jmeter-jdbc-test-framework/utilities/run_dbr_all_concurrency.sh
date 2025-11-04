@@ -1,11 +1,11 @@
 #!/bin/bash
-# Run all databricks concurrency tests for a specified cluster size
-# Usage: ./run_databricks_all_concurrency.sh <cluster_size> [benchmark]
+# Run all dbr concurrency tests for a specified cluster size
+# Usage: ./run_dbr_all_concurrency.sh <cluster_size> [benchmark]
 #
 # Examples:
-#   ./run_databricks_all_concurrency.sh S-4x4
-#   ./run_databricks_all_concurrency.sh S-2x2
-#   ./run_databricks_all_concurrency.sh S-4x4 tpcds_51_1tb
+#   ./run_dbr_all_concurrency.sh S-4x4
+#   ./run_dbr_all_concurrency.sh S-2x2
+#   ./run_dbr_all_concurrency.sh S-4x4 tpcds_51_1tb
 #
 # Concurrency levels: 2, 4, 8, 12, 16
 
@@ -29,7 +29,7 @@ if [ $# -lt 1 ]; then
 fi
 
 # Configuration
-ENGINE="databricks"
+ENGINE="dbr"
 CLUSTER_SIZE="$1"
 BENCHMARK="${2:-tpcds_29_1tb}"
 CONCURRENCY_LEVELS=(1 2 4 8 12 16)
@@ -55,7 +55,7 @@ CLUSTER_SIZE_NORMALIZED=$(echo "$CLUSTER_SIZE" | tr '[:upper:]' '[:lower:]')
 
 # Display configuration
 echo -e "${BLUE}=========================================="
-echo "Databricks ${CLUSTER_SIZE} Cluster - All Concurrency Tests"
+echo "DBR ${CLUSTER_SIZE} Cluster - All Concurrency Tests"
 echo -e "==========================================${NC}"
 echo ""
 echo "Configuration:"
@@ -65,7 +65,7 @@ if [ -n "${CLUSTER_DESCRIPTIONS[$CLUSTER_SIZE]}" ]; then
 fi
 echo "   - Benchmark: ${BENCHMARK}"
 echo ""
-echo "⚠️  IMPORTANT: Verify Databricks warehouse configuration:"
+echo "⚠️  IMPORTANT: Verify DBR warehouse configuration:"
 if [ "$CLUSTER_SIZE" == "S-4x4" ]; then
     echo "   - Warehouse Size: Small"
     echo "   - Min Clusters: 4"
@@ -86,7 +86,7 @@ echo ""
 echo "Checking for test input files..."
 MISSING_FILES=0
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    TEST_INPUT="test_inputs/databricks_${CLUSTER_SIZE_NORMALIZED}_tpcds29_concurrency_${concurrency}.txt"
+    TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_tpcds29_concurrency_${concurrency}.txt"
     if [ ! -f "$TEST_INPUT" ]; then
         echo -e "${YELLOW}  ⚠ Missing: $TEST_INPUT${NC}"
         MISSING_FILES=$((MISSING_FILES + 1))
@@ -115,7 +115,7 @@ mkdir -p "$LOG_DIR"
 
 # Run all concurrency tests
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    TEST_INPUT="test_inputs/databricks_${CLUSTER_SIZE_NORMALIZED}_tpcds29_concurrency_${concurrency}.txt"
+    TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_tpcds29_concurrency_${concurrency}.txt"
 
     # Skip if test input file doesn't exist
     if [ ! -f "$TEST_INPUT" ]; then
@@ -145,7 +145,7 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
 
     echo ""
     echo -e "${BLUE}=========================================="
-    echo "Running: Databricks ${CLUSTER_SIZE} - Concurrency ${concurrency}"
+    echo "Running: DBR ${CLUSTER_SIZE} - Concurrency ${concurrency}"
     echo -e "==========================================${NC}"
     echo "Test input: $TEST_INPUT"
     echo "Log file: $LOG_FILE"
@@ -174,7 +174,7 @@ done
 
 echo ""
 echo -e "${GREEN}=========================================="
-echo "✓ All Databricks ${CLUSTER_SIZE} concurrency tests completed!"
+echo "✓ All DBR ${CLUSTER_SIZE} concurrency tests completed!"
 echo -e "==========================================${NC}"
 echo ""
 echo "Logs saved in: $LOG_DIR"

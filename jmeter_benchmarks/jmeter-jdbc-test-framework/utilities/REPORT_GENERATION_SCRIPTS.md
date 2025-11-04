@@ -72,7 +72,7 @@ reports/e6data_S-2x2_ConsecutiveRuns_20251030-171659_vs_20251031-070614.md
 **Purpose**: Compare two different engines/clusters across ALL concurrency levels.
 
 **Use Cases**:
-- Engine comparison (E6Data vs Databricks)
+- Engine comparison (E6Data vs DBR)
 - Cluster sizing (S-2x2 vs M vs S-4x4)
 - Architecture comparison (60 cores vs 120 cores)
 - Comprehensive benchmarking
@@ -86,10 +86,10 @@ reports/e6data_S-2x2_ConsecutiveRuns_20251030-171659_vs_20251031-070614.md
 **Usage**:
 
 ```bash
-# Compare E6Data vs Databricks
+# Compare E6Data vs DBR
 python utilities/compare_multi_concurrency_from_s3.py \
     s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
-    s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+    s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 
 # Compare different cluster sizes (same engine)
 python utilities/compare_multi_concurrency_from_s3.py \
@@ -99,8 +99,8 @@ python utilities/compare_multi_concurrency_from_s3.py \
 
 **Output**:
 ```
-reports/e6data_S-2x2_vs_databricks_S-4x4_MultiConcurrency_20251031.csv
-reports/e6data_S-2x2_vs_databricks_S-4x4_MultiConcurrency_20251031_SUMMARY.md
+reports/e6data_S-2x2_vs_dbr_S-4x4_MultiConcurrency_20251031.csv
+reports/e6data_S-2x2_vs_dbr_S-4x4_MultiConcurrency_20251031_SUMMARY.md
 ```
 
 **Report Contents**:
@@ -134,13 +134,13 @@ reports/e6data_S-2x2_vs_databricks_S-4x4_MultiConcurrency_20251031_SUMMARY.md
 ```bash
 python utilities/compare_jmeter_runs_from_s3.py \
     s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/run_type=concurrency_8/ \
-    s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_8/
+    s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_8/
 ```
 
 **Output**:
 ```
-reports/e6data_S-2x2_vs_databricks_S-4x4_C8_20251031.csv
-reports/e6data_S-2x2_vs_databricks_S-4x4_C8_20251031_SUMMARY.md
+reports/e6data_S-2x2_vs_dbr_S-4x4_C8_20251031.csv
+reports/e6data_S-2x2_vs_dbr_S-4x4_C8_20251031_SUMMARY.md
 ```
 
 **Report Contents**:
@@ -175,9 +175,9 @@ reports/e6data_S-2x2_vs_databricks_S-4x4_C8_20251031_SUMMARY.md
 python utilities/analyze_concurrency_scaling_from_s3.py \
     --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 
-# Analyze Databricks scaling behavior
+# Analyze DBR scaling behavior
 python utilities/analyze_concurrency_scaling_from_s3.py \
-    --base-path s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+    --base-path s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 ```
 
 **Output**:
@@ -322,7 +322,7 @@ python utilities/analyze_concurrency_scaling_from_s3.py \
 
 ---
 
-### 3. Engine Evaluation (E6Data vs Databricks)
+### 3. Engine Evaluation (E6Data vs DBR)
 
 **Goal**: Which engine should we use for production?
 
@@ -330,14 +330,14 @@ python utilities/analyze_concurrency_scaling_from_s3.py \
 # Compare across all concurrency levels
 python utilities/compare_multi_concurrency_from_s3.py \
     s3://e6-jmeter/.../engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
-    s3://e6-jmeter/.../engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+    s3://e6-jmeter/.../engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 
 # Analyze scaling for both engines
 python utilities/analyze_concurrency_scaling_from_s3.py \
     --base-path s3://e6-jmeter/.../engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 
 python utilities/analyze_concurrency_scaling_from_s3.py \
-    --base-path s3://e6-jmeter/.../engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+    --base-path s3://e6-jmeter/.../engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 ```
 
 **What to look for**:
@@ -356,8 +356,8 @@ All S3-based scripts follow consistent naming:
 {engine1}_{cluster1}_vs_{engine2}_{cluster2}_{type}_{date}.{ext}
 
 Examples:
-- e6data_S-2x2_vs_databricks_S-4x4_MultiConcurrency_20251031.csv
-- e6data_S-2x2_vs_databricks_S-4x4_C8_20251031.csv
+- e6data_S-2x2_vs_dbr_S-4x4_MultiConcurrency_20251031.csv
+- e6data_S-2x2_vs_dbr_S-4x4_C8_20251031.csv
 ```
 
 ### Consecutive Runs (NEW):
@@ -425,7 +425,7 @@ Core utility library providing:
 - S3 path parsing and validation
 - File listing and downloading
 - Statistics loading from S3
-- Query name normalization (E6Data ↔ Databricks format mapping)
+- Query name normalization (E6Data ↔ DBR format mapping)
 - Metrics extraction
 
 **Used by**: All S3-based comparison scripts

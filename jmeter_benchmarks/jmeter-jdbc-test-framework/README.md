@@ -20,11 +20,21 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
   2. Create a `test_properties` file in the `test_properties/` folder  
   3. Add your queries as a `.csv` file in the `data_files/` folder  
 
-- **Multi-database support**:  
-  The JMeter JDBC test plans can run against multiple databases that support JDBC connections (e.g., **E6Data, Databricks, etc.**) using the appropriate `.properties` file.  
+- **Multi-database support**:
+  The JMeter JDBC test plans can run against multiple databases that support JDBC connections (e.g., **E6Data** and others) using the appropriate `.properties` file.  
 
 - **Wrapper scripts**:  
   Includes helper scripts that can run the JMeter tests by taking user inputs interactively from the above folders through the command prompt.  
+
+## Test Plans Available
+
+- **Test-Plan-Run-Once-static-concurrency.jmx** - Run all queries once at a fixed concurrency level and then complete
+- **Test-Plan-Maintain-static-concurrency.jmx** - Maintain fixed load/concurrency using concurrency parameter in test.properties
+- **Test-Plan-Constant-QPS-On-Arrivals.jmx** - Fire queries at constant queries-per-second rate using QPS in test.properties
+- **Test-Plan-Constant-QPM-On-Arrivals.jmx** - Fire queries at constant queries-per-minute rate using QPM in test.properties
+- **Test-Plan-Fire-QPS-with-load-profile.jmx** - Variable QPS rate using load profile CSV file
+- **Test-Plan-Fire-QPM-with-load-profile.jmx** - Variable QPM rate using load profile CSV file
+- **Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx** - Variable concurrency using load profile CSV file
 
 ## Prerequisites
 
@@ -52,7 +62,7 @@ cp sample_connection.properties <YOUR_DB_SERVER>_connection.properties
 ### Create the test properties files with the test parameters using the template/sample properties file
 ```bash
 cd test_properties
-cp sample_test.properties <YOUR_TEST>_test.properties```
+cp sample_test.properties <YOUR_TEST>_test.properties
 ```
 
 ### Create/copy the queries to the data_files folder as a .csv file
@@ -61,20 +71,43 @@ cd data_files
 cp <YOUR_TEST_QUERIES>.csv data_files
 ```
 
-## Run Tests using standard jmeter CLI command.
-Once the properties file are created, we can run the prebuilt test plan using above created files as input to run the test against your taget system
+## ⚠️ Verify Test Plan in GUI Mode First
+
+**Before running load tests, always verify your configuration in JMeter GUI mode:**
+
 ```bash
-$JMETER_BIN/jmeter -n -t "$TEST_PLAN" -l "$REPORT_PATH/results.jtl" -q "$TEST_PROPERTIES" -q "$CONNECTION_PROPERTIES" -JQUERY_PATH=$QUERIES_FILE
+# Open JMeter GUI with your configuration
+./apache-jmeter-5.6.3/bin/jmeter -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
+  -q connection_properties/sample_connection.properties \
+  -q test_properties/sample_test.properties \
+  -JQUERY_PATH=data_files/sample_jmeter_queries.csv
 ```
 
-## Example - Run Jmeter in GUI mode:
+**In GUI, verify:**
+- JDBC connection works (test with 1 thread first)
+- Queries load from CSV correctly
+- Test plan parameters are correct
+- View Results Tree shows successful query execution
+
+**Note:** GUI mode is ONLY for verification. Always use non-GUI mode (CLI) for actual load testing.
+
+---
+
+## Run Tests Using Non-GUI Mode
+
+Once verified, run tests in non-GUI mode for actual performance testing:
+
 ```bash
-./apache-jmeter-5.6.3/bin/jmeter -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx -q connection_properties/sample_connection.properties -q test_properties/sample_test.properties -JQUERY_PATH=data_files/E6_TPCDS_1TB_Optimised_51_Jmeter_queries.csv
+# Non-GUI mode (recommended for all load tests)
+./apache-jmeter-5.6.3/bin/jmeter -n \
+  -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
+  -q connection_properties/sample_connection.properties \
+  -q test_properties/sample_test.properties \
+  -JQUERY_PATH=data_files/sample_jmeter_queries.csv \
+  -l reports/results.jtl
 ```
-## Example - Run Jmeter in Non GUI mode:
-```bash
-./apache-jmeter-5.6.3/bin/jmeter -n -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx -q connection_properties/sample_connection.properties  -q test_properties/sample_test.properties -JQUERY_PATH=data_files/E6_TPCDS_1TB_Optimised_51_Jmeter_queries.csv
-```
+
+**Key flags:** `-n` (non-GUI mode), `-t` (test plan), `-q` (properties file), `-l` (log file)
 
 
 # Running Tests interactively using the wrapper script
@@ -108,142 +141,115 @@ Run all concurrency levels (2, 4, 8, 12, 16) for a specific cluster size:
 - 30-second pause between tests
 - Automatic S3 upload (if enabled in metadata)
 
-### Databricks Concurrency Tests
-Run all concurrency levels (2, 4, 8, 12, 16) for a specific cluster size:
-
-```bash
-# Run S-2x2 (~60 cores) concurrency tests
-./utilities/run_databricks_all_concurrency.sh S-2x2
-
-# Run S-4x4 (~120 cores) concurrency tests
-./utilities/run_databricks_all_concurrency.sh S-4x4
-
-# Run with custom benchmark
-./utilities/run_databricks_all_concurrency.sh S-4x4 tpcds_51_1tb
-```
-
-**Features:**
-- Runs all concurrency levels sequentially
-- Validates test input files before starting
-- Logs each test to `/tmp/jmeter_test_logs/` with instance_type and query_file in name
-- 30-second pause between tests
-- Automatic S3 upload (if enabled in metadata)
-
 ## File Structure
 
 ```
 .
 ├── README.md
-├── apache-jmeter-5.6.3
-├── connection.properties
-    └── [Connection properties file *.properties]
-    └── [sample_connection.properties ]
-├── data_files
-    └── [CSV Queries file *.csv]
-    └── [sample_queries.csv ]
-├── metadata_files - optional
-    └── [sample_metadata.txt - Optional required only to copy data to s3 or storage for keeping track of runs ]
-├── test.properties
-    └── [Test properties file *.properties]
-    └── [sample_test.properties ]
-    └── [load_profile.csv ]    
-├── Scripts
-    ├── run_jmeter_tests_interactive.sh
-└── Test-Plans
-    └── [JMX test files]
-    └── [Test-Plan-Constant-QPM-On-Arrivals.jmx - To fire queries per minute using QPM in test.properties]
-    └── [Test-Plan-Constant-QPS-On-Arrivals.jmx - To fire queries per sec using QPs in test.properties]
-    └── [Test-Plan-Fire-QPM-with-load-profile.jmx - To fire queries per minute using load profile file in test.properties]
-    └── [Test-Plan-Fire-QPS-with-load-profile.jmx - To fire queries per minute using load profile file in test.properties]
-    └── [Test-Plan-Maintain-static-concurrency.jmx - To maintain fixed load / concurrency using concurrency in test.properties]
-    └── [Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx - To maintain load/concurrency using load profile file in test.properties]
-
-
+├── CLAUDE.md
+├── setup_jmeter.sh
+├── run_jmeter_tests_interactive.sh
+├── apache-jmeter-5.6.3/           # JMeter installation (created by setup script)
+├── connection_properties/
+│   ├── sample_connection.properties
+│   └── [Your connection config files]
+├── data_files/
+│   ├── sample_jmeter_queries.csv
+│   └── [Your query CSV files]
+├── jdbc_drivers/                   # JDBC driver JARs
+├── metadata_files/
+│   └── [Cluster metadata files for S3 upload]
+├── test_properties/
+│   ├── sample_test.properties
+│   ├── load_profile.csv
+│   └── [Your test config files]
+├── test_inputs/
+│   └── [Pre-configured test input files]
+├── Test-Plans/
+│   ├── Test-Plan-Run-Once-static-concurrency.jmx
+│   ├── Test-Plan-Maintain-static-concurrency.jmx
+│   ├── Test-Plan-Constant-QPS-On-Arrivals.jmx
+│   ├── Test-Plan-Constant-QPM-On-Arrivals.jmx
+│   ├── Test-Plan-Fire-QPS-with-load-profile.jmx
+│   └── [Other test plans]
+├── utilities/
+│   ├── run_e6data_all_concurrency.sh
+│   └── [Analysis and comparison scripts]
+└── reports/                        # Test results (generated at runtime)
 ```
 
-## Property Files Format
+## Configuration Files
 
-Sample configurations:
+See sample files in the repository for complete configuration options:
 
-**sample_e6_connection.properties:**
-```
-# JDBC Jmeter connection properties
+- **connection_properties/sample_connection.properties** - JDBC connection settings (hostname, port, database, credentials, driver class)
+- **test_properties/sample_test.properties** - Test execution parameters (concurrency, duration, query settings)
+- **test_properties/load_profile.csv** - Variable load pattern for ramping (optional, for load-profile-based test plans)
 
-#Change below properties to connect to your target machine via JDBC
-HOSTNAME=
-PORT=80
-DATABASE=
-CATALOG=
+**Key test.properties settings:**
+- `CONCURRENT_QUERY_COUNT` - Number of simultaneous queries (for concurrency-based tests)
+- `QPS` / `QPM` - Queries per second/minute (for arrivals-based tests)
+- `HOLD_PERIOD` - Test duration in minutes
+- `QUERY_PATH` - Path to your query CSV file
+- `RECYCLE_ON_EOF` - Repeat queries until duration ends (true/false)
+- `COPY_TO_S3` - Enable S3 upload of test results (true/false)
 
-USER=
-PASSWORD=
+## Important Notes
 
-#Change below for the JDBC connection URL of your target machine
-CONNECTION_STRING=
+### Security & Data Privacy
 
-#Change below to your JDBC Driver class
-DRIVER_CLASS=io.e6.jdbc.driver.E6Driver
+- **DO NOT** put sensitive credentials (usernames, passwords, tokens) in properties files or test plans that will be committed to version control
+- Check the `.gitignore` file - connection properties and data files are excluded to prevent accidental credential commits
+- Test queries should use synthetic or anonymized data only
+- Review S3 bucket permissions before enabling result upload features
+- Use environment variables or secure vaults for production credentials
 
-```
+### JDBC Configuration
 
-**sample_e6_test.properties:**
-```
-# E6 Jmeter Test properties
+- Refer to your target system's JDBC documentation for the correct connection string format
+- Place JDBC driver JARs in the `jdbc_drivers/` directory
+- The setup script will copy drivers to JMeter's lib directory automatically
 
-JMETER_HOME=
+### Test Data
 
-#Change below for Report directory path. Reports will be written in this directory
-REPORT_PATH=reports
+- For TPCDS benchmark queries, generate datasets using the official TPC-DS tools: https://www.tpc.org/tpcds/
+- Ensure you have appropriate licenses and permissions to use benchmark datasets
+- Sample queries in this repo are for demonstration purposes only
 
-COPY_TO_S3=false
-S3_REPORT_PATH=s3://
+## Testing Best Practices
 
-#Change below for concurrency based test plan which will maintain this concurrency. This applicable only for concurrency based plan
-**CONCURRENT_QUERY_COUNT=2**
+⚠️ **Start Small and Scale Gradually**
+- Always test in non-production environments first
+- Start with low concurrency (1-2 threads) and gradually increase
+- Monitor target database resources (CPU, memory, connections)
 
-#Change below if u want to add RAMP_TIME(min) and RAMP_UP_STEPS (counts) to reach target concurrency 
-RAMP_UP_TIME=1
-RAMP_UP_STEPS=1
-
-#Total time to run the test in minutes i.e hold the load. This is after ramp up time 
-**HOLD_PERIOD=300**
-
-#Change below for QPM based Test Plan which will fire below number of queries per minute. This is applicable only for QPM based test Plan
-QPM=10
-
-#Change below for QPS based Test Plan which will fire below number of queries per sec. This is applicable only for QPs based test Plan
-**QPS=1**
-
-#Change below for load_profile based Test Plan. This will be applicable only if u select the load profile Test Plan
-**LOAD_PROFILE=test_properties/load_profile.csv**
-
-#To select queries from the CSV in Random Order set below to true
-RANDOM_ORDER=true
-
-# Set below variable to true if you want to Repeat the queries in the CSV, this essentially means queries will repeat till the test duration 
-**RECYCLE_ON_EOF=false**
-
-#Change below to the absolute path of your query file
-QUERY_PATH=../data_files/Benchmark_TPCDS-51-queries_without_bootstrap.csv
-
-```
-**load_profile.csv:**
-```
-# E6 Jmeter Test properties
-StartValue,EndValue,Duration
-1,1,5
-2,2,10
-3,3,15
-4,4,20
-5,5,25
-```
-
-## Important Note
-
-- DO NOT PUT YOUR SENSITIVE LOGIN/CREDENTIALS OR ANY SUCH SENSITIVE INFO NEITHER IN PROPERTIES/JMETER TEST PLAN OR ANY SUCH FILE.
-- CHECK THE .gitignore file as we avoid some sensitive info to be checked in.
+**Load Configuration Tips:**
+- **Concurrency tests:** `CONCURRENT_QUERY_COUNT=4` means 4 simultaneous queries at all times
+- **QPS/QPM tests:** Fire queries without waiting - Example: `QPS=10` + `HOLD_PERIOD=300` = 3,000 total queries. Start low (QPS=1-5)
+- **Load profile tests:** Run `utilities/update_load_profile.sh` before execution to update test plan
+- Monitor JMeter's own resource usage - it can become the bottleneck
 
 ## DISCLAIMER
-- This is just a sample collection that can be used for jmeter testing, so please check the parameters and use proper reasonable values as improper setting can overload/damage the system
-- Do not test directly on some production system without verification as the system can be overloaded if proper values are not set.
+
+**USE AT YOUR OWN RISK**
+
+- This framework can generate **extremely high load** that may overload, crash, or damage target systems
+- **NEVER** run high-load tests against production systems without explicit approval and preparation
+- Improper configuration can bring down databases, consume resources, or cause data issues
+- Users are **solely responsible** for:
+  - Obtaining necessary permissions before load testing
+  - Setting appropriate test parameters for their environment
+  - Any damage, downtime, or issues caused by testing
+  - Compliance with database licensing terms during testing
+
+- This is an independent testing utility using open-source Apache JMeter
+- **Not officially affiliated with or endorsed by any database vendor**
+- No warranty is provided - use at your own risk
+- The maintainers are **not responsible** for any system damage, data loss, or issues arising from use of this framework
+
+### Third-Party Components
+
+- **Apache JMeter 5.6.3** - Apache License 2.0
+- JDBC drivers are subject to their respective vendor licenses
+- Refer to individual component licenses for terms and conditions 
 

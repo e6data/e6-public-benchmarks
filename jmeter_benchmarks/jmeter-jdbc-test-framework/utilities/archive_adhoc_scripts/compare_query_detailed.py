@@ -36,7 +36,7 @@ def format_duration(seconds):
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: script.py <e6data_json> <databricks_json> [--sort-by-query]")
+        print("Usage: script.py <e6data_json> <dbr_json> [--sort-by-query]")
         sys.exit(1)
 
     sort_by_query = '--sort-by-query' in sys.argv
@@ -79,7 +79,7 @@ def main():
                 'e6_avg': None,
                 'dbr_avg': dbr_avg,
                 'improvement': None,
-                'status': 'only_in_databricks'
+                'status': 'only_in_dbr'
             })
 
     # Sort by improvement (best to worst) or by query name
@@ -100,14 +100,14 @@ def main():
 
     # Print header
     print("=" * 140)
-    print("COMPREHENSIVE PERFORMANCE COMPARISON: e6data vs Databricks")
+    print("COMPREHENSIVE PERFORMANCE COMPARISON: e6data vs DBR")
     print("=" * 140)
     print()
 
     # Run information
     print("RUN INFORMATION:")
     print("-" * 140)
-    print(f"{'Metric':<30} {'e6data':<50} {'Databricks':<50}")
+    print(f"{'Metric':<30} {'e6data':<50} {'DBR':<50}")
     print("-" * 140)
     print(f"{'Run ID':<30} {e6_data.get('run_id', 'N/A'):<50} {dbr_data.get('run_id', 'N/A'):<50}")
     print(f"{'Tags':<30} {e6_data.get('tags', 'N/A'):<50} {dbr_data.get('tags', 'N/A'):<50}")
@@ -119,7 +119,7 @@ def main():
     # Overall performance metrics
     print("OVERALL PERFORMANCE METRICS:")
     print("-" * 140)
-    print(f"{'Metric':<30} {'e6data':>20} {'Databricks':>20} {'Improvement':>20} {'Winner':<20}")
+    print(f"{'Metric':<30} {'e6data':>20} {'DBR':>20} {'Improvement':>20} {'Winner':<20}")
     print("-" * 140)
 
     metrics = [
@@ -138,7 +138,7 @@ def main():
     for metric_name, e6_val, dbr_val, unit in metrics:
         if e6_val > 0 and dbr_val > 0:
             improvement = calculate_improvement(e6_val, dbr_val)
-            winner = "e6data" if improvement > 0 else "Databricks" if improvement < 0 else "Tie"
+            winner = "e6data" if improvement > 0 else "DBR" if improvement < 0 else "Tie"
             if metric_name == 'Total Duration':
                 print(f"{metric_name:<30} {format_duration(e6_val):>20} {format_duration(dbr_val):>20} {improvement:>19.1f}% {winner:<20}")
             else:
@@ -150,7 +150,7 @@ def main():
     dbr_throughput = dbr_perf.get('throughput', 0)
     if e6_throughput > 0 and dbr_throughput > 0:
         throughput_improvement = ((e6_throughput - dbr_throughput) / dbr_throughput) * 100
-        winner = "e6data" if throughput_improvement > 0 else "Databricks"
+        winner = "e6data" if throughput_improvement > 0 else "DBR"
         print(f"{'Throughput (queries/sec)':<30} {e6_throughput:>19.2f} {dbr_throughput:>19.2f} {throughput_improvement:>19.1f}% {winner:<20}")
 
     # Connection metrics
@@ -160,7 +160,7 @@ def main():
     dbr_network = dbr_conn.get('network_latency_avg_ms', 0)
     if e6_network > 0 and dbr_network > 0:
         network_improvement = calculate_improvement(e6_network, dbr_network)
-        winner = "e6data" if network_improvement > 0 else "Databricks"
+        winner = "e6data" if network_improvement > 0 else "DBR"
         print(f"{'Network Latency Avg':<30} {e6_network:>18.2f}ms {dbr_network:>18.2f}ms {network_improvement:>19.1f}% {winner:<20}")
 
     print()
@@ -215,11 +215,11 @@ def main():
 
         print(f"Total queries compared: {len(valid_comparisons)}")
         print(f"  e6data faster (>5%):      {faster_count:3d} queries ({100*faster_count/len(valid_comparisons):.1f}%)")
-        print(f"  Databricks faster (>5%):  {slower_count:3d} queries ({100*slower_count/len(valid_comparisons):.1f}%)")
+        print(f"  DBR faster (>5%):  {slower_count:3d} queries ({100*slower_count/len(valid_comparisons):.1f}%)")
         print(f"  Similar performance (±5%): {similar_count:3d} queries ({100*similar_count/len(valid_comparisons):.1f}%)")
         print()
-        print(f"Average per-query improvement: {avg_improvement:+.1f}% {'(e6data favored)' if avg_improvement > 0 else '(Databricks favored)'}")
-        print(f"Overall average time improvement: {overall_improvement:+.1f}% {'(e6data faster)' if overall_improvement > 0 else '(Databricks faster)'}")
+        print(f"Average per-query improvement: {avg_improvement:+.1f}% {'(e6data favored)' if avg_improvement > 0 else '(DBR favored)'}")
+        print(f"Overall average time improvement: {overall_improvement:+.1f}% {'(e6data faster)' if overall_improvement > 0 else '(DBR faster)'}")
         print()
 
         # Calculate time savings
@@ -229,7 +229,7 @@ def main():
         if time_diff < 0:
             print(f"Total time savings with e6data: {format_duration(abs(time_diff))} ({abs(time_diff/dbr_total*100):.1f}% faster)")
         else:
-            print(f"Total time savings with Databricks: {format_duration(abs(time_diff))} ({abs(time_diff/e6_total*100):.1f}% faster)")
+            print(f"Total time savings with DBR: {format_duration(abs(time_diff))} ({abs(time_diff/e6_total*100):.1f}% faster)")
         print()
 
         # Top performers section (only if not sorted by query)
@@ -245,7 +245,7 @@ def main():
                 print("  None")
 
             print()
-            print("TOP 10 QUERIES WHERE DATABRICKS IS FASTER:")
+            print("TOP 10 QUERIES WHERE DBR IS FASTER:")
             print("-" * 140)
             slower_queries = [c for c in valid_comparisons if c['improvement'] < 0]
             slower_queries.sort(key=lambda x: x['improvement'])

@@ -1,7 +1,7 @@
-# Databricks S-2x2 Cluster Configuration
+# DBR S-2x2 Cluster Configuration
 # ~60 cores
 
-ENGINE=databricks
+ENGINE=dbr
 COPY_TO_S3=true
 
 # S3 base path for storing JMeter results (without partitions)

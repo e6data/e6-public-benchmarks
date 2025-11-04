@@ -1,7 +1,7 @@
-# Databricks S-4x4 Cluster Configuration
+# DBR S-4x4 Cluster Configuration
 # ~120 cores
 
-ENGINE=databricks
+ENGINE=dbr
 COPY_TO_S3=true
 
 # S3 base path for storing JMeter results (without partitions)

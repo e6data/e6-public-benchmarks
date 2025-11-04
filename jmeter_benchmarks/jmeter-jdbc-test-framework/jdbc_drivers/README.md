@@ -24,16 +24,16 @@ To add a new JDBC driver:
 2. Run `./setup_jmeter.sh` to copy it to JMeter's lib/ext/
 3. Commit the JAR file to git (if it's a custom or hard-to-obtain driver)
 
-For publicly available drivers (like Databricks), consider adding download logic to `setup_jmeter.sh` instead of committing large JARs.
+For publicly available drivers (like DBR), consider adding download logic to `setup_jmeter.sh` instead of committing large JARs.
 
-## Databricks JDBC Driver
+## DBR JDBC Driver
 
-The Databricks JDBC driver is NOT included here due to its size and licensing.
+The DBR JDBC driver is NOT included here due to its size and licensing.
 
-To use Databricks:
-1. Download from: https://www.databricks.com/spark/jdbc-drivers-download
-2. Place `DatabricksJDBC42-*.jar` in `apache-jmeter-5.6.3/lib/ext/`
-3. Driver class: `com.databricks.client.jdbc.Driver`
+To use DBR:
+1. Download from: https://www.dbr.com/spark/jdbc-drivers-download
+2. Place `DBRJDBC42-*.jar` in `apache-jmeter-5.6.3/lib/ext/`
+3. Driver class: `com.dbr.client.jdbc.Driver`
 
 ## Total Size
 

@@ -55,7 +55,7 @@ Yes, you can safely delete this archive directory once you're confident the new 
 ## Historical Reference
 
 These scripts were used for various JPMC comparisons during October 2025, including:
-- E6Data M vs Databricks S-4x4 comparisons
+- E6Data M vs DBR S-4x4 comparisons
 - Multi-concurrency analysis (C=2, 4, 8, 12, 16)
 - Query-level latency comparisons
 

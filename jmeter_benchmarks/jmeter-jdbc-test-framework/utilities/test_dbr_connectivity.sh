@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Databricks Connectivity Test Script
-# Usage: ./test_databricks_connectivity.sh [connection_properties_file] [iterations]
+# DBR Connectivity Test Script
+# Usage: ./test_dbr_connectivity.sh [connection_properties_file] [iterations]
 
 CONNECTION_FILE="${1:-connection_properties/dbr_kantar_connection.properties}"
 ITERATIONS="${2:-5}"
 DELAY_BETWEEN_TESTS="${3:-10}"
 
 echo "==================================================================="
-echo "Databricks Intermittent Connectivity Diagnostic Tool"
+echo "DBR Intermittent Connectivity Diagnostic Tool"
 echo "==================================================================="
 echo "Connection File: $CONNECTION_FILE"
 echo "Test Iterations: $ITERATIONS"
@@ -19,7 +19,7 @@ echo "==================================================================="
 if [ -f "$CONNECTION_FILE" ]; then
     CONNECTION_STRING=$(grep "^CONNECTION_STRING=" "$CONNECTION_FILE" | cut -d'=' -f2)
     HOSTNAME=$(echo "$CONNECTION_STRING" | grep -o '://[^:]*' | sed 's/^:\/\///')
-    echo "Databricks Host: $HOSTNAME"
+    echo "DBR Host: $HOSTNAME"
     echo "Full Connection String: $CONNECTION_STRING"
 else
     echo "❌ Connection file not found: $CONNECTION_FILE"
@@ -103,7 +103,7 @@ if [ $FAILED -gt 0 ]; then
     echo ""
     echo "Possible Causes:"
     echo "1. Network instability between client and Azure West Europe"
-    echo "2. Databricks SQL Warehouse auto-suspend/resume cycles"
+    echo "2. DBR SQL Warehouse auto-suspend/resume cycles"
     echo "3. Azure load balancer health checks"
     echo "4. DNS propagation issues"
     echo "5. Rate limiting or throttling"
