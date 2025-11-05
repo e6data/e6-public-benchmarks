@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Compare concurrency scaling between two engines (e.g., E6Data vs Databricks)
+# Compare concurrency scaling between two engines (e.g., E6Data vs DBR)
 #
 # Usage:
 #   ./utilities/compare_engines_concurrency.sh M tpcds_29_1tb
@@ -18,13 +18,13 @@ if [ $# -lt 2 ]; then
     echo ""
     echo "Arguments:"
     echo "  e6_cluster_size     E6data cluster size (e.g., M, M-4x4, L-8x8)"
-    echo "  dbr_cluster_size    Databricks cluster size (optional, defaults to same as e6data)"
+    echo "  dbr_cluster_size    DBR cluster size (optional, defaults to same as e6data)"
     echo "  benchmark           Benchmark name (e.g., tpcds_29_1tb)"
     echo "  format              Output format: text (default), markdown, json"
     echo ""
     echo "Examples:"
     echo "  $0 M tpcds_29_1tb                    # Both engines use M"
-    echo "  $0 M S-2x2 tpcds_29_1tb              # E6data M vs Databricks S-2x2"
+    echo "  $0 M S-2x2 tpcds_29_1tb              # E6data M vs DBR S-2x2"
     echo "  $0 M-4x4 S-2x2 tpcds_29_1tb markdown > comparison.md"
     exit 1
 fi
@@ -60,11 +60,11 @@ else
 fi
 
 ENGINE1="e6data"
-ENGINE2="databricks"
+ENGINE2="dbr"
 
-echo "Comparing concurrency scaling: E6Data vs Databricks" >&2
+echo "Comparing concurrency scaling: E6Data vs DBR" >&2
 echo "E6Data Cluster Size: $E6_CLUSTER_SIZE" >&2
-echo "Databricks Cluster Size: $DBR_CLUSTER_SIZE" >&2
+echo "DBR Cluster Size: $DBR_CLUSTER_SIZE" >&2
 echo "Benchmark: $BENCHMARK" >&2
 echo "" >&2
 
@@ -76,7 +76,7 @@ E6_SUMMARY=$(python3 "$SCRIPT_DIR/summarize_concurrency_runs.py" \
     --benchmark "$BENCHMARK" \
     --format json 2>/dev/null)
 
-echo "Generating Databricks summary..." >&2
+echo "Generating DBR summary..." >&2
 DBR_SUMMARY=$(python3 "$SCRIPT_DIR/summarize_concurrency_runs.py" \
     --engine "$ENGINE2" \
     --cluster-size "$DBR_CLUSTER_SIZE" \
@@ -92,7 +92,7 @@ def format_text_comparison(e6_data, dbr_data):
     """Format comparison as text."""
     output = []
     output.append("=" * 140)
-    output.append("ENGINE COMPARISON: E6DATA vs DATABRICKS - CONCURRENCY SCALING")
+    output.append("ENGINE COMPARISON: E6DATA vs DBR - CONCURRENCY SCALING")
     output.append("=" * 140)
     output.append(f"Cluster Size: {e6_data['cluster_size']}")
     output.append(f"Benchmark: {e6_data['benchmark']}")
@@ -118,7 +118,7 @@ def format_text_comparison(e6_data, dbr_data):
         output.append("-" * 140)
         output.append(f"CONCURRENCY LEVEL: {c} threads")
         output.append("-" * 140)
-        output.append(f"{'Metric':<30} {'E6Data':>15} {'Databricks':>15} {'Improvement':>20} {'Winner':>15}")
+        output.append(f"{'Metric':<30} {'E6Data':>15} {'DBR':>15} {'Improvement':>20} {'Winner':>15}")
         output.append("-" * 140)
 
         metrics = [
@@ -137,10 +137,10 @@ def format_text_comparison(e6_data, dbr_data):
             if dbr_val > 0:
                 if better == 'lower':
                     improvement = ((dbr_val - e6_val) / dbr_val) * 100
-                    winner = "✅ E6Data" if e6_val < dbr_val else "⚠️  Databricks"
+                    winner = "✅ E6Data" if e6_val < dbr_val else "⚠️  DBR"
                 else:  # higher is better
                     improvement = ((e6_val - dbr_val) / dbr_val) * 100
-                    winner = "✅ E6Data" if e6_val > dbr_val else "⚠️  Databricks"
+                    winner = "✅ E6Data" if e6_val > dbr_val else "⚠️  DBR"
             else:
                 improvement = 0
                 winner = "🟰 Tie"
@@ -184,7 +184,7 @@ def format_text_comparison(e6_data, dbr_data):
 def format_markdown_comparison(e6_data, dbr_data):
     """Format comparison as markdown."""
     output = []
-    output.append("# Engine Comparison: E6Data vs Databricks")
+    output.append("# Engine Comparison: E6Data vs DBR")
     output.append("## Concurrency Scaling Analysis")
     output.append("")
     output.append(f"**Cluster Size:** {e6_data['cluster_size']}  ")
@@ -210,7 +210,7 @@ def format_markdown_comparison(e6_data, dbr_data):
 
         output.append(f"## Concurrency Level: {c} threads")
         output.append("")
-        output.append("| Metric | E6Data | Databricks | Improvement | Winner |")
+        output.append("| Metric | E6Data | DBR | Improvement | Winner |")
         output.append("| --- | --- | --- | --- | --- |")
 
         metrics = [
@@ -230,10 +230,10 @@ def format_markdown_comparison(e6_data, dbr_data):
             if dbr_val > 0:
                 if better == 'lower':
                     improvement = ((dbr_val - e6_val) / dbr_val) * 100
-                    winner = "✅ E6Data" if e6_val < dbr_val else "⚠️ Databricks"
+                    winner = "✅ E6Data" if e6_val < dbr_val else "⚠️ DBR"
                 else:
                     improvement = ((e6_val - dbr_val) / dbr_val) * 100
-                    winner = "✅ E6Data" if e6_val > dbr_val else "⚠️ Databricks"
+                    winner = "✅ E6Data" if e6_val > dbr_val else "⚠️ DBR"
             else:
                 improvement = 0
                 winner = "🟰 Tie"
@@ -286,7 +286,7 @@ if __name__ == '__main__':
     elif output_format == 'json':
         result = {
             'e6data': e6_data,
-            'databricks': dbr_data
+            'dbr': dbr_data
         }
         print(json.dumps(result, indent=2))
     else:  # text

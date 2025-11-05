@@ -101,7 +101,7 @@ Use these instead:
 # New feature (no old equivalent):
 ./utilities/compare_s3_runs.sh --latest \
   --engine1 e6data \
-  --engine2 databricks \
+  --engine2 dbr \
   --cluster-size XS \
   --benchmark tpcds_29_1tb \
   --run-type sequential
@@ -112,7 +112,7 @@ Use these instead:
 # New feature (no old equivalent):
 ./utilities/compare_s3_runs.sh --best \
   --engine1 e6data \
-  --engine2 databricks \
+  --engine2 dbr \
   --cluster-size XS \
   --benchmark tpcds_29_1tb \
   --run-type sequential \

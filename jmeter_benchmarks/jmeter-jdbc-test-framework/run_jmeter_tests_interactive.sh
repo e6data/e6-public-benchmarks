@@ -117,7 +117,7 @@ if [[ -z "${ENGINE:-}" ]] || [[ "${ENGINE}" == "unknown" ]]; then
     if [[ -n "$DRIVER_CLASS_DETECT" ]]; then
         case "$DRIVER_CLASS_DETECT" in
             *e6-jdbc-driver*) ENGINE="e6data" ;;
-            *databricks-jdbc*) ENGINE="databricks" ;;
+            *dbr-jdbc*) ENGINE="dbr" ;;
             *trino-jdbc*) ENGINE="trino" ;;
             *presto-jdbc*) ENGINE="presto" ;;
             *athena-jdbc*|*AthenaJDBC*) ENGINE="athena" ;;
@@ -750,7 +750,7 @@ TEST_PURPOSE=${TEST_PURPOSE:-"None"}  # benchmark, regression, capacity_planning
 PREVIOUS_RUN_ID=${PREVIOUS_RUN_ID:-"None"}  # For comparison tracking
 
 # Extract cluster_size from CLUSTER_CONFIG JSON for S3 partitioning
-# This provides consistent partitioning across all engine types (e6data, databricks, snowflake, etc.)
+# This provides consistent partitioning across all engine types (e6data, dbr, snowflake, etc.)
 CLUSTER_SIZE=$(echo "$CLUSTER_CONFIG" | jq -r '.cluster_size // "unknown"' 2>/dev/null || echo "unknown")
 
 # Determine BENCHMARK_TYPE (with auto-detection from query filename or explicit metadata)

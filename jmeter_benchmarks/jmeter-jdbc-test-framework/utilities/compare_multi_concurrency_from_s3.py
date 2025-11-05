@@ -11,7 +11,7 @@ Usage:
 Example:
     python compare_multi_concurrency.py \
         s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
-        s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+        s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 """
 
 import sys
@@ -329,7 +329,7 @@ def main():
         epilog=__doc__
     )
     parser.add_argument('engine1_base', help='First engine base S3 path (e.g., e6data)')
-    parser.add_argument('engine2_base', help='Second engine base S3 path (e.g., databricks)')
+    parser.add_argument('engine2_base', help='Second engine base S3 path (e.g., dbr)')
     parser.add_argument('--output-dir', default='reports', help='Output directory for reports')
     
     args = parser.parse_args()

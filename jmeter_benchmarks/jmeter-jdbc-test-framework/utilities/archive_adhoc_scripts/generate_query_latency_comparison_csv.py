@@ -287,7 +287,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Compare E6Data and Databricks across all concurrency levels
+  # Compare E6Data and DBR across all concurrency levels
   python utilities/generate_query_latency_comparison_csv.py \\
       --cluster-size M \\
       --benchmark tpcds_29_1tb \\
@@ -313,8 +313,8 @@ Examples:
                        help='Cluster size (e.g., M, L, XL)')
     parser.add_argument('--benchmark', required=True,
                        help='Benchmark name (e.g., tpcds_29_1tb)')
-    parser.add_argument('--engines', nargs='+', default=['e6data', 'databricks'],
-                       help='Engine names to compare (default: e6data databricks)')
+    parser.add_argument('--engines', nargs='+', default=['e6data', 'dbr'],
+                       help='Engine names to compare (default: e6data dbr)')
     parser.add_argument('--concurrency', nargs='+', type=int, default=[2, 4, 8, 12, 16],
                        help='Concurrency levels to include (default: 2 4 8 12 16)')
     parser.add_argument('--output', required=True,

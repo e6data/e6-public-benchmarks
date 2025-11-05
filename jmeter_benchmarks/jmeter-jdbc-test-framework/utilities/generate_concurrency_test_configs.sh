@@ -1,13 +1,13 @@
 #!/bin/bash
 # Generator script to create metadata files and test input files for concurrency testing
-# Generates files for e6data and Databricks across cluster sizes S, M, and L with concurrency 2,4,8,12,16
+# Generates files for e6data and DBR across cluster sizes S, M, and L with concurrency 2,4,8,12,16
 
 set -e
 
 # Configuration
 CLUSTER_SIZES=("S" "M" "L")
 CONCURRENCY_LEVELS=(2 4 8 12 16)
-ENGINES=("e6data" "databricks")
+ENGINES=("e6data" "dbr")
 
 # Directories
 METADATA_DIR="metadata_files"
@@ -87,13 +87,13 @@ MAX_POOL=300
 EOF
 }
 
-# Function to create Databricks metadata file
-create_databricks_metadata() {
+# Function to create DBR metadata file
+create_dbr_metadata() {
     local cluster_size=$1
     local concurrency=$2
 
     # Map cluster size to new format with min/max clusters
-    # All Databricks tests use min=1, max=1 (no autoscaling)
+    # All DBR tests use min=1, max=1 (no autoscaling)
     local cluster_size_formatted="${cluster_size}-1x1"
 
     local metadata_file="$METADATA_DIR/dbr_dbc-33354dfe-277f_${cluster_size,,}_concurrency${concurrency}_metadata.txt"
@@ -101,23 +101,23 @@ create_databricks_metadata() {
     echo "  Creating: $metadata_file"
     cat > "$metadata_file" << EOF
 # ========================================
-# Databricks Cluster Test Metadata
+# DBR Cluster Test Metadata
 # Cluster Size: ${cluster_size}-1x1 - ${concurrency} Concurrent Threads
 # ========================================
 
 # Test Run Identification
-ALIAS="databricks-${cluster_size,,}-1x1-concurrency${concurrency}"
-ENGINE="databricks"
+ALIAS="dbr-${cluster_size,,}-1x1-concurrency${concurrency}"
+ENGINE="dbr"
 MODE="benchmark"
-TAGS="performance,benchmark,databricks,tpcds,azure,JPMC,concurrency-${concurrency},${cluster_size,,}-1x1,run-1"
-COMMENTS="Databricks SQL Warehouse ${cluster_size}-1x1 cluster - 29 TPCDS queries on 1TB dataset with ${concurrency} concurrent threads - Cold start, Run 1"
+TAGS="performance,benchmark,dbr,tpcds,azure,JPMC,concurrency-${concurrency},${cluster_size,,}-1x1,run-1"
+COMMENTS="DBR SQL Warehouse ${cluster_size}-1x1 cluster - 29 TPCDS queries on 1TB dataset with ${concurrency} concurrent threads - Cold start, Run 1"
 
 # Cloud & Region
 CLOUD="Azure"
 REGION="eastus"
 AVAILABILITY_ZONE="unknown"
 
-# Databricks Cluster/Warehouse Configuration
+# DBR Cluster/Warehouse Configuration
 CLUSTER_CONFIG='{
   "warehouse_id": "e020ff73ae69ed5a",
   "warehouse_type": "SQL Warehouse",
@@ -138,7 +138,7 @@ CLUSTER_CONFIG='{
 }'
 
 # Cluster Endpoints
-CLUSTER_HOSTNAME="dbc-33354dfe-277f.cloud.databricks.com"
+CLUSTER_HOSTNAME="dbc-33354dfe-277f.cloud.dbr.com"
 HTTP_PATH="/sql/1.0/warehouses/e020ff73ae69ed5a"
 JDBC_PORT="443"
 
@@ -154,7 +154,7 @@ DATA_TYPE="TPCDS"
 DATASET_NAME="TPCDS 1TB"
 QUERY_COUNT="29"
 QUERY_SOURCE="JPMC selected TPCDS queries"
-ADDITIONAL_INFO="Databricks SQL Warehouse ${cluster_size} cluster on Azure, ${concurrency} concurrent threads, hive_metastore catalog, tpcds_1000_delta schema, Delta Lake format, 29 optimized TPCDS queries"
+ADDITIONAL_INFO="DBR SQL Warehouse ${cluster_size} cluster on Azure, ${concurrency} concurrent threads, hive_metastore catalog, tpcds_1000_delta schema, Delta Lake format, 29 optimized TPCDS queries"
 
 # Benchmark & Run Type (Optional - auto-detected if not specified)
 BENCHMARK_TYPE="tpcds_29_1tb"
@@ -176,7 +176,7 @@ OWNER="jagannath@e6x.io"
 # Comparison Baseline
 BASELINE_ENGINE="e6data"
 BASELINE_CLUSTER="${cluster_size} cluster comparison"
-COMPARISON_GOAL="Compare Databricks ${cluster_size} cluster vs e6data on TPCDS 29 queries with ${concurrency} concurrent threads"
+COMPARISON_GOAL="Compare DBR ${cluster_size} cluster vs e6data on TPCDS 29 queries with ${concurrency} concurrent threads"
 
 # S3 Upload Configuration
 COPY_TO_S3=true
@@ -290,9 +290,9 @@ PROJECT="unknown"
 OWNER="jagannath@e6x.io"
 
 # Comparison Baseline
-BASELINE_ENGINE="databricks"
+BASELINE_ENGINE="dbr"
 BASELINE_CLUSTER="${cluster_size}-1x1 cluster comparison"
-COMPARISON_GOAL="Compare e6data ${cluster_size}-${executor_count}x${executor_count} ($((executor_count * 30)) cores) vs Databricks ${cluster_size}-1x1 on TPCDS 29 queries with ${concurrency} concurrent threads"
+COMPARISON_GOAL="Compare e6data ${cluster_size}-${executor_count}x${executor_count} ($((executor_count * 30)) cores) vs DBR ${cluster_size}-1x1 on TPCDS 29 queries with ${concurrency} concurrent threads"
 
 # S3 Upload Configuration
 COPY_TO_S3=true
@@ -302,7 +302,7 @@ S3_PATH="s3://e6-jmeter/jmeter-results"
 DEFAULT_TEST_PLAN="Test-Plan-Maintain-static-concurrency.jmx"
 DEFAULT_TEST_PROPERTIES="concurrency_${concurrency}_test.properties"
 DEFAULT_CONNECTION_PROPERTIES="demo-graviton_connection.properties"
-DEFAULT_QUERIES="E6Data_JPMC_TPCDS_queries_TPCDS_29_queries_sorted.csv"
+DEFAULT_QUERIES="E6Data_TPCDS_queries_1.csv"
 DEFAULT_METADATA="e6data_demo-graviton_${cluster_size,,}_concurrency${concurrency}_metadata.txt"
 
 # Test Execution Details
@@ -324,7 +324,7 @@ create_test_input() {
 
     echo "  Creating: $input_file"
 
-    if [[ "$engine" == "databricks" ]]; then
+    if [[ "$engine" == "dbr" ]]; then
         cat > "$input_file" << EOF
 dbr_dbc-33354dfe-277f_${cluster_size,,}_concurrency${concurrency}_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
@@ -338,7 +338,7 @@ e6data_demo-graviton_${cluster_size,,}_concurrency${concurrency}_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
 concurrency_${concurrency}_test.properties
 demo-graviton_connection.properties
-E6Data_JPMC_TPCDS_queries_TPCDS_29_queries_sorted.csv
+E6Data_TPCDS_queries_1.csv
 EOF
     fi
 }
@@ -360,8 +360,8 @@ for engine in "${ENGINES[@]}"; do
             echo "[$((++file_count))/20] Generating ${engine} ${cluster_size} concurrency=${concurrency}..."
 
             # Create metadata file
-            if [[ "$engine" == "databricks" ]]; then
-                create_databricks_metadata "$cluster_size" "$concurrency"
+            if [[ "$engine" == "dbr" ]]; then
+                create_dbr_metadata "$cluster_size" "$concurrency"
             else
                 create_e6data_metadata "$cluster_size" "$concurrency"
             fi
@@ -383,10 +383,10 @@ echo "  - $(ls -1 $TEST_PROPS_DIR/concurrency_*_test.properties 2>/dev/null | wc
 echo ""
 echo "Next steps:"
 echo "  1. Review generated files in $METADATA_DIR/ and $TEST_INPUT_DIR/"
-echo "  2. Update Databricks warehouse to desired cluster size"
+echo "  2. Update DBR warehouse to desired cluster size"
 echo "  3. Run execution scripts:"
-echo "     - ./utilities/run_databricks_s_all_concurrency.sh"
-echo "     - ./utilities/run_databricks_m_all_concurrency.sh"
+echo "     - ./utilities/run_dbr_s_all_concurrency.sh"
+echo "     - ./utilities/run_dbr_m_all_concurrency.sh"
 echo "     - ./utilities/run_e6data_s_all_concurrency.sh"
 echo "     - ./utilities/run_e6data_m_all_concurrency.sh"
 echo ""

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Query-by-Query Comparison Tool for JMeter Aggregate Reports
-Compares e6data vs Databricks performance across all concurrency levels
+Compares e6data vs DBR performance across all concurrency levels
 """
 
 import csv
@@ -76,7 +76,7 @@ def load_all_reports(report_dir):
     """Load all aggregate reports from directory."""
     reports = {
         'e6data': {},
-        'databricks': {}
+        'dbr': {}
     }
 
     for file_path in Path(report_dir).glob('*.csv'):
@@ -100,7 +100,7 @@ def load_all_reports(report_dir):
         if filename.startswith('e6'):
             engine = 'e6data'
         elif filename.startswith('DBR'):
-            engine = 'databricks'
+            engine = 'dbr'
         else:
             continue
 
@@ -118,7 +118,7 @@ def generate_summary_comparison(reports):
     """Generate overall summary comparison."""
     output = []
     output.append("=" * 140)
-    output.append("QUERY-BY-QUERY COMPARISON: E6DATA M-4x4 (120 cores) vs DATABRICKS S-2x2 (~120 cores)")
+    output.append("QUERY-BY-QUERY COMPARISON: E6DATA M-4x4 (120 cores) vs DBR S-2x2 (~120 cores)")
     output.append("=" * 140)
     output.append("")
 
@@ -126,7 +126,7 @@ def generate_summary_comparison(reports):
 
     for concurrency in concurrency_levels:
         e6_queries = reports['e6data'].get(concurrency, {})
-        dbr_queries = reports['databricks'].get(concurrency, {})
+        dbr_queries = reports['dbr'].get(concurrency, {})
 
         if not e6_queries or not dbr_queries:
             continue
@@ -154,7 +154,7 @@ def generate_summary_comparison(reports):
         output.append("-" * 140)
 
         # Query-by-query comparison
-        wins = {'e6data': 0, 'databricks': 0, 'tie': 0}
+        wins = {'e6data': 0, 'dbr': 0, 'tie': 0}
 
         for query in sorted(common_queries):
             e6_orig_name, e6_data = e6_normalized[query]
@@ -177,8 +177,8 @@ def generate_summary_comparison(reports):
                 winner = "✅ E6Data"
                 wins['e6data'] += 1
             else:
-                winner = "⚠️  Databricks"
-                wins['databricks'] += 1
+                winner = "⚠️  DBR"
+                wins['dbr'] += 1
 
             output.append(f"{query:<20} {e6_avg:>12.0f} {dbr_avg:>12.0f} {improvement:>11.1f}% "
                          f"{e6_p95:>12.0f} {dbr_p95:>12.0f} {winner:>15}")
@@ -187,7 +187,7 @@ def generate_summary_comparison(reports):
         output.append("-" * 140)
         output.append(f"Total Queries: {len(common_queries)} | "
                      f"E6Data Wins: {wins['e6data']} | "
-                     f"Databricks Wins: {wins['databricks']} | "
+                     f"DBR Wins: {wins['dbr']} | "
                      f"Ties: {wins['tie']}")
         output.append("")
 
@@ -213,7 +213,7 @@ def generate_detailed_csv(reports, output_file):
 
         for concurrency in concurrency_levels:
             e6_queries = reports['e6data'].get(concurrency, {})
-            dbr_queries = reports['databricks'].get(concurrency, {})
+            dbr_queries = reports['dbr'].get(concurrency, {})
 
             if not e6_queries or not dbr_queries:
                 continue
@@ -238,7 +238,7 @@ def generate_detailed_csv(reports, output_file):
                 elif improvement > 0:
                     winner = "E6Data"
                 else:
-                    winner = "Databricks"
+                    winner = "DBR"
 
                 writer.writerow([
                     concurrency, query,
@@ -265,7 +265,7 @@ def main():
     print("Loading aggregate reports...", file=sys.stderr)
     reports = load_all_reports(args.report_dir)
 
-    print(f"Found {len(reports['e6data'])} e6data reports and {len(reports['databricks'])} Databricks reports", file=sys.stderr)
+    print(f"Found {len(reports['e6data'])} e6data reports and {len(reports['dbr'])} DBR reports", file=sys.stderr)
 
     # Generate summary
     print("\nGenerating summary comparison...", file=sys.stderr)

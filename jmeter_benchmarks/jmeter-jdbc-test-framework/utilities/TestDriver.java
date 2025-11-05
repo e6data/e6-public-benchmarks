@@ -7,7 +7,7 @@ import java.time.format.DateTimeFormatter;
 /**
  * Universal JDBC Test Driver
  * Tests database connectivity and executes queries based on properties file configuration
- * Supports multiple database engines: E6Data, Databricks, Trino, Presto, Athena, etc.
+ * Supports multiple database engines: E6Data, DBR, Trino, Presto, Athena, etc.
  * 
  * Usage: java TestDriver <connection_properties_file> [test_query]
  */
@@ -54,7 +54,7 @@ public class TestDriver {
         System.out.println("");
         System.out.println("Examples:");
         System.out.println("  java TestDriver connection_properties/e6_connection.properties");
-        System.out.println("  java TestDriver connection_properties/databricks_connection.properties \"SELECT current_timestamp()\"");
+        System.out.println("  java TestDriver connection_properties/dbr_connection.properties \"SELECT current_timestamp()\"");
         System.out.println("");
         System.out.println("Properties file should contain:");
         System.out.println("  DRIVER_CLASS=<jdbc.driver.class>");

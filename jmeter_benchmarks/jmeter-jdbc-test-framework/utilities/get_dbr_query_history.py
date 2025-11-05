@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Fetch Databricks SQL query history and export to CSV.
+Fetch DBR SQL query history and export to CSV.
 
 Usage:
     python get_dbr_query_history.py <connection_properties> [options]
 
 Arguments:
-    connection_properties   Path to Databricks connection properties file
+    connection_properties   Path to DBR connection properties file
 
 Options:
     --metadata FILE         Metadata file to include in output (default: auto-detect from test context)
@@ -50,7 +50,7 @@ except ImportError:
 
 
 def parse_connection_properties(properties_file):
-    """Parse Databricks connection properties file."""
+    """Parse DBR connection properties file."""
     props = {}
 
     with open(properties_file, 'r') as f:
@@ -67,8 +67,8 @@ def parse_connection_properties(properties_file):
 
 
 def extract_warehouse_id(connection_string):
-    """Extract warehouse ID from Databricks JDBC connection string."""
-    # Example: jdbc:databricks://dbc-33354dfe-277f.cloud.databricks.com:443;httpPath=/sql/1.0/warehouses/e020ff73ae69ed5a
+    """Extract warehouse ID from DBR JDBC connection string."""
+    # Example: jdbc:dbr://dbc-33354dfe-277f.cloud.dbr.com:443;httpPath=/sql/1.0/warehouses/e020ff73ae69ed5a
     match = re.search(r'/warehouses/([a-f0-9]+)', connection_string)
     if match:
         return match.group(1)
@@ -77,8 +77,8 @@ def extract_warehouse_id(connection_string):
 
 def extract_host(connection_string):
     """Extract host from JDBC connection string."""
-    # jdbc:databricks://HOST:443/...
-    match = re.search(r'jdbc:databricks://([^:]+)', connection_string)
+    # jdbc:dbr://HOST:443/...
+    match = re.search(r'jdbc:dbr://([^:]+)', connection_string)
     if match:
         return f"https://{match.group(1)}"
     return None
@@ -164,7 +164,7 @@ def parse_test_result_json(test_result_file):
 
 
 def get_query_history(host, token, warehouse_id, start_time=None, end_time=None, hours=None):
-    """Fetch query history from Databricks API."""
+    """Fetch query history from DBR API."""
 
     url = f"{host}/api/2.0/sql/history/queries"
     headers = {
@@ -270,12 +270,12 @@ def export_to_csv(queries, output_file, metadata=None, test_properties=None, inc
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fetch Databricks SQL query history and export to CSV',
+        description='Fetch DBR SQL query history and export to CSV',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
 
-    parser.add_argument('connection_properties', help='Path to Databricks connection properties file')
+    parser.add_argument('connection_properties', help='Path to DBR connection properties file')
     parser.add_argument('--metadata', help='Metadata file to include in output')
     parser.add_argument('--test-properties', help='Test properties file to include in output')
     parser.add_argument('--test-result', help='JMeter test_result JSON file to extract start/end times')
@@ -311,16 +311,16 @@ def main():
         sys.exit(1)
 
     # Get token from properties or environment
-    token = conn_props.get('DATABRICKS_TOKEN') or os.environ.get('DATABRICKS_TOKEN')
+    token = conn_props.get('DBR_TOKEN') or os.environ.get('DBR_TOKEN')
     if not token:
         # Try to get from PASSWORD field (some configs use this)
         token = conn_props.get('PASSWORD')
 
     if not token:
-        print("Error: Databricks token not found. Set DATABRICKS_TOKEN in connection properties or environment")
+        print("Error: DBR token not found. Set DBR_TOKEN in connection properties or environment")
         sys.exit(1)
 
-    print(f"Databricks Host: {host}")
+    print(f"DBR Host: {host}")
     print(f"Warehouse ID: {warehouse_id}")
 
     # Parse metadata if provided

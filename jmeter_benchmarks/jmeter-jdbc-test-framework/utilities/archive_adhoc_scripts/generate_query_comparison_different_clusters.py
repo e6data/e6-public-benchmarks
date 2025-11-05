@@ -165,13 +165,13 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
 
     print(f"Generating query latency comparison...", file=sys.stderr)
     print(f"  E6Data: {e6_cluster}", file=sys.stderr)
-    print(f"  Databricks: {dbr_cluster}", file=sys.stderr)
+    print(f"  DBR: {dbr_cluster}", file=sys.stderr)
 
     # Collect data
     all_data = {}
     engine_configs = {
         'e6data': e6_cluster,
-        'databricks': dbr_cluster
+        'dbr': dbr_cluster
     }
 
     for engine, cluster_size in engine_configs.items():
@@ -224,8 +224,8 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
                 if concurrency in all_data['e6data'] and query in all_data['e6data'][concurrency]:
                     e6_val = f"{all_data['e6data'][concurrency][query]['avg_sec']:.2f}"
 
-                if concurrency in all_data['databricks'] and query in all_data['databricks'][concurrency]:
-                    dbr_val = f"{all_data['databricks'][concurrency][query]['avg_sec']:.2f}"
+                if concurrency in all_data['dbr'] and query in all_data['dbr'][concurrency]:
+                    dbr_val = f"{all_data['dbr'][concurrency][query]['avg_sec']:.2f}"
 
                 # Calculate difference
                 if e6_val and dbr_val:
@@ -272,10 +272,10 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
                         elif stat_label == 'Max':
                             e6_val = f'{stats["max"]:.2f}'
 
-                # Databricks stats
+                # DBR stats
                 dbr_val = ''
-                if concurrency in all_data['databricks']:
-                    values = [q['avg_sec'] for q in all_data['databricks'][concurrency].values()]
+                if concurrency in all_data['dbr']:
+                    values = [q['avg_sec'] for q in all_data['dbr'][concurrency].values()]
                     if values:
                         stats = calculate_statistics(values)
                         if stat_label == 'Average':
@@ -308,7 +308,7 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
     print(f"\n✅ CSV file generated: {output_file}", file=sys.stderr)
     print(f"   Queries: {len(all_queries)}", file=sys.stderr)
     print(f"   E6Data cluster: {e6_cluster}", file=sys.stderr)
-    print(f"   Databricks cluster: {dbr_cluster}", file=sys.stderr)
+    print(f"   DBR cluster: {dbr_cluster}", file=sys.stderr)
     print(f"   Concurrency levels: {', '.join(map(str, concurrency_levels))}", file=sys.stderr)
 
 
@@ -320,7 +320,7 @@ def main():
     parser.add_argument('--e6-cluster', required=True,
                        help='E6Data cluster size (e.g., M, L)')
     parser.add_argument('--dbr-cluster', required=True,
-                       help='Databricks cluster size (e.g., M, S-2x2)')
+                       help='DBR cluster size (e.g., M, S-2x2)')
     parser.add_argument('--benchmark', required=True,
                        help='Benchmark name (e.g., tpcds_29_1tb)')
     parser.add_argument('--concurrency', nargs='+', type=int, default=[2, 4, 8, 12, 16],

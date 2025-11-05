@@ -7,7 +7,7 @@ Compare all concurrency runs between two engines:
 ```bash
 python utilities/compare_multi_concurrency.py \
   s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 ```
 
 **This automatically finds ALL matching concurrency runs and generates comprehensive comparison!**
@@ -25,7 +25,7 @@ python utilities/compare_multi_concurrency.py \
 ```
 
 **Replace:**
-- `ENGINE1` / `ENGINE2`: `e6data` or `databricks`
+- `ENGINE1` / `ENGINE2`: `e6data` or `dbr`
 - `CLUSTER1` / `CLUSTER2`: `XS`, `S-2x2`, `M`, `S-4x4`, etc.
 - `BENCHMARK`: `tpcds_29_1tb`, etc.
 
@@ -42,7 +42,7 @@ python utilities/compare_jmeter_runs.py \
 ```
 
 **Replace:**
-- `ENGINE1` / `ENGINE2`: `e6data` or `databricks`
+- `ENGINE1` / `ENGINE2`: `e6data` or `dbr`
 - `CLUSTER1` / `CLUSTER2`: `XS`, `S-2x2`, `M`, `S-4x4`, etc.
 - `BENCHMARK`: `tpcds_29_1tb`, etc.
 - `X`: Concurrency level (2, 4, 8, 12, 16, etc.)
@@ -77,20 +77,20 @@ aws s3 ls s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=t
 
 ## 📊 Real-World Examples
 
-### Example 1: Compare E6Data M vs Databricks S-4x4 (120 cores each)
+### Example 1: Compare E6Data M vs DBR S-4x4 (120 cores each)
 
 ```bash
 python utilities/compare_multi_concurrency.py \
   s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 ```
 
-### Example 2: Compare E6Data S-2x2 vs Databricks S-2x2 (60 cores each)
+### Example 2: Compare E6Data S-2x2 vs DBR S-2x2 (60 cores each)
 
 ```bash
 python utilities/compare_multi_concurrency.py \
   s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 ```
 
 ### Example 3: Compare Sequential Runs (XS clusters, 30 cores)
@@ -98,7 +98,7 @@ python utilities/compare_multi_concurrency.py \
 ```bash
 python utilities/compare_jmeter_runs.py \
   s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=XS/benchmark=tpcds_29_1tb/run_type=sequential/ \
-  s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=XS/benchmark=tpcds_29_1tb/run_type=sequential/
+  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=XS/benchmark=tpcds_29_1tb/run_type=sequential/
 ```
 
 ### Example 4: Compare Only Concurrency=4
@@ -106,7 +106,7 @@ python utilities/compare_jmeter_runs.py \
 ```bash
 python utilities/compare_jmeter_runs.py \
   s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/run_type=concurrency_4/ \
-  s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/
+  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/
 ```
 
 ---
@@ -133,8 +133,8 @@ In the CSV and reports:
 - **Negative % (e.g., -35.2%)**: Second engine (Engine 2) is FASTER
 - **~0%**: Both engines are comparable
 
-Example: If comparing E6Data vs Databricks and you see `+51.5%` for average:
-→ **E6Data is 51.5% faster than Databricks**
+Example: If comparing E6Data vs DBR and you see `+51.5%` for average:
+→ **E6Data is 51.5% faster than DBR**
 
 ---
 

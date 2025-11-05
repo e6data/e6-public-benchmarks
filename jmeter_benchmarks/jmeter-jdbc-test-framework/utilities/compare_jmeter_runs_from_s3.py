@@ -8,7 +8,7 @@ Usage:
 Example:
     python compare_jmeter_runs.py \
         s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/run_type=concurrency_2/ \
-        s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/
+        s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/
 """
 
 import sys
@@ -255,7 +255,7 @@ def main():
         epilog=__doc__
     )
     parser.add_argument('s3_path_1', help='First S3 path (e.g., e6data run)')
-    parser.add_argument('s3_path_2', help='Second S3 path (e.g., databricks run)')
+    parser.add_argument('s3_path_2', help='Second S3 path (e.g., dbr run)')
     parser.add_argument('--output-dir', default='reports', help='Output directory for reports')
 
     args = parser.parse_args()
