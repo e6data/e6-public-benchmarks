@@ -1,26 +1,29 @@
 #!/bin/bash
-# Run all dbr concurrency tests for a specified cluster size
-# Usage: ./run_dbr_all_concurrency.sh <cluster_size> [benchmark]
+# Run all dbr concurrency tests matching S3 path structure
+# Usage: ./run_dbr_all_concurrency.sh <cluster_size> <benchmark>
+#
+# Arguments match S3 path: s3://bucket/engine=dbr/cluster_size=X/benchmark=Y/
 #
 # Examples:
-#   ./run_dbr_all_concurrency.sh S-4x4
-#   ./run_dbr_all_concurrency.sh S-2x2
+#   ./run_dbr_all_concurrency.sh S-2x2 tpcds_29_1tb
 #   ./run_dbr_all_concurrency.sh S-4x4 tpcds_51_1tb
 #
-# Concurrency levels: 2, 4, 8, 12, 16
+# Concurrency levels: 1, 2, 4, 8, 12, 16
 
 set -e
 
 # Check arguments
-if [ $# -lt 1 ]; then
-    echo "Error: Cluster size argument required"
+if [ $# -lt 2 ]; then
+    echo "Error: cluster_size and benchmark arguments required"
     echo ""
-    echo "Usage: $0 <cluster_size> [benchmark]"
+    echo "Usage: $0 <cluster_size> <benchmark>"
     echo ""
     echo "Examples:"
-    echo "  $0 S-4x4"
-    echo "  $0 S-2x2"
+    echo "  $0 S-2x2 tpcds_29_1tb"
     echo "  $0 S-4x4 tpcds_51_1tb"
+    echo ""
+    echo "Arguments match S3 structure:"
+    echo "  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=<ARG1>/benchmark=<ARG2>/"
     echo ""
     echo "Available cluster sizes:"
     echo "  - S-2x2  (~60 cores: Small warehouse, 2 min/max clusters)"
@@ -31,14 +34,9 @@ fi
 # Configuration
 ENGINE="dbr"
 CLUSTER_SIZE="$1"
-BENCHMARK="${2:-tpcds_29_1tb}"
+BENCHMARK="$2"
 CONCURRENCY_LEVELS=(1 2 4 8 12 16)
 S3_BASE_PATH="s3://e6-jmeter/jmeter-results"
-
-# Cluster size descriptions
-declare -A CLUSTER_DESCRIPTIONS
-CLUSTER_DESCRIPTIONS["S-2x2"]="~60 cores (Small warehouse, 2 min/max clusters) - Matches E6Data S-2x2"
-CLUSTER_DESCRIPTIONS["S-4x4"]="~120 cores (Small warehouse, 4 min/max clusters) - Matches E6Data M-4x4"
 
 # Colors
 GREEN='\033[0;32m'
@@ -60,8 +58,10 @@ echo -e "==========================================${NC}"
 echo ""
 echo "Configuration:"
 echo "   - Size: ${CLUSTER_SIZE}"
-if [ -n "${CLUSTER_DESCRIPTIONS[$CLUSTER_SIZE]}" ]; then
-    echo "   - ${CLUSTER_DESCRIPTIONS[$CLUSTER_SIZE]}"
+if [ "$CLUSTER_SIZE" = "S-2x2" ]; then
+    echo "   - ~60 cores (Small warehouse, 2 min/max clusters) - Matches E6Data S-2x2"
+elif [ "$CLUSTER_SIZE" = "S-4x4" ]; then
+    echo "   - ~120 cores (Small warehouse, 4 min/max clusters) - Matches E6Data M-4x4"
 fi
 echo "   - Benchmark: ${BENCHMARK}"
 echo ""
@@ -86,7 +86,7 @@ echo ""
 echo "Checking for test input files..."
 MISSING_FILES=0
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_tpcds29_concurrency_${concurrency}.txt"
+    TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
     if [ ! -f "$TEST_INPUT" ]; then
         echo -e "${YELLOW}  ⚠ Missing: $TEST_INPUT${NC}"
         MISSING_FILES=$((MISSING_FILES + 1))
@@ -115,7 +115,7 @@ mkdir -p "$LOG_DIR"
 
 # Run all concurrency tests
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_tpcds29_concurrency_${concurrency}.txt"
+    TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
 
     # Skip if test input file doesn't exist
     if [ ! -f "$TEST_INPUT" ]; then
