@@ -121,17 +121,24 @@ Execute the interactive test runner:
 ## Automated Batch Testing
 
 ### E6Data Concurrency Tests
-Run all concurrency levels (2, 4, 8, 12, 16) for a specific cluster size:
+Run all concurrency levels (1, 2, 4, 8, 12, 16) for a specific cluster and benchmark:
 
 ```bash
-# Run S-2x2 (60 cores) concurrency tests
-./utilities/run_e6data_all_concurrency.sh S-2x2
+# Usage: ./utilities/run_e6data_all_concurrency.sh <cluster_size> <benchmark>
 
-# Run M-4x4 (120 cores) concurrency tests
-./utilities/run_e6data_all_concurrency.sh M-4x4
+# Run S-2x2 (60 cores) with TPCDS 29 queries on 1TB dataset
+./utilities/run_e6data_all_concurrency.sh S-2x2 tpcds_29_1tb
 
-# Run with custom benchmark
+# Run M-4x4 (120 cores) with TPCDS 29 queries on 1TB dataset
+./utilities/run_e6data_all_concurrency.sh M-4x4 tpcds_29_1tb
+
+# Run with different benchmark (e.g., TPCDS 51 queries on 1TB)
 ./utilities/run_e6data_all_concurrency.sh M-4x4 tpcds_51_1tb
+```
+
+**Arguments map to S3 path structure:**
+```
+s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=<ARG1>/benchmark=<ARG2>/
 ```
 
 **Features:**

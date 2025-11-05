@@ -82,9 +82,10 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
 done
 echo ""
 
-# Check if test input files exist
+# Check if test input files exist and extract sample file info
 echo "Checking for test input files..."
 MISSING_FILES=0
+SAMPLE_TEST_INPUT=""
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
     if [ ! -f "$TEST_INPUT" ]; then
@@ -92,6 +93,10 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
         MISSING_FILES=$((MISSING_FILES + 1))
     else
         echo "  ✓ Found: $TEST_INPUT"
+        # Save first found test input for reading metadata
+        if [ -z "$SAMPLE_TEST_INPUT" ]; then
+            SAMPLE_TEST_INPUT="$TEST_INPUT"
+        fi
     fi
 done
 
@@ -106,6 +111,33 @@ if [ $MISSING_FILES -gt 0 ]; then
     fi
 fi
 
+# Extract info from sample test input file
+QUERY_FILE=""
+CONNECTION_FILE=""
+TEST_PROPERTIES_FILE=""
+TEST_PLAN_FILE=""
+if [ -n "$SAMPLE_TEST_INPUT" ]; then
+    QUERY_FILE=$(sed -n '5p' "$SAMPLE_TEST_INPUT")
+    CONNECTION_FILE=$(sed -n '4p' "$SAMPLE_TEST_INPUT")
+    TEST_PROPERTIES_FILE=$(sed -n '3p' "$SAMPLE_TEST_INPUT")
+    TEST_PLAN_FILE=$(sed -n '2p' "$SAMPLE_TEST_INPUT")
+fi
+
+echo ""
+echo -e "${GREEN}=========================================="
+echo "Test Run Summary"
+echo -e "==========================================${NC}"
+echo "Engine: dbr"
+echo "Cluster Size: ${CLUSTER_SIZE}"
+echo "Benchmark: ${BENCHMARK}"
+echo "Query File: ${QUERY_FILE}"
+echo "Connection: ${CONNECTION_FILE}"
+echo "Test Properties: ${TEST_PROPERTIES_FILE}"
+echo "Test Plan: ${TEST_PLAN_FILE}"
+echo "Concurrency Levels: ${CONCURRENCY_LEVELS[@]}"
+echo ""
+echo "S3 Results Path:"
+echo "  ${S3_BASE_PATH}/engine=dbr/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/"
 echo ""
 read -p "Press Enter to start tests or Ctrl+C to cancel..."
 
