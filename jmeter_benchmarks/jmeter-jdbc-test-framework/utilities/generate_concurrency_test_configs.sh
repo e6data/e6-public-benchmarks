@@ -302,7 +302,7 @@ S3_PATH="s3://e6-jmeter/jmeter-results"
 DEFAULT_TEST_PLAN="Test-Plan-Maintain-static-concurrency.jmx"
 DEFAULT_TEST_PROPERTIES="concurrency_${concurrency}_test.properties"
 DEFAULT_CONNECTION_PROPERTIES="demo-graviton_connection.properties"
-DEFAULT_QUERIES="E6Data_TPCDS_queries_29.csv"
+DEFAULT_QUERIES="E6Data_TPCDS_queries_29_1TB.csv"
 DEFAULT_METADATA="e6data_demo-graviton_${cluster_size,,}_concurrency${concurrency}_metadata.txt"
 
 # Test Execution Details
@@ -338,7 +338,7 @@ e6data_demo-graviton_${cluster_size,,}_concurrency${concurrency}_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
 concurrency_${concurrency}_test.properties
 demo-graviton_connection.properties
-E6Data_TPCDS_queries_29.csv
+E6Data_TPCDS_queries_29_1TB.csv
 EOF
     fi
 }

@@ -757,14 +757,37 @@ CLUSTER_SIZE=$(echo "$CLUSTER_CONFIG" | jq -r '.cluster_size // "unknown"' 2>/de
 if [[ -n "${BENCHMARK_TYPE:-}" ]]; then
     # Use explicit value from metadata file if provided
     :
-elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29 ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29 ]]; then
+# TPC-DS 29 queries with data size detection
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29.*1TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29.*1tb ]]; then
     BENCHMARK_TYPE="tpcds_29_1tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29.*3TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29.*3tb ]]; then
+    BENCHMARK_TYPE="tpcds_29_3tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29.*10TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29.*10tb ]]; then
+    BENCHMARK_TYPE="tpcds_29_10tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29.*30TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29.*30tb ]]; then
+    BENCHMARK_TYPE="tpcds_29_30tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29 ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29 ]]; then
+    # Fallback for files without data size - default to 1TB with warning
+    BENCHMARK_TYPE="tpcds_29_1tb"
+    echo "⚠️  WARNING: Query file doesn't specify data size, defaulting to tpcds_29_1tb"
+# TPC-DS 51 queries with data size detection
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*51.*1TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*51.*1tb ]]; then
+    BENCHMARK_TYPE="tpcds_51_1tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*51.*10TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*51.*10tb ]]; then
+    BENCHMARK_TYPE="tpcds_51_10tb"
 elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*51 ]] || [[ "$(basename $QUERIES_FILE)" =~ 51.*[Jj]meter ]]; then
     BENCHMARK_TYPE="tpcds_51_1tb"
+    echo "⚠️  WARNING: Query file doesn't specify data size, defaulting to tpcds_51_1tb"
+# TPC-DS 81 queries
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*81.*1TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*81.*1tb ]]; then
+    BENCHMARK_TYPE="tpcds_81_1tb"
 elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*81 ]]; then
     BENCHMARK_TYPE="tpcds_81_1tb"
+    echo "⚠️  WARNING: Query file doesn't specify data size, defaulting to tpcds_81_1tb"
+# TPC-H
 elif [[ "$(basename $QUERIES_FILE)" =~ [Tt][Pp][Cc][Hh] ]]; then
     BENCHMARK_TYPE="tpch_22_100gb"
+# Kantar custom
 elif [[ "$(basename $QUERIES_FILE)" =~ [Kk]antar ]]; then
     BENCHMARK_TYPE="custom_kantar"
 else

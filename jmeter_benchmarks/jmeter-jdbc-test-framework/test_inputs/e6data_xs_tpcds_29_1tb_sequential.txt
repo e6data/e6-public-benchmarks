@@ -2,4 +2,4 @@ e6data_demo-graviton_metadata.txt
 Test-Plan-Run-Once-static-concurrency.jmx
 sequential_test.properties
 demo-graviton_connection.properties
-E6Data_TPCDS_queries_29.csv
+E6Data_TPCDS_queries_29_1TB.csv
