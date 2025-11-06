@@ -2,4 +2,4 @@ e6data_s-2x2_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
 concurrency_16_test.properties
 demo-graviton_connection.properties
-E6Data_TPCDS_queries_1.csv
+E6Data_TPCDS_queries_29.csv
