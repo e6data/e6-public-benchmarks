@@ -1,42 +1,53 @@
 #!/bin/bash
-# Run all dbr concurrency tests matching S3 path structure
-# Usage: ./run_dbr_all_concurrency.sh <cluster_size> <benchmark>
+# Run all concurrency tests matching S3 path structure
+# Usage: ./run_all_concurrency.sh <engine> <cluster_size> <benchmark>
 #
-# Arguments match S3 path: s3://bucket/engine=dbr/cluster_size=X/benchmark=Y/
+# Arguments match S3 path: s3://bucket/engine=X/cluster_size=Y/benchmark=Z/
 #
 # Examples:
-#   ./run_dbr_all_concurrency.sh S-2x2 tpcds_29_1tb
-#   ./run_dbr_all_concurrency.sh S-4x4 tpcds_51_1tb
+#   ./run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb
+#   ./run_all_concurrency.sh dbr S-4x4 tpcds_29_1tb
+#   ./run_all_concurrency.sh e6data M-4x4 tpcds_51_1tb
 #
 # Concurrency levels: 1, 2, 4, 8, 12, 16
 
 set -e
 
 # Check arguments
-if [ $# -lt 2 ]; then
-    echo "Error: cluster_size and benchmark arguments required"
+if [ $# -lt 3 ]; then
+    echo "Error: engine, cluster_size, and benchmark arguments required"
     echo ""
-    echo "Usage: $0 <cluster_size> <benchmark>"
+    echo "Usage: $0 <engine> <cluster_size> <benchmark>"
     echo ""
     echo "Examples:"
-    echo "  $0 S-2x2 tpcds_29_1tb"
-    echo "  $0 S-4x4 tpcds_51_1tb"
+    echo "  $0 e6data S-2x2 tpcds_29_1tb"
+    echo "  $0 dbr S-4x4 tpcds_29_1tb"
+    echo "  $0 e6data M-4x4 tpcds_51_1tb"
     echo ""
     echo "Arguments match S3 structure:"
-    echo "  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=<ARG1>/benchmark=<ARG2>/"
+    echo "  s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/"
+    echo ""
+    echo "Available engines: e6data, dbr"
     echo ""
     echo "Available cluster sizes:"
-    echo "  - S-2x2  (~60 cores: Small warehouse, 2 min/max clusters)"
-    echo "  - S-4x4  (~120 cores: Small warehouse, 4 min/max clusters)"
+    echo "  E6Data: S-2x2, M-4x4, XS-1x1"
+    echo "  DBR:    S-2x2, S-4x4, S-1x1"
     exit 1
 fi
 
 # Configuration
-ENGINE="dbr"
-CLUSTER_SIZE="$1"
-BENCHMARK="$2"
+ENGINE="$1"
+CLUSTER_SIZE="$2"
+BENCHMARK="$3"
 CONCURRENCY_LEVELS=(1 2 4 8 12 16)
 S3_BASE_PATH="s3://e6-jmeter/jmeter-results"
+
+# Validate engine
+if [[ ! "$ENGINE" =~ ^(e6data|dbr)$ ]]; then
+    echo "Error: Invalid engine '$ENGINE'"
+    echo "Valid engines: e6data, dbr"
+    exit 1
+fi
 
 # Colors
 GREEN='\033[0;32m'
@@ -51,30 +62,39 @@ cd "$PROJECT_ROOT"
 # Normalize cluster size for file paths (lowercase with hyphens)
 CLUSTER_SIZE_NORMALIZED=$(echo "$CLUSTER_SIZE" | tr '[:upper:]' '[:lower:]')
 
+# Set engine display name
+ENGINE_DISPLAY="$ENGINE"
+if [ "$ENGINE" = "e6data" ]; then
+    ENGINE_DISPLAY="e6data"
+elif [ "$ENGINE" = "dbr" ]; then
+    ENGINE_DISPLAY="DBR"
+fi
+
 # Display configuration
 echo -e "${BLUE}=========================================="
-echo "DBR ${CLUSTER_SIZE} Cluster - All Concurrency Tests"
+echo "${ENGINE_DISPLAY} ${CLUSTER_SIZE} Cluster - All Concurrency Tests"
 echo -e "==========================================${NC}"
 echo ""
 echo "Configuration:"
+if [ "$ENGINE" = "e6data" ]; then
+    echo "   - Cluster: demo-graviton"
+fi
+echo "   - Engine: ${ENGINE}"
 echo "   - Size: ${CLUSTER_SIZE}"
-if [ "$CLUSTER_SIZE" = "S-2x2" ]; then
-    echo "   - ~60 cores (Small warehouse, 2 min/max clusters) - Matches E6Data S-2x2"
-elif [ "$CLUSTER_SIZE" = "S-4x4" ]; then
-    echo "   - ~120 cores (Small warehouse, 4 min/max clusters) - Matches E6Data M-4x4"
+if [ "$ENGINE" = "e6data" ]; then
+    if [ "$CLUSTER_SIZE" = "S-2x2" ]; then
+        echo "   - 60 cores (2 executors × 30 cores) - Matches DBR S-2x2"
+    elif [ "$CLUSTER_SIZE" = "M-4x4" ]; then
+        echo "   - 120 cores (4 executors × 30 cores) - Matches DBR S-4x4"
+    fi
+elif [ "$ENGINE" = "dbr" ]; then
+    if [ "$CLUSTER_SIZE" = "S-2x2" ]; then
+        echo "   - ~60 cores (Small warehouse, 2 min/max clusters) - Matches E6Data S-2x2"
+    elif [ "$CLUSTER_SIZE" = "S-4x4" ]; then
+        echo "   - ~120 cores (Small warehouse, 4 min/max clusters) - Matches E6Data M-4x4"
+    fi
 fi
 echo "   - Benchmark: ${BENCHMARK}"
-echo ""
-echo "⚠️  IMPORTANT: Verify DBR warehouse configuration:"
-if [ "$CLUSTER_SIZE" == "S-4x4" ]; then
-    echo "   - Warehouse Size: Small"
-    echo "   - Min Clusters: 4"
-    echo "   - Max Clusters: 4"
-elif [ "$CLUSTER_SIZE" == "S-2x2" ]; then
-    echo "   - Warehouse Size: Small"
-    echo "   - Min Clusters: 2"
-    echo "   - Max Clusters: 2"
-fi
 echo ""
 echo "Tests to run:"
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
@@ -82,12 +102,27 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
 done
 echo ""
 
+# DBR warehouse configuration reminder
+if [ "$ENGINE" = "dbr" ]; then
+    echo "⚠️  IMPORTANT: Verify DBR warehouse configuration:"
+    if [ "$CLUSTER_SIZE" == "S-4x4" ]; then
+        echo "   - Warehouse Size: Small"
+        echo "   - Min Clusters: 4"
+        echo "   - Max Clusters: 4"
+    elif [ "$CLUSTER_SIZE" == "S-2x2" ]; then
+        echo "   - Warehouse Size: Small"
+        echo "   - Min Clusters: 2"
+        echo "   - Max Clusters: 2"
+    fi
+    echo ""
+fi
+
 # Check if test input files exist and extract sample file info
 echo "Checking for test input files..."
 MISSING_FILES=0
 SAMPLE_TEST_INPUT=""
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
+    TEST_INPUT="test_inputs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
     if [ ! -f "$TEST_INPUT" ]; then
         echo -e "${YELLOW}  ⚠ Missing: $TEST_INPUT${NC}"
         MISSING_FILES=$((MISSING_FILES + 1))
@@ -127,7 +162,7 @@ echo ""
 echo -e "${GREEN}=========================================="
 echo "Test Run Summary"
 echo -e "==========================================${NC}"
-echo "Engine: dbr"
+echo "Engine: ${ENGINE}"
 echo "Cluster Size: ${CLUSTER_SIZE}"
 echo "Benchmark: ${BENCHMARK}"
 echo "Query File: ${QUERY_FILE}"
@@ -137,7 +172,7 @@ echo "Test Plan: ${TEST_PLAN_FILE}"
 echo "Concurrency Levels: ${CONCURRENCY_LEVELS[@]}"
 echo ""
 echo "S3 Results Path:"
-echo "  ${S3_BASE_PATH}/engine=dbr/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/"
+echo "  ${S3_BASE_PATH}/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/"
 echo ""
 read -p "Press Enter to start tests or Ctrl+C to cancel..."
 
@@ -147,7 +182,7 @@ mkdir -p "$LOG_DIR"
 
 # Run all concurrency tests
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    TEST_INPUT="test_inputs/dbr_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
+    TEST_INPUT="test_inputs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
 
     # Skip if test input file doesn't exist
     if [ ! -f "$TEST_INPUT" ]; then
@@ -177,7 +212,7 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
 
     echo ""
     echo -e "${BLUE}=========================================="
-    echo "Running: DBR ${CLUSTER_SIZE} - Concurrency ${concurrency}"
+    echo "Running: ${ENGINE_DISPLAY} ${CLUSTER_SIZE} - Concurrency ${concurrency}"
     echo -e "==========================================${NC}"
     echo "Test input: $TEST_INPUT"
     echo "Log file: $LOG_FILE"
@@ -206,7 +241,7 @@ done
 
 echo ""
 echo -e "${GREEN}=========================================="
-echo "✓ All DBR ${CLUSTER_SIZE} concurrency tests completed!"
+echo "✓ All ${ENGINE_DISPLAY} ${CLUSTER_SIZE} concurrency tests completed!"
 echo -e "==========================================${NC}"
 echo ""
 echo "Logs saved in: $LOG_DIR"
@@ -214,6 +249,10 @@ echo ""
 echo "Next steps:"
 echo "  1. Check S3 for uploaded results:"
 echo "     ${S3_BASE_PATH}/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=concurrency_X/run_id=YYYYMMDD-HHMMSS/"
-echo "  2. Compare with E6Data results (if applicable)"
+if [ "$ENGINE" = "e6data" ]; then
+    echo "  2. Compare with DBR results (if applicable)"
+elif [ "$ENGINE" = "dbr" ]; then
+    echo "  2. Compare with E6Data results (if applicable)"
+fi
 echo "  3. Generate comparison report using utilities/compare_* scripts"
 echo ""

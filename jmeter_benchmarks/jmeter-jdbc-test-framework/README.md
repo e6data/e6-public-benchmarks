@@ -120,30 +120,38 @@ Execute the interactive test runner:
 
 ## Automated Batch Testing
 
-### E6Data Concurrency Tests
-Run all concurrency levels (1, 2, 4, 8, 12, 16) for a specific cluster and benchmark:
+### Unified Concurrency Test Runner
+Run all concurrency levels (1, 2, 4, 8, 12, 16) for any engine, cluster, and benchmark:
 
 ```bash
-# Usage: ./utilities/run_e6data_all_concurrency.sh <cluster_size> <benchmark>
+# Usage: ./utilities/run_all_concurrency.sh <engine> <cluster_size> <benchmark>
 
-# Run S-2x2 (60 cores) with TPCDS 29 queries on 1TB dataset
-./utilities/run_e6data_all_concurrency.sh S-2x2 tpcds_29_1tb
+# E6Data S-2x2 (60 cores) with TPCDS 29 queries on 1TB dataset
+./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb
 
-# Run M-4x4 (120 cores) with TPCDS 29 queries on 1TB dataset
-./utilities/run_e6data_all_concurrency.sh M-4x4 tpcds_29_1tb
+# E6Data M-4x4 (120 cores) with TPCDS 29 queries on 1TB dataset
+./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_29_1tb
+
+# DBR S-2x2 (60 cores) with TPCDS 29 queries on 1TB dataset
+./utilities/run_all_concurrency.sh dbr S-2x2 tpcds_29_1tb
+
+# DBR S-4x4 (120 cores) with TPCDS 29 queries on 1TB dataset
+./utilities/run_all_concurrency.sh dbr S-4x4 tpcds_29_1tb
 
 # Run with different benchmark (e.g., TPCDS 51 queries on 1TB)
-./utilities/run_e6data_all_concurrency.sh M-4x4 tpcds_51_1tb
+./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_51_1tb
 ```
 
-**Arguments map to S3 path structure:**
+**Arguments map directly to S3 path structure:**
 ```
-s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=<ARG1>/benchmark=<ARG2>/
+s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/
 ```
 
 **Features:**
+- Single unified script for all engines (e6data, dbr)
 - Runs all concurrency levels sequentially
 - Validates test input files before starting
+- Shows comprehensive test run summary before execution
 - Logs each test to `/tmp/jmeter_test_logs/` with instance_type and query_file in name
 - 30-second pause between tests
 - Automatic S3 upload (if enabled in metadata)
@@ -180,7 +188,7 @@ s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=<ARG1>/benchmark=<ARG2>
 │   ├── Test-Plan-Fire-QPS-with-load-profile.jmx
 │   └── [Other test plans]
 ├── utilities/
-│   ├── run_e6data_all_concurrency.sh
+│   ├── run_all_concurrency.sh
 │   └── [Analysis and comparison scripts]
 └── reports/                        # Test results (generated at runtime)
 ```
