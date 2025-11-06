@@ -7,6 +7,11 @@ COPY_TO_S3=true
 # S3 base path for storing JMeter results (without partitions)
 S3_BASE_PATH=s3://e6-jmeter/jmeter-results
 
+# Benchmark and Data Configuration
+BENCHMARK_TYPE="tpcds_29_1tb"
+DATA_SIZE="1TB"
+DATA_TYPE="TPCDS"
+
 CLUSTER_CONFIG='{
   "cluster_size": "S-4x4",
   "estimated_cores": 120,
