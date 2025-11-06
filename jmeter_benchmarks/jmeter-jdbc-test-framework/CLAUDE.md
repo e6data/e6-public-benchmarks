@@ -176,17 +176,37 @@ CONCURRENT_QUERY_COUNT=4
 RAMP_UP_TIME=1
 RAMP_UP_STEPS=1
 
-# Duration to hold load after ramp-up (minutes)
+# Duration to hold load after ramp-up (SECONDS not minutes!)
 HOLD_PERIOD=300
 
 # Whether queries should repeat until test ends
 RECYCLE_ON_EOF=false
 ```
 
-### Important Notes
+### CRITICAL: HOLD_PERIOD and RECYCLE_ON_EOF Behavior
 
-- `RECYCLE_ON_EOF=false`: Each query executes once (typical for benchmarking)
-- `RECYCLE_ON_EOF=true`: Queries cycle repeatedly for duration testing
+**IMPORTANT:** The test **ALWAYS runs for the full HOLD_PERIOD duration**, regardless of RECYCLE_ON_EOF setting or when queries finish.
+
+**HOLD_PERIOD is in SECONDS** (despite misleading comments in properties files saying "minutes"):
+- `HOLD_PERIOD=300` = 5 minutes (not 5 hours!)
+- Test duration = `RAMP_UP_TIME` + `HOLD_PERIOD` (in seconds)
+
+**When `RECYCLE_ON_EOF=false` (run queries once):**
+- Queries from CSV are read once
+- When all queries complete, threads become **idle** but remain active
+- Test **waits for full HOLD_PERIOD** before stopping
+- Example: 29 queries finish in 2 minutes, but HOLD_PERIOD=300 means test runs full 5 minutes
+
+**When `RECYCLE_ON_EOF=true` (repeat queries):**
+- Queries from CSV are read repeatedly in a loop
+- When EOF is reached, CSV reader restarts from beginning
+- Threads continuously execute queries for full HOLD_PERIOD
+- Example: 29 queries repeat ~60 times over 5 minutes (HOLD_PERIOD=300)
+
+**Common Misconception:** RECYCLE_ON_EOF does NOT override or stop HOLD_PERIOD early. The hold period is always respected.
+
+### Other Important Notes
+
 - `RANDOM_ORDER=true`: Queries execute in random order (reduces caching effects)
 
 ## JDBC Driver Management

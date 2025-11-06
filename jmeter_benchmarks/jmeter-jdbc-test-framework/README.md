@@ -204,10 +204,28 @@ See sample files in the repository for complete configuration options:
 **Key test.properties settings:**
 - `CONCURRENT_QUERY_COUNT` - Number of simultaneous queries (for concurrency-based tests)
 - `QPS` / `QPM` - Queries per second/minute (for arrivals-based tests)
-- `HOLD_PERIOD` - Test duration in minutes
+- `HOLD_PERIOD` - Test duration in **SECONDS** (not minutes, despite comment in properties file)
 - `QUERY_PATH` - Path to your query CSV file
 - `RECYCLE_ON_EOF` - Repeat queries until duration ends (true/false)
 - `COPY_TO_S3` - Enable S3 upload of test results (true/false)
+
+**CRITICAL: Understanding HOLD_PERIOD and RECYCLE_ON_EOF:**
+
+The test **ALWAYS runs for the full HOLD_PERIOD duration**, regardless of when queries finish:
+
+- **`RECYCLE_ON_EOF=false`** (run queries once):
+  - Queries from CSV are read once
+  - When all queries complete, threads become **idle** but remain active
+  - Test waits for full HOLD_PERIOD before stopping
+  - Example: 29 queries finish in 2 minutes, but HOLD_PERIOD=300 means test runs 5 minutes total
+
+- **`RECYCLE_ON_EOF=true`** (repeat queries):
+  - Queries from CSV are read repeatedly in a loop
+  - When EOF is reached, CSV reader restarts from beginning
+  - Threads continuously execute queries for full HOLD_PERIOD
+  - Example: 29 queries repeat ~60 times over 5 minutes (HOLD_PERIOD=300)
+
+**The HOLD_PERIOD is NOT overridden by RECYCLE_ON_EOF** - it always determines total test duration.
 
 ## Important Notes
 
