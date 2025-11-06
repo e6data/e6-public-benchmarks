@@ -8,11 +8,6 @@ REPORT_PATH=reports
 COPY_TO_S3=false
 S3_REPORT_PATH=s3://
 
-# Dashboard generation (HTML reports with charts - can be large, set to false to save disk space)
-# Set to true to generate HTML dashboard in reports/dashboard_TIMESTAMP/
-# Set to false (default) to only generate CSV reports (saves ~50-100MB per test)
-GENERATE_DASHBOARD=false
-
 #Change below for concurrency based test plan which will maintain this concurrency. This applicable only for concurrency based plan
 CONCURRENT_QUERY_COUNT=2
 
