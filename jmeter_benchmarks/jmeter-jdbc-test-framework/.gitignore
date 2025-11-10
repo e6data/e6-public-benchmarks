@@ -58,3 +58,15 @@ compare_runs/
 # JDBC driver backups
 apache-jmeter-5.6.3/lib/ext/*.jar.old
 
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride

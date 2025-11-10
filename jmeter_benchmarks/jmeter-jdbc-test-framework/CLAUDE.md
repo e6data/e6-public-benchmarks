@@ -33,12 +33,18 @@ The framework separates concerns into three distinct configuration layers:
 
 Pre-configured JMeter test plans support different load patterns:
 
+**JDBC Test Plans (most common):**
 - **`Test-Plan-Maintain-static-concurrency.jmx`**: Maintains fixed concurrent query count (most common for concurrency testing)
+- **`Test-Plan-Run-Once-static-concurrency.jmx`**: Run all queries once at fixed concurrency then complete
 - **`Test-Plan-Constant-QPS-On-Arrivals.jmx`**: Fires queries at constant queries-per-second rate
 - **`Test-Plan-Constant-QPM-On-Arrivals.jmx`**: Fires queries at constant queries-per-minute rate
 - **`Test-Plan-Fire-QPS-with-load-profile.jmx`**: Variable QPS using load profile CSV
 - **`Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx`**: Variable concurrency using load profile
-- HTTP endpoint variants: For testing REST API endpoints instead of JDBC
+
+**HTTP Endpoint Test Plans:**
+- For testing REST API query endpoints instead of JDBC connections
+- Use `utilities/test_queries_http.py` to test HTTP endpoints directly
+- Use `utilities/convert_queries_for_jmeter_http.py` to format queries for HTTP test plans
 
 ### Metadata Files (`metadata_files/*.txt`)
 
@@ -48,6 +54,29 @@ Contain cluster-specific metadata for organizing test results:
 - Cluster configuration (size, cores, instance types)
 - S3 storage settings for results
 - Used by batch testing scripts and S3 upload functionality
+
+### Test Input Files (`test_inputs/*.txt`)
+
+Pre-configured test input files for automated batch testing. Each file contains 5 lines specifying all inputs needed to run a test:
+
+```
+<metadata_file>
+<test_plan>
+<test_properties>
+<connection_properties>
+<query_csv_file>
+```
+
+**Example:** `test_inputs/e6data_m-4x4_tpcds_29_1tb_concurrency_4.txt`
+```
+e6data_m-4x4_metadata.txt
+Test-Plan-Maintain-static-concurrency.jmx
+concurrency_4_test.properties
+demo-graviton_connection.properties
+E6Data_TPCDS_queries_29_1TB.csv
+```
+
+These files enable the `run_all_concurrency.sh` script to automatically run tests without interactive prompts. File naming convention: `{engine}_{cluster_size}_{benchmark}_concurrency_{level}.txt`
 
 ## Running Tests
 
@@ -88,19 +117,26 @@ This script:
 
 ### Batch Testing (Automated Concurrency Sweeps)
 
-Run all concurrency levels (2, 4, 8, 12, 16) sequentially:
+Run all concurrency levels (1, 2, 4, 8, 12, 16) sequentially using the unified script:
 
 ```bash
+# Usage: ./utilities/run_all_concurrency.sh <engine> <cluster_size> <benchmark>
+
 # E6Data cluster testing
-./utilities/run_e6data_all_concurrency.sh S-2x2
-./utilities/run_e6data_all_concurrency.sh M-4x4 tpcds_51_1tb
+./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb
+./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_51_1tb
 
 # DBR cluster testing
-./utilities/run_dbr_all_concurrency.sh S-2x2
-./utilities/run_dbr_all_concurrency.sh S-4x4 tpcds_51_1tb
+./utilities/run_all_concurrency.sh dbr S-2x2 tpcds_29_1tb
+./utilities/run_all_concurrency.sh dbr S-4x4 tpcds_51_1tb
 ```
 
-These scripts automatically select appropriate connection/test properties based on cluster size and benchmark name.
+This script:
+- Automatically looks up test input files from `test_inputs/` directory
+- Validates all required files exist before starting
+- Runs all concurrency levels sequentially with 30-second pauses between tests
+- Logs each test to `/tmp/jmeter_test_logs/` with descriptive filenames
+- Arguments map directly to S3 path structure: `engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/`
 
 ## S3 Results Structure
 
@@ -145,24 +181,46 @@ python utilities/analyze_single_run_from_s3.py \
 
 ```bash
 # Compare all matching concurrency levels (recommended)
-python utilities/compare_multi_concurrency_from_s3.py \
+python utilities/compare_multi_concurrency.py \
   s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
   s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 
 # Compare single concurrency level
-python utilities/compare_jmeter_runs_from_s3.py \
+python utilities/compare_jmeter_runs.py \
   s3://path/to/engine1/.../run_type=concurrency_4/ \
   s3://path/to/engine2/.../run_type=concurrency_4/
 ```
 
-See `utilities/QUICK_REFERENCE.md` for more comparison examples.
+See `utilities/QUICK_REFERENCE.md` for more comparison examples and `utilities/COMPARISON_TOOL_README.md` for detailed documentation.
 
 ### Utility Scripts
 
+**Test Setup & Configuration:**
 - `utilities/test_jdbc_connection.sh`: Test JDBC connectivity before running full test
 - `utilities/generate_concurrency_test_configs.sh`: Auto-generate test property files for different concurrency levels
-- `utilities/convert_multiline_csv.sh`: Convert multi-line SQL queries to single-line for JMeter compatibility
 - `utilities/cleanup_logs.sh`: Clean up old test logs from `/tmp/jmeter_test_logs/`
+
+**Query Management:**
+- `utilities/convert_multiline_csv.sh`: Convert multi-line SQL queries to single-line for JMeter compatibility
+- `utilities/convert_queries_for_json_api.py`: Convert queries for JSON API format
+- `utilities/convert_queries_for_jmeter_http.py`: Format queries for HTTP test plans
+
+**HTTP Endpoint Testing:**
+- `utilities/test_queries_http.py`: Test queries against HTTP/REST API endpoints directly (bypasses JMeter)
+
+**Load Profile Management:**
+- `utilities/update_load_profile.sh`: Update load profile CSV for variable load test plans
+
+**Analysis & Comparison:**
+- `utilities/analyze_single_run_from_s3.py`: Analyze individual test runs from S3
+- `utilities/analyze_concurrency_scaling_from_s3.py`: Analyze how performance scales with concurrency
+- `utilities/compare_consecutive_runs_from_s3.py`: Compare two consecutive runs to detect regressions
+- `utilities/compare_jmeter_runs.py`: Compare two specific test runs
+- `utilities/compare_multi_concurrency.py`: Compare all concurrency levels between two engines (most comprehensive)
+
+**DBR-Specific:**
+- `utilities/get_dbr_query_history.py`: Retrieve query execution history from Databricks
+- `utilities/test_dbr_connectivity.sh`: Test Databricks connection before running tests
 
 ## Key Test Properties
 

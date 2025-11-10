@@ -1,0 +1,78 @@
+# HTTP Endpoint Test Properties Template
+# Use this template for testing SQL queries via HTTP API endpoints
+
+JMETER_HOME=
+
+# Report configuration
+REPORT_PATH=reports
+COPY_TO_S3=false
+S3_REPORT_PATH=s3://jmeter-reports
+
+# Thread configuration
+# For "run once" pattern: Set CONCURRENT_QUERY_COUNT to number of parallel threads
+# For load testing: Increase for higher concurrency
+CONCURRENT_QUERY_COUNT=5
+
+# Ramp up settings (in seconds)
+# Set to 0 to start all threads immediately
+RAMP_UP_TIME=0
+RAMP_UP_STEPS=1
+
+# Hold period (seconds) - Duration to keep test running
+# For "run once": Set long enough for all queries to complete
+# For load testing: Set to desired test duration
+HOLD_PERIOD=300
+
+# Iteration control
+# ITERATIONS=1 means run through CSV only once (optional, default is infinite if RECYCLE_ON_EOF=true)
+# ITERATIONS=-1 or omit for infinite loop (useful with HOLD_PERIOD)
+# ITERATIONS=1
+
+# CSV DataSet behavior
+# RECYCLE_ON_EOF=false: Stop reading at end of CSV (use with STOP_THREAD_ON_EOF=true for "run once")
+# RECYCLE_ON_EOF=true: Restart CSV from beginning (useful for continuous load testing)
+RECYCLE_ON_EOF=false
+
+# Stop thread when CSV EOF is reached
+# STOP_THREAD_ON_EOF=true: Thread stops when it reaches end of CSV (requires RECYCLE_ON_EOF=false)
+# STOP_THREAD_ON_EOF=false: Thread continues even after CSV exhausted (variables set to <EOF>)
+STOP_THREAD_ON_EOF=true
+
+# Query execution settings
+RANDOM_ORDER=false
+QUERY_TIMEOUT=300
+LIMIT_RESULTSET=1000
+
+# Query file path
+# Override with -JQUERY_PATH on command line
+QUERY_PATH=data_files/sample_jmeter_queries.csv
+
+# Load Profile for QPS-based testing (optional)
+# Uncomment and configure for variable QPS load testing
+# LOAD_PROFILE=test_properties/load_profile.csv
+
+# QPS configuration (optional, for QPS-based test plans)
+# QPS=2
+
+# Resource limits
+MAX_CONCURRANCY=100
+
+# Common Use Cases:
+#
+# 1. Run each query once across N threads:
+#    CONCURRENT_QUERY_COUNT=10
+#    RECYCLE_ON_EOF=false
+#    STOP_THREAD_ON_EOF=true
+#    HOLD_PERIOD=300 (long enough to complete)
+#
+# 2. Continuous load testing with query recycling:
+#    CONCURRENT_QUERY_COUNT=20
+#    RECYCLE_ON_EOF=true
+#    STOP_THREAD_ON_EOF=false
+#    HOLD_PERIOD=600 (10 minutes)
+#
+# 3. QPS-based load testing:
+#    QPS=10
+#    LOAD_PROFILE=test_properties/load_profile.csv
+#    RECYCLE_ON_EOF=true
+#    HOLD_PERIOD=1200 (20 minutes)
