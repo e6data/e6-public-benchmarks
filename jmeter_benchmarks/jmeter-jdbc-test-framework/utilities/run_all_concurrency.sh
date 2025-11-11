@@ -17,21 +17,36 @@ set -e
 if [ $# -lt 3 ]; then
     echo "Error: engine, cluster_size, and benchmark arguments required"
     echo ""
-    echo "Usage: $0 <engine> <cluster_size> <benchmark>"
+    echo "Usage: $0 <engine> <cluster_size> <benchmark> [cluster] [test_plan_file]"
+    echo ""
+    echo "Required Parameters:"
+    echo "  engine        - Database engine (e6data, dbr)"
+    echo "  cluster_size  - Cluster size (S-2x2, M-4x4, XS-1x1, S-4x4, S-1x1)"
+    echo "  benchmark     - Benchmark name (tpcds_29_1tb, tpcds_51_1tb)"
+    echo ""
+    echo "Optional Parameters:"
+    echo "  cluster       - Cluster identifier for connection properties (default: default)"
+    echo "                  Connection file: connection_properties/{engine}_{cluster}_connection.properties"
+    echo "  test_plan_file - Override test plan (default: uses test plan from test input file)"
     echo ""
     echo "Examples:"
+    echo "  # Simple run with defaults (uses {engine}_default_connection.properties)"
     echo "  $0 e6data S-2x2 tpcds_29_1tb"
-    echo "  $0 dbr S-4x4 tpcds_29_1tb"
-    echo "  $0 e6data M-4x4 tpcds_51_1tb"
+    echo ""
+    echo "  # Run on specific cluster"
+    echo "  $0 e6data S-2x2 tpcds_29_1tb demo-graviton"
+    echo ""
+    echo "  # Run with custom test plan"
+    echo "  $0 dbr S-4x4 tpcds_29_1tb default Test-Plan-Sequential.jmx"
+    echo ""
+    echo "  # Both custom cluster and test plan"
+    echo "  $0 e6data S-2x2 tpcds_29_1tb prod-cluster Test-Plan-Stress-Test.jmx"
     echo ""
     echo "Arguments match S3 structure:"
     echo "  s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/"
     echo ""
-    echo "Available engines: e6data, dbr"
-    echo ""
-    echo "Available cluster sizes:"
-    echo "  E6Data: S-2x2, M-4x4, XS-1x1"
-    echo "  DBR:    S-2x2, S-4x4, S-1x1"
+    echo "Note: Test input files use template placeholders substituted at runtime:"
+    echo "      {ENGINE}, {CLUSTER_SIZE}, {CONCURRENCY}, {CLUSTER}, {BENCHMARK}"
     exit 1
 fi
 
@@ -39,6 +54,8 @@ fi
 ENGINE="$1"
 CLUSTER_SIZE="$2"
 BENCHMARK="$3"
+CLUSTER="${4:-default}"  # Default: "default"
+TEST_PLAN_OVERRIDE="${5:-}"  # Empty means use test input file's test plan
 CONCURRENCY_LEVELS=(1 2 4 8 12 16)
 S3_BASE_PATH="s3://e6-jmeter/jmeter-results"
 
@@ -76,11 +93,10 @@ echo "${ENGINE_DISPLAY} ${CLUSTER_SIZE} Cluster - All Concurrency Tests"
 echo -e "==========================================${NC}"
 echo ""
 echo "Configuration:"
-if [ "$ENGINE" = "e6data" ]; then
-    echo "   - Cluster: demo-graviton"
-fi
 echo "   - Engine: ${ENGINE}"
+echo "   - Cluster: ${CLUSTER}"
 echo "   - Size: ${CLUSTER_SIZE}"
+echo "   - Connection: connection_properties/${ENGINE}_${CLUSTER}_connection.properties"
 if [ "$ENGINE" = "e6data" ]; then
     if [ "$CLUSTER_SIZE" = "S-2x2" ]; then
         echo "   - 60 cores (2 executors × 30 cores) - Matches DBR S-2x2"
@@ -146,16 +162,44 @@ if [ $MISSING_FILES -gt 0 ]; then
     fi
 fi
 
-# Extract info from sample test input file
-QUERY_FILE=""
-CONNECTION_FILE=""
-TEST_PROPERTIES_FILE=""
+# Validate connection file exists
+CONNECTION_FILE="${ENGINE}_${CLUSTER}_connection.properties"
+if [ ! -f "connection_properties/$CONNECTION_FILE" ]; then
+    echo ""
+    echo -e "${YELLOW}=========================================="
+    echo "ERROR: Connection file not found!"
+    echo -e "==========================================${NC}"
+    echo ""
+    echo "Expected: connection_properties/$CONNECTION_FILE"
+    echo ""
+    echo "Available connection files for $ENGINE:"
+    ls -1 connection_properties/${ENGINE}_*_connection.properties 2>/dev/null || echo "  (none found)"
+    echo ""
+    echo "Tip: Create the connection file or use an existing cluster identifier:"
+    echo "     $0 $ENGINE $CLUSTER_SIZE $BENCHMARK <cluster_name>"
+    exit 1
+fi
+
+# Extract info from sample test input file for display
+QUERY_FILE_TEMPLATE=""
+CONNECTION_FILE_TEMPLATE=""
+TEST_PROPERTIES_FILE_TEMPLATE=""
 TEST_PLAN_FILE=""
 if [ -n "$SAMPLE_TEST_INPUT" ]; then
-    QUERY_FILE=$(sed -n '5p' "$SAMPLE_TEST_INPUT")
-    CONNECTION_FILE=$(sed -n '4p' "$SAMPLE_TEST_INPUT")
-    TEST_PROPERTIES_FILE=$(sed -n '3p' "$SAMPLE_TEST_INPUT")
+    QUERY_FILE_TEMPLATE=$(sed -n '5p' "$SAMPLE_TEST_INPUT")
+    CONNECTION_FILE_TEMPLATE=$(sed -n '4p' "$SAMPLE_TEST_INPUT")
+    TEST_PROPERTIES_FILE_TEMPLATE=$(sed -n '3p' "$SAMPLE_TEST_INPUT")
     TEST_PLAN_FILE=$(sed -n '2p' "$SAMPLE_TEST_INPUT")
+
+    # Substitute placeholders for display
+    QUERY_FILE=$(echo "$QUERY_FILE_TEMPLATE" | sed "s/{ENGINE}/$ENGINE/g" | sed "s/{BENCHMARK}/$BENCHMARK/g")
+    TEST_PROPERTIES_FILE=$(echo "$TEST_PROPERTIES_FILE_TEMPLATE" | sed "s/{CONCURRENCY}/1/g")
+    CONNECTION_FILE=$(echo "$CONNECTION_FILE_TEMPLATE" | sed "s/{ENGINE}/$ENGINE/g" | sed "s/{CLUSTER}/$CLUSTER/g")
+
+    # Override test plan if specified
+    if [ -n "$TEST_PLAN_OVERRIDE" ]; then
+        TEST_PLAN_FILE="$TEST_PLAN_OVERRIDE"
+    fi
 fi
 
 echo ""
@@ -193,33 +237,72 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
         continue
     fi
 
-    # Extract metadata file path (line 1 of test input)
-    METADATA_FILE=$(sed -n '1p' "$TEST_INPUT")
-    METADATA_PATH="metadata_files/$METADATA_FILE"
+    # Read templates from test input file
+    METADATA_TEMPLATE=$(sed -n '1p' "$TEST_INPUT")
+    TEST_PLAN_TEMPLATE=$(sed -n '2p' "$TEST_INPUT")
+    TEST_PROPS_TEMPLATE=$(sed -n '3p' "$TEST_INPUT")
+    CONNECTION_TEMPLATE=$(sed -n '4p' "$TEST_INPUT")
+    QUERY_TEMPLATE=$(sed -n '5p' "$TEST_INPUT")
 
-    # Extract instance_type from metadata file
+    # Substitute placeholders
+    METADATA_FILE=$(echo "$METADATA_TEMPLATE" | \
+        sed "s/{ENGINE}/$ENGINE/g" | \
+        sed "s/{CLUSTER_SIZE}/$CLUSTER_SIZE_NORMALIZED/g")
+
+    TEST_PROPS=$(echo "$TEST_PROPS_TEMPLATE" | \
+        sed "s/{CONCURRENCY}/$concurrency/g")
+
+    CONNECTION_FILE=$(echo "$CONNECTION_TEMPLATE" | \
+        sed "s/{ENGINE}/$ENGINE/g" | \
+        sed "s/{CLUSTER}/$CLUSTER/g")
+
+    QUERY_FILE=$(echo "$QUERY_TEMPLATE" | \
+        sed "s/{ENGINE}/$ENGINE/g" | \
+        sed "s/{BENCHMARK}/$BENCHMARK/g")
+
+    # Use override or template for test plan
+    if [ -n "$TEST_PLAN_OVERRIDE" ]; then
+        TEST_PLAN="$TEST_PLAN_OVERRIDE"
+    else
+        TEST_PLAN="$TEST_PLAN_TEMPLATE"
+    fi
+
+    # Extract metadata for logging
+    METADATA_PATH="$METADATA_FILE"
     INSTANCE_TYPE="unknown"
     if [ -f "$METADATA_PATH" ]; then
         INSTANCE_TYPE=$(grep -o '"instance_type"[[:space:]]*:[[:space:]]*"[^"]*"' "$METADATA_PATH" | cut -d'"' -f4)
     fi
 
-    # Extract query file name (line 5 of test input)
-    QUERY_FILE=$(sed -n '5p' "$TEST_INPUT")
     QUERY_BASENAME=$(basename "$QUERY_FILE" .csv)
-
-    # Create log file name with instance_type and query_file
     LOG_FILE="$LOG_DIR/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${INSTANCE_TYPE}_${QUERY_BASENAME}_concurrency${concurrency}_$(date +%Y%m%d_%H%M%S).log"
 
     echo ""
     echo -e "${BLUE}=========================================="
     echo "Running: ${ENGINE_DISPLAY} ${CLUSTER_SIZE} - Concurrency ${concurrency}"
     echo -e "==========================================${NC}"
-    echo "Test input: $TEST_INPUT"
+    echo "Test input template: $TEST_INPUT"
+    echo "Resolved files:"
+    echo "  - Metadata: $METADATA_FILE"
+    echo "  - Test Plan: $TEST_PLAN"
+    echo "  - Properties: $TEST_PROPS"
+    echo "  - Connection: connection_properties/$CONNECTION_FILE"
+    echo "  - Queries: $QUERY_FILE"
     echo "Log file: $LOG_FILE"
     echo ""
 
-    # Run test
-    if ./run_jmeter_tests_interactive.sh < "$TEST_INPUT" 2>&1 | tee "$LOG_FILE"; then
+    # Create temporary resolved test input file
+    TEMP_TEST_INPUT="/tmp/test_input_resolved_${concurrency}.txt"
+    cat > "$TEMP_TEST_INPUT" << EOF
+$METADATA_FILE
+$TEST_PLAN
+$TEST_PROPS
+$CONNECTION_FILE
+$QUERY_FILE
+EOF
+
+    # Run test with resolved input
+    if ./run_jmeter_tests_interactive.sh < "$TEMP_TEST_INPUT" 2>&1 | tee "$LOG_FILE"; then
         echo -e "${GREEN}✓ Test completed: Concurrency ${concurrency}${NC}"
     else
         echo -e "${YELLOW}⚠ Test failed or interrupted: Concurrency ${concurrency}${NC}"
@@ -230,6 +313,9 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
             exit 1
         fi
     fi
+
+    # Cleanup temporary file
+    rm -f "$TEMP_TEST_INPUT"
 
     # Wait between tests
     # Get last element in a shell-compatible way
