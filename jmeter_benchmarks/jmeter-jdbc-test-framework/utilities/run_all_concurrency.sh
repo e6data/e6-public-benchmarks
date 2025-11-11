@@ -232,7 +232,10 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     fi
 
     # Wait between tests
-    if [[ "$concurrency" != "${CONCURRENCY_LEVELS[-1]}" ]]; then
+    # Get last element in a shell-compatible way
+    LAST_CONCURRENCY=""
+    for c in "${CONCURRENCY_LEVELS[@]}"; do LAST_CONCURRENCY=$c; done
+    if [[ "$concurrency" != "$LAST_CONCURRENCY" ]]; then
         echo ""
         echo "Waiting 30 seconds before next test..."
         sleep 30
