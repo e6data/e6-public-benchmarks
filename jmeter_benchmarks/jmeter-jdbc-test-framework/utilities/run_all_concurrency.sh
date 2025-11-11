@@ -133,33 +133,23 @@ if [ "$ENGINE" = "dbr" ]; then
     echo ""
 fi
 
-# Check if test input files exist and extract sample file info
-echo "Checking for test input files..."
-MISSING_FILES=0
-SAMPLE_TEST_INPUT=""
-for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    TEST_INPUT="test_inputs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
-    if [ ! -f "$TEST_INPUT" ]; then
-        echo -e "${YELLOW}  ⚠ Missing: $TEST_INPUT${NC}"
-        MISSING_FILES=$((MISSING_FILES + 1))
-    else
-        echo "  ✓ Found: $TEST_INPUT"
-        # Save first found test input for reading metadata
-        if [ -z "$SAMPLE_TEST_INPUT" ]; then
-            SAMPLE_TEST_INPUT="$TEST_INPUT"
-        fi
-    fi
-done
-
-if [ $MISSING_FILES -gt 0 ]; then
+# Check if test input template file exists
+echo "Checking for test input template file..."
+TEST_INPUT_TEMPLATE="test_inputs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_template.txt"
+if [ ! -f "$TEST_INPUT_TEMPLATE" ]; then
     echo ""
-    echo -e "${YELLOW}Warning: $MISSING_FILES test input file(s) missing${NC}"
+    echo -e "${YELLOW}==========================================="
+    echo "ERROR: Test input template file not found!"
+    echo -e "==========================================${NC}"
     echo ""
-    read -p "Continue anyway? (y/n): " continue_choice
-    if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
-        echo "Exiting..."
-        exit 1
-    fi
+    echo "Expected: $TEST_INPUT_TEMPLATE"
+    echo ""
+    echo "Available template files:"
+    ls -1 test_inputs/*_template.txt 2>/dev/null || echo "  (none found)"
+    echo ""
+    exit 1
+else
+    echo "  ✓ Found: $TEST_INPUT_TEMPLATE"
 fi
 
 # Validate connection file exists
@@ -180,26 +170,20 @@ if [ ! -f "connection_properties/$CONNECTION_FILE" ]; then
     exit 1
 fi
 
-# Extract info from sample test input file for display
-QUERY_FILE_TEMPLATE=""
-CONNECTION_FILE_TEMPLATE=""
-TEST_PROPERTIES_FILE_TEMPLATE=""
-TEST_PLAN_FILE=""
-if [ -n "$SAMPLE_TEST_INPUT" ]; then
-    QUERY_FILE_TEMPLATE=$(sed -n '5p' "$SAMPLE_TEST_INPUT")
-    CONNECTION_FILE_TEMPLATE=$(sed -n '4p' "$SAMPLE_TEST_INPUT")
-    TEST_PROPERTIES_FILE_TEMPLATE=$(sed -n '3p' "$SAMPLE_TEST_INPUT")
-    TEST_PLAN_FILE=$(sed -n '2p' "$SAMPLE_TEST_INPUT")
+# Extract info from test input template file for display
+QUERY_FILE_TEMPLATE=$(sed -n '5p' "$TEST_INPUT_TEMPLATE")
+CONNECTION_FILE_TEMPLATE=$(sed -n '4p' "$TEST_INPUT_TEMPLATE")
+TEST_PROPERTIES_FILE_TEMPLATE=$(sed -n '3p' "$TEST_INPUT_TEMPLATE")
+TEST_PLAN_FILE=$(sed -n '2p' "$TEST_INPUT_TEMPLATE")
 
-    # Substitute placeholders for display
-    QUERY_FILE=$(echo "$QUERY_FILE_TEMPLATE" | sed "s/{ENGINE}/$ENGINE/g" | sed "s/{BENCHMARK}/$BENCHMARK/g")
-    TEST_PROPERTIES_FILE=$(echo "$TEST_PROPERTIES_FILE_TEMPLATE" | sed "s/{CONCURRENCY}/1/g")
-    CONNECTION_FILE=$(echo "$CONNECTION_FILE_TEMPLATE" | sed "s/{ENGINE}/$ENGINE/g" | sed "s/{CLUSTER}/$CLUSTER/g")
+# Substitute placeholders for display
+QUERY_FILE=$(echo "$QUERY_FILE_TEMPLATE" | sed "s/{ENGINE}/$ENGINE/g" | sed "s/{BENCHMARK}/$BENCHMARK/g")
+TEST_PROPERTIES_FILE=$(echo "$TEST_PROPERTIES_FILE_TEMPLATE" | sed "s/{CONCURRENCY}/1/g")
+CONNECTION_FILE=$(echo "$CONNECTION_FILE_TEMPLATE" | sed "s/{ENGINE}/$ENGINE/g" | sed "s/{CLUSTER}/$CLUSTER/g")
 
-    # Override test plan if specified
-    if [ -n "$TEST_PLAN_OVERRIDE" ]; then
-        TEST_PLAN_FILE="$TEST_PLAN_OVERRIDE"
-    fi
+# Override test plan if specified
+if [ -n "$TEST_PLAN_OVERRIDE" ]; then
+    TEST_PLAN_FILE="$TEST_PLAN_OVERRIDE"
 fi
 
 echo ""
@@ -226,23 +210,12 @@ mkdir -p "$LOG_DIR"
 
 # Run all concurrency tests
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    TEST_INPUT="test_inputs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_concurrency_${concurrency}.txt"
-
-    # Skip if test input file doesn't exist
-    if [ ! -f "$TEST_INPUT" ]; then
-        echo ""
-        echo -e "${YELLOW}=========================================="
-        echo "⚠ Skipping: Concurrency ${concurrency} (test input file not found)"
-        echo -e "==========================================${NC}"
-        continue
-    fi
-
-    # Read templates from test input file
-    METADATA_TEMPLATE=$(sed -n '1p' "$TEST_INPUT")
-    TEST_PLAN_TEMPLATE=$(sed -n '2p' "$TEST_INPUT")
-    TEST_PROPS_TEMPLATE=$(sed -n '3p' "$TEST_INPUT")
-    CONNECTION_TEMPLATE=$(sed -n '4p' "$TEST_INPUT")
-    QUERY_TEMPLATE=$(sed -n '5p' "$TEST_INPUT")
+    # Read templates from test input template file
+    METADATA_TEMPLATE=$(sed -n '1p' "$TEST_INPUT_TEMPLATE")
+    TEST_PLAN_TEMPLATE=$(sed -n '2p' "$TEST_INPUT_TEMPLATE")
+    TEST_PROPS_TEMPLATE=$(sed -n '3p' "$TEST_INPUT_TEMPLATE")
+    CONNECTION_TEMPLATE=$(sed -n '4p' "$TEST_INPUT_TEMPLATE")
+    QUERY_TEMPLATE=$(sed -n '5p' "$TEST_INPUT_TEMPLATE")
 
     # Substitute placeholders
     METADATA_FILE=$(echo "$METADATA_TEMPLATE" | \
@@ -281,7 +254,7 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     echo -e "${BLUE}=========================================="
     echo "Running: ${ENGINE_DISPLAY} ${CLUSTER_SIZE} - Concurrency ${concurrency}"
     echo -e "==========================================${NC}"
-    echo "Test input template: $TEST_INPUT"
+    echo "Test input template: $TEST_INPUT_TEMPLATE"
     echo "Resolved files:"
     echo "  - Metadata: $METADATA_FILE"
     echo "  - Test Plan: $TEST_PLAN"

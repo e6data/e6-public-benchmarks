@@ -1,5 +1,0 @@
-metadata_files/{ENGINE}_{CLUSTER_SIZE}_metadata.txt
-Test-Plan-Maintain-static-concurrency.jmx
-concurrency_{CONCURRENCY}_test.properties
-{ENGINE}_{CLUSTER}_connection.properties
-{ENGINE}_{BENCHMARK}_queries.csv

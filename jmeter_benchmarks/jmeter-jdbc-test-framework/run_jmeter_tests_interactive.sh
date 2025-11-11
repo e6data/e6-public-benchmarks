@@ -235,8 +235,8 @@ for file in "$TEST_PLAN" "$TEST_PROPERTIES" "$CONNECTION_PROPERTIES"; do
 done
 
 
-# Check if dashboard generation is enabled (default: false to save disk space)
-GENERATE_DASHBOARD=${GENERATE_DASHBOARD:-false}
+# Check if dashboard generation is enabled (default: true to generate statistics.json)
+GENERATE_DASHBOARD=${GENERATE_DASHBOARD:-true}
 if [[ "$GENERATE_DASHBOARD" == "true" ]]; then
     DASHBOARD_FLAGS="-e -o $REPORT_PATH/dashboard_${START_TIME}"
     echo "Dashboard generation: ENABLED (will create HTML dashboard in reports/)"
