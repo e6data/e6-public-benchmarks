@@ -117,7 +117,29 @@ def load_test_result_from_s3(s3_base_path: str, run_id: str) -> Optional[Dict]:
         return None
 
 
-def extract_run_metadata(test_result: Dict, stats: Dict, s3_base_path: str, run_id: str, benchmark: str = 'unknown') -> Dict:
+def extract_thread_count_from_run_type(run_type: str) -> int:
+    """
+    Extract concurrent thread count from run_type string.
+
+    Examples:
+        'sequential' -> 1
+        'concurrency_1' -> 1
+        'concurrency_2' -> 2
+        'concurrency_16' -> 16
+    """
+    if run_type == 'sequential':
+        return 1
+
+    # Extract number from 'concurrency_X' pattern
+    match = re.search(r'concurrency_(\d+)', run_type)
+    if match:
+        return int(match.group(1))
+
+    # Default to 0 if pattern doesn't match
+    return 0
+
+
+def extract_run_metadata(test_result: Dict, stats: Dict, s3_base_path: str, run_id: str, benchmark: str = 'unknown', run_type: str = 'unknown') -> Dict:
     """
     Extract comprehensive metadata from test_result.json and statistics.json.
 
@@ -174,7 +196,7 @@ def extract_run_metadata(test_result: Dict, stats: Dict, s3_base_path: str, run_
 
         'test_config': {
             'test_plan_file': test_config.get('test_plan_file', 'unknown'),
-            'concurrent_threads': test_config.get('concurrent_query_count', 0),
+            'concurrent_threads': extract_thread_count_from_run_type(run_type),
             'benchmark': benchmark,  # Use benchmark parameter from S3 path
             'total_query_count': len([k for k in stats.keys() if k != 'Total']),
             'hold_period_min': test_config.get('hold_period', 0),
@@ -296,7 +318,7 @@ def generate_runs_index(s3_path: str) -> Dict:
             continue
 
         # Extract metadata
-        run_metadata = extract_run_metadata(test_result, stats, s3_path, run_id, path_info['benchmark'])
+        run_metadata = extract_run_metadata(test_result, stats, s3_path, run_id, path_info['benchmark'], path_info['run_type'])
         index['runs'].append(run_metadata)
 
         print(" ✓")

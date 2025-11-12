@@ -30,6 +30,9 @@ Usage:
     # Analyze concurrency scaling
     python utilities/query_athena_runs.py --scaling-analysis
 
+    # Analyze performance variance by configuration
+    python utilities/query_athena_runs.py --variance-analysis
+
     # Custom SQL query
     python utilities/query_athena_runs.py --query "SELECT * FROM jmeter_analysis.jmeter_runs_index LIMIT 5"
 """
@@ -138,6 +141,8 @@ def query_all_runs(engine: str = None, cluster: str = None):
         engine,
         run_id,
         run_date,
+        run_type,
+        benchmark,
         cluster_size,
         instance_type,
         concurrent_threads,
@@ -388,6 +393,51 @@ def concurrency_scaling_analysis():
     format_table(results, "Concurrency Scaling Analysis (Performance vs Load)")
 
 
+def variance_analysis():
+    """
+    Analyze performance variance within each configuration.
+
+    Helps identify genuine performance issues vs expected variations.
+    Low coefficient of variation (CV) = consistent performance.
+    High CV = high variance (potential issues to investigate).
+    """
+
+    query = """
+    SELECT
+        engine,
+        benchmark,
+        cluster_size,
+        run_type,
+        instance_type,
+        COUNT(*) as num_runs,
+        ROUND(AVG(p90_latency_sec), 2) as avg_p90,
+        ROUND(MIN(p90_latency_sec), 2) as min_p90,
+        ROUND(MAX(p90_latency_sec), 2) as max_p90,
+        ROUND(STDDEV(p90_latency_sec), 2) as stddev_p90,
+        ROUND((STDDEV(p90_latency_sec) / NULLIF(AVG(p90_latency_sec), 0)) * 100, 1) as cv_p90_pct,
+        ROUND(AVG(p95_latency_sec), 2) as avg_p95,
+        ROUND(MIN(p95_latency_sec), 2) as min_p95,
+        ROUND(MAX(p95_latency_sec), 2) as max_p95,
+        ROUND(STDDEV(p95_latency_sec), 2) as stddev_p95,
+        ROUND((STDDEV(p95_latency_sec) / NULLIF(AVG(p95_latency_sec), 0)) * 100, 1) as cv_p95_pct,
+        CASE
+            WHEN COUNT(*) < 2 THEN 'Insufficient data'
+            WHEN (STDDEV(p90_latency_sec) / NULLIF(AVG(p90_latency_sec), 0)) * 100 < 5 THEN 'Excellent (CV < 5%)'
+            WHEN (STDDEV(p90_latency_sec) / NULLIF(AVG(p90_latency_sec), 0)) * 100 < 10 THEN 'Good (CV < 10%)'
+            WHEN (STDDEV(p90_latency_sec) / NULLIF(AVG(p90_latency_sec), 0)) * 100 < 20 THEN 'Moderate (CV < 20%)'
+            ELSE 'High variance - investigate'
+        END as consistency_rating,
+        CONCAT('s3://e6-jmeter/jmeter-results/engine=', engine, '/cluster_size=', cluster_size, '/benchmark=', benchmark, '/run_type=', run_type, '/') as s3_path
+    FROM jmeter_analysis.jmeter_runs_index
+    GROUP BY engine, benchmark, cluster_size, run_type, instance_type
+    HAVING COUNT(*) >= 1
+    ORDER BY cv_p90_pct DESC NULLS LAST, engine, cluster_size, run_type
+    """
+
+    results = execute_athena_query(query)
+    format_table(results, "Performance Variance Analysis by Configuration")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Query Athena runs index from command line',
@@ -449,6 +499,12 @@ def main():
     )
 
     parser.add_argument(
+        '--variance-analysis',
+        action='store_true',
+        help='Analyze performance variance within each configuration'
+    )
+
+    parser.add_argument(
         '--instance-type',
         help='Filter by specific instance type (e.g., r6id.8xlarge)'
     )
@@ -489,6 +545,8 @@ def main():
             instance_by_concurrency()
         elif args.scaling_analysis:
             concurrency_scaling_analysis()
+        elif args.variance_analysis:
+            variance_analysis()
         else:
             query_all_runs(engine=args.engine, cluster=args.cluster)
 

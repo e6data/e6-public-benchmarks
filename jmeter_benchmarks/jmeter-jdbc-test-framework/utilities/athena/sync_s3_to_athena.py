@@ -23,6 +23,7 @@ Usage:
 
 import argparse
 import boto3
+import os
 import re
 import sys
 import subprocess
@@ -131,9 +132,13 @@ def upload_run_to_athena(s3_path: str, dry_run: bool = False) -> bool:
         print(f"   [DRY RUN] Would upload: {s3_path}")
         return True
 
+    # Get script directory to build absolute path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    upload_script = os.path.join(script_dir, 'upload_runs_index_to_athena.py')
+
     cmd = [
         'python',
-        'utilities/upload_runs_index_to_athena.py',
+        upload_script,
         '--from-s3',
         s3_path
     ]
