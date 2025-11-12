@@ -150,11 +150,64 @@ s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>
 **Features:**
 - Single unified script for all engines (e6data, dbr)
 - Runs all concurrency levels sequentially
-- Validates test input files before starting
+- Uses template system with runtime substitution for test inputs
+- Validates template files before starting
 - Shows comprehensive test run summary before execution
 - Logs each test to `/tmp/jmeter_test_logs/` with instance_type and query_file in name
 - 30-second pause between tests
 - Automatic S3 upload (if enabled in metadata)
+- Dashboard generation enabled by default (generates statistics.json for analysis)
+
+### Template System for Test Inputs
+
+The batch runner uses a **template-based system** to eliminate redundancy. Instead of maintaining separate test input files for each concurrency level (1, 2, 4, 8, 12, 16), a single template file per engine/cluster/benchmark combination is used.
+
+**Template File Naming:**
+```
+test_inputs/{ENGINE}_{CLUSTER_SIZE}_{BENCHMARK}_template.txt
+```
+
+**Examples:**
+- `test_inputs/e6data_s-2x2_tpcds_29_1tb_template.txt`
+- `test_inputs/e6data_m-4x4_tpcds_29_1tb_template.txt`
+- `test_inputs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
+- `test_inputs/dbr_s-2x2_tpcds_29_1tb_template.txt`
+- `test_inputs/dbr_s-4x4_tpcds_29_1tb_template.txt`
+
+**Template Structure:**
+
+Each template contains 5 lines with placeholders that are substituted at runtime:
+
+```
+{ENGINE}_{CLUSTER_SIZE}_metadata.txt
+Test-Plan-Maintain-static-concurrency.jmx
+concurrency_{CONCURRENCY}_test.properties
+{ENGINE}_{CLUSTER}_connection.properties
+E6Data_TPCDS_queries_29_1TB.csv
+```
+
+**Supported Placeholders:**
+- `{ENGINE}` - Engine name (e6data, dbr)
+- `{CLUSTER_SIZE}` - Normalized cluster size (xs-1x1, s-2x2, m-4x4, s-4x4)
+- `{CLUSTER}` - Cluster identifier used in connection properties
+- `{CONCURRENCY}` - Concurrency level (1, 2, 4, 8, 12, 16)
+- `{BENCHMARK}` - Benchmark identifier (tpcds_29_1tb, etc.)
+
+**How It Works:**
+
+When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
+1. Script locates template: `test_inputs/e6data_s-2x2_tpcds_29_1tb_template.txt`
+2. For each concurrency level (1, 2, 4, 8, 12, 16):
+   - Reads template and substitutes placeholders with actual values
+   - Creates temporary resolved input file
+   - Passes it to the interactive script via stdin
+3. Cleans up temporary files after test completion
+
+**Benefits:**
+- Reduced from 30+ redundant files to 5 template files
+- Single source of truth per configuration
+- Easy maintenance - update template once, applies to all concurrency levels
+- Automatic validation before execution
 
 ## File Structure
 
@@ -179,7 +232,7 @@ s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>
 │   ├── load_profile.csv
 │   └── [Your test config files]
 ├── test_inputs/
-│   └── [Pre-configured test input files]
+│   └── [Template files for batch test execution]
 ├── Test-Plans/
 │   ├── Test-Plan-Run-Once-static-concurrency.jmx
 │   ├── Test-Plan-Maintain-static-concurrency.jmx
