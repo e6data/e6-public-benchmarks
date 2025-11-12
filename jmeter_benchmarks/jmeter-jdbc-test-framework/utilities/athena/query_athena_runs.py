@@ -35,12 +35,17 @@ Usage:
 
     # Custom SQL query
     python utilities/query_athena_runs.py --query "SELECT * FROM jmeter_analysis.jmeter_runs_index LIMIT 5"
+
+    # Export to CSV for Excel/Google Sheets analysis
+    python utilities/query_athena_runs.py --variance-analysis --csv > reports/variance_analysis.csv
+    python utilities/query_athena_runs.py --compare-engines --csv > reports/engine_comparison.csv
 """
 
 import argparse
 import boto3
 import time
 import sys
+import csv
 from typing import List, Dict
 
 
@@ -59,8 +64,12 @@ def execute_athena_query(query: str, database: str = 'jmeter_analysis',
     )
 
     query_execution_id = response['QueryExecutionId']
-    print(f"Query ID: {query_execution_id}")
-    print("Executing query...", end='', flush=True)
+
+    # Determine output stream based on format (stderr for CSV to keep stdout clean)
+    out = sys.stderr if OUTPUT_FORMAT == 'csv' else sys.stdout
+
+    print(f"Query ID: {query_execution_id}", file=out)
+    print("Executing query...", end='', flush=True, file=out)
 
     # Wait for query to complete
     max_attempts = 30
@@ -69,17 +78,17 @@ def execute_athena_query(query: str, database: str = 'jmeter_analysis',
         status = response['QueryExecution']['Status']['State']
 
         if status == 'SUCCEEDED':
-            print(" ✅")
+            print(" ✅", file=out)
             break
         elif status in ['FAILED', 'CANCELLED']:
             reason = response['QueryExecution']['Status'].get('StateChangeReason', 'Unknown')
-            print(f" ❌\nQuery {status}: {reason}")
+            print(f" ❌\nQuery {status}: {reason}", file=out)
             sys.exit(1)
 
-        print(".", end='', flush=True)
+        print(".", end='', flush=True, file=out)
         time.sleep(1)
     else:
-        print(" ⏱️ Timeout")
+        print(" ⏱️ Timeout", file=out)
         sys.exit(1)
 
     # Get query results
@@ -93,12 +102,33 @@ def execute_athena_query(query: str, database: str = 'jmeter_analysis',
     return results
 
 
-def format_table(results: List[List[str]], title: str = None):
-    """Format results as a nice table."""
+# Global variable to hold output format
+OUTPUT_FORMAT = 'table'  # Default to table format
+
+
+def format_csv(results: List[List[str]]):
+    """Format results as CSV."""
     if not results:
         print("No results found")
         return
 
+    writer = csv.writer(sys.stdout)
+    for row in results:
+        writer.writerow(row)
+
+
+def format_table(results: List[List[str]], title: str = None):
+    """Format results as a nice table or CSV based on OUTPUT_FORMAT."""
+    if not results:
+        print("No results found")
+        return
+
+    # If CSV format requested, use CSV formatter
+    if OUTPUT_FORMAT == 'csv':
+        format_csv(results)
+        return
+
+    # Otherwise, use table format
     # First row is headers
     headers = results[0]
     data = results[1:]
@@ -438,6 +468,145 @@ def variance_analysis():
     format_table(results, "Performance Variance Analysis by Configuration")
 
 
+def outlier_detection():
+    """Detect outlier runs that deviate significantly from their group average."""
+    query = """
+    WITH group_stats AS (
+        SELECT
+            engine,
+            benchmark,
+            cluster_size,
+            run_type,
+            instance_type,
+            AVG(p90_latency_sec) as avg_p90,
+            STDDEV(p90_latency_sec) as stddev_p90,
+            AVG(p95_latency_sec) as avg_p95,
+            STDDEV(p95_latency_sec) as stddev_p95,
+            COUNT(*) as total_runs
+        FROM jmeter_analysis.jmeter_runs_index
+        GROUP BY engine, benchmark, cluster_size, run_type, instance_type
+        HAVING COUNT(*) >= 2
+    ),
+    run_deviations AS (
+        SELECT
+            r.engine,
+            r.benchmark,
+            r.cluster_size,
+            r.run_type,
+            r.instance_type,
+            r.run_id,
+            r.p90_latency_sec,
+            r.p95_latency_sec,
+            g.avg_p90,
+            g.stddev_p90,
+            g.avg_p95,
+            g.stddev_p95,
+            g.total_runs,
+            ROUND(((r.p90_latency_sec - g.avg_p90) / NULLIF(g.avg_p90, 0)) * 100, 1) as p90_deviation_pct,
+            ROUND(((r.p95_latency_sec - g.avg_p95) / NULLIF(g.avg_p95, 0)) * 100, 1) as p95_deviation_pct,
+            ROUND((r.p90_latency_sec - g.avg_p90) / NULLIF(g.stddev_p90, 0), 2) as p90_z_score,
+            ROUND((r.p95_latency_sec - g.avg_p95) / NULLIF(g.stddev_p95, 0), 2) as p95_z_score,
+            CONCAT('s3://e6-jmeter/jmeter-results/engine=', r.engine,
+                   '/cluster_size=', r.cluster_size,
+                   '/benchmark=', r.benchmark,
+                   '/run_type=', r.run_type,
+                   '/run_id=', r.run_id, '/') as s3_path
+        FROM jmeter_analysis.jmeter_runs_index r
+        INNER JOIN group_stats g
+            ON r.engine = g.engine
+            AND r.benchmark = g.benchmark
+            AND r.cluster_size = g.cluster_size
+            AND r.run_type = g.run_type
+            AND r.instance_type = g.instance_type
+    )
+    SELECT
+        engine,
+        benchmark,
+        cluster_size,
+        run_type,
+        instance_type,
+        run_id,
+        p90_latency_sec,
+        avg_p90,
+        p90_deviation_pct,
+        p90_z_score,
+        p95_latency_sec,
+        avg_p95,
+        p95_deviation_pct,
+        p95_z_score,
+        total_runs,
+        CASE
+            WHEN ABS(p90_z_score) > 2 THEN 'SEVERE - Z>2'
+            WHEN p90_deviation_pct > 50 THEN 'HIGH - >50% worse'
+            WHEN p90_deviation_pct > 25 THEN 'MODERATE - >25% worse'
+            WHEN p90_deviation_pct < -15 THEN 'SUSPICIOUSLY GOOD'
+            ELSE 'NORMAL'
+        END as outlier_severity,
+        s3_path
+    FROM run_deviations
+    WHERE ABS(p90_z_score) > 1.5 OR ABS(p90_deviation_pct) > 20
+    ORDER BY ABS(p90_z_score) DESC, p90_deviation_pct DESC
+    """
+
+    results = execute_athena_query(query)
+    format_table(results, "Outlier Detection - Runs Deviating from Group Average")
+
+
+def best_runs_comparison():
+    """Compare only the best performing run from each unique configuration."""
+    query = """
+    WITH ranked_runs AS (
+        SELECT
+            engine,
+            benchmark,
+            cluster_size,
+            run_type,
+            instance_type,
+            run_id,
+            avg_latency_sec,
+            p50_latency_sec,
+            p90_latency_sec,
+            p95_latency_sec,
+            p99_latency_sec,
+            total_success,
+            total_failed,
+            ROW_NUMBER() OVER (
+                PARTITION BY engine, benchmark, cluster_size, run_type, instance_type
+                ORDER BY p90_latency_sec ASC
+            ) as rank,
+            CONCAT('s3://e6-jmeter/jmeter-results/engine=', engine,
+                   '/cluster_size=', cluster_size,
+                   '/benchmark=', benchmark,
+                   '/run_type=', run_type,
+                   '/run_id=', run_id, '/') as s3_path
+        FROM jmeter_analysis.jmeter_runs_index
+        WHERE total_success > 0
+    )
+    SELECT
+        engine,
+        benchmark,
+        cluster_size,
+        run_type,
+        instance_type,
+        run_id as best_run_id,
+        ROUND(avg_latency_sec, 2) as avg_time,
+        ROUND(p50_latency_sec, 2) as p50,
+        ROUND(p90_latency_sec, 2) as p90,
+        ROUND(p95_latency_sec, 2) as p95,
+        ROUND(p99_latency_sec, 2) as p99,
+        total_success,
+        total_failed,
+        ROUND((total_failed * 100.0) / NULLIF(total_success + total_failed, 0), 2) as error_pct,
+        s3_path
+    FROM ranked_runs
+    WHERE rank = 1
+    ORDER BY engine, cluster_size, run_type, instance_type
+    """
+
+    results = execute_athena_query(query)
+    format_table(results, "Best Runs Comparison - Top Performing Run from Each Configuration")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Query Athena runs index from command line',
@@ -505,6 +674,18 @@ def main():
     )
 
     parser.add_argument(
+        '--outlier-detection',
+        action='store_true',
+        help='Detect outlier runs that deviate significantly from their group average'
+    )
+
+    parser.add_argument(
+        '--best-runs',
+        action='store_true',
+        help='Compare only the best performing run from each unique configuration'
+    )
+
+    parser.add_argument(
         '--instance-type',
         help='Filter by specific instance type (e.g., r6id.8xlarge)'
     )
@@ -525,7 +706,18 @@ def main():
         default='us-east-1'
     )
 
+    parser.add_argument(
+        '--csv',
+        action='store_true',
+        help='Output results in CSV format for Excel/Google Sheets'
+    )
+
     args = parser.parse_args()
+
+    # Set output format based on CSV flag
+    if args.csv:
+        global OUTPUT_FORMAT
+        OUTPUT_FORMAT = 'csv'
 
     try:
         if args.query:
@@ -547,6 +739,10 @@ def main():
             concurrency_scaling_analysis()
         elif args.variance_analysis:
             variance_analysis()
+        elif args.outlier_detection:
+            outlier_detection()
+        elif args.best_runs:
+            best_runs_comparison()
         else:
             query_all_runs(engine=args.engine, cluster=args.cluster)
 
