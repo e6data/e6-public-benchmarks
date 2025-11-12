@@ -29,9 +29,9 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 ## Test Plans Available
 
 - **Test-Plan-Run-Once-static-concurrency.jmx** - Run all queries once at a fixed concurrency level and then complete
-- **Test-Plan-Maintain-static-concurrency.jmx** - Maintain fixed load/concurrency using concurrency parameter in test.properties
-- **Test-Plan-Constant-QPS-On-Arrivals.jmx** - Fire queries at constant queries-per-second rate using QPS in test.properties
-- **Test-Plan-Constant-QPM-On-Arrivals.jmx** - Fire queries at constant queries-per-minute rate using QPM in test.properties
+- **Test-Plan-Maintain-static-concurrency.jmx** - Maintain fixed load/concurrency as per concurrency till hold period in test.properties 
+- **Test-Plan-Constant-QPS-On-Arrivals.jmx** - Fire queries at constant queries-per-second rate using QPS till hold period in test.properties
+- **Test-Plan-Constant-QPM-On-Arrivals.jmx** - Fire queries at constant queries-per-minute rate using QPM till hold period in test.properties
 - **Test-Plan-Fire-QPS-with-load-profile.jmx** - Variable QPS rate using load profile CSV file
 - **Test-Plan-Fire-QPM-with-load-profile.jmx** - Variable QPM rate using load profile CSV file
 - **Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx** - Variable concurrency using load profile CSV file
@@ -203,11 +203,6 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
    - Passes it to the interactive script via stdin
 3. Cleans up temporary files after test completion
 
-**Benefits:**
-- Reduced from 30+ redundant files to 5 template files
-- Single source of truth per configuration
-- Easy maintenance - update template once, applies to all concurrency levels
-- Automatic validation before execution
 
 ## File Structure
 
