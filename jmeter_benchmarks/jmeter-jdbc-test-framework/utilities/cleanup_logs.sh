@@ -42,14 +42,14 @@ ${BOLD}USAGE:${NC}
 
 ${BOLD}OPTIONS:${NC}
     -h, --help              Show this help message
-    -d, --days DAYS         Keep files newer than DAYS days (default: 30)
+    -d, --days DAYS         Keep files newer than DAYS days (default: 3)
     -n, --dry-run           Show what would be deleted without actually deleting
     -y, --yes               Skip confirmation prompts (non-interactive mode)
     -v, --verbose           Show detailed output
 
     ${BOLD}Cleanup Targets:${NC}
     -r, --reports           Clean old report CSV files (AggregateReport_*, JmeterResultFile_*)
-    -l, --logs              Clean JMeter log files (jmeter.log)
+    -l, --logs              Clean JMeter log files (jmeter_*.log and jmeter.log)
     -D, --dashboards        Clean old HTML dashboard directories (dashboard_*)
     -j, --json              Clean old JSON result files (test_result_*, statistics_*)
     -a, --all               Clean all log and report files (combines all above)
@@ -58,7 +58,7 @@ ${BOLD}EXAMPLES:${NC}
     # Interactive mode - prompts for what to clean
     $0
 
-    # Dry run - see what would be deleted (reports older than 30 days)
+    # Dry run - see what would be deleted (reports older than 3 days)
     $0 --reports --dry-run
 
     # Clean reports older than 7 days without confirmation
@@ -74,8 +74,9 @@ ${BOLD}EXAMPLES:${NC}
     $0 --all --days 14 --dry-run --verbose
 
 ${BOLD}NOTES:${NC}
-    - By default, runs in interactive mode with 30-day retention
-    - JMeter logs are rotated (only jmeter.log is cleaned, backups are preserved)
+    - By default, runs in interactive mode with 3-day retention
+    - Timestamped JMeter logs (jmeter_*.log) older than KEEP_DAYS are deleted
+    - The current jmeter.log file in bin directory is truncated (not deleted)
     - Dashboard directories can consume significant disk space
     - Use --dry-run first to preview what will be deleted
     - Files currently in use will not be deleted
@@ -278,9 +279,16 @@ fi
 
 # Clean JMeter logs
 if [ "$CLEAN_JMETER_LOGS" = true ]; then
-    echo -e "${CYAN}Cleaning JMeter log files...${NC}"
+    echo -e "${CYAN}Cleaning JMeter log files (older than $KEEP_DAYS days)...${NC}"
 
-    # Clean current log file (truncate if exists)
+    # Clean timestamped log files from project root (jmeter_YYYYMMDD-HHMMSS.log)
+    file_count=0
+    while IFS= read -r -d '' file; do
+        delete_file "$file"
+        file_count=$((file_count + 1))
+    done < <(find "$PROJECT_ROOT" -maxdepth 1 -type f -name "jmeter_*.log" -mtime "+$KEEP_DAYS" -print0 2>/dev/null)
+
+    # Clean current log file in bin directory (truncate if exists)
     if [ -f "$JMETER_BIN_DIR/jmeter.log" ]; then
         size=$(get_file_size "$JMETER_BIN_DIR/jmeter.log")
         TOTAL_SIZE=$((TOTAL_SIZE + size))
@@ -296,8 +304,10 @@ if [ "$CLEAN_JMETER_LOGS" = true ]; then
                 echo -e "   ${RED}✗ Failed to truncate jmeter.log${NC}"
             fi
         fi
-    else
-        echo -e "   ${GREEN}No JMeter log file found${NC}"
+    fi
+
+    if [ "$file_count" -eq 0 ] && [ ! -f "$JMETER_BIN_DIR/jmeter.log" ]; then
+        echo -e "   ${GREEN}No old JMeter log files found${NC}"
     fi
     echo
 fi

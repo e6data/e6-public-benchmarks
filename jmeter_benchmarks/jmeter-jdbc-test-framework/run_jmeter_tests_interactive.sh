@@ -95,6 +95,13 @@ SELECTED_METADATA_FILE=$(get_filename "$METADATA_PATH" "$DEFAULT_METADATA" "META
 METADATA_FILE="${METADATA_PATH}/${SELECTED_METADATA_FILE}"
 # update defaults and metadata from the selected metadata file
 source "$METADATA_FILE"
+# Set defaults for optional metadata fields (for Athena analysis)
+RUN_MODE="${RUN_MODE:-test}"        # Default to "test" if not specified
+CUSTOMER="${CUSTOMER:-default}"     # Default to "default"
+CONFIG="${CONFIG:-default}"         # Default to "default"
+TAGS="${TAGS:-}"                    # Default to empty
+COMMENTS="${COMMENTS:-}"            # Default to empty
+
 
 # TEST PLAN
 show_files "$TEST_PLAN_PATH" "*.jmx" "TEST PLAN"
@@ -235,8 +242,8 @@ for file in "$TEST_PLAN" "$TEST_PROPERTIES" "$CONNECTION_PROPERTIES"; do
 done
 
 
-# Check if dashboard generation is enabled (default: false to save disk space)
-GENERATE_DASHBOARD=${GENERATE_DASHBOARD:-false}
+# Check if dashboard generation is enabled (default: true to generate statistics.json)
+GENERATE_DASHBOARD=${GENERATE_DASHBOARD:-true}
 if [[ "$GENERATE_DASHBOARD" == "true" ]]; then
     DASHBOARD_FLAGS="-e -o $REPORT_PATH/dashboard_${START_TIME}"
     echo "Dashboard generation: ENABLED (will create HTML dashboard in reports/)"
@@ -757,14 +764,37 @@ CLUSTER_SIZE=$(echo "$CLUSTER_CONFIG" | jq -r '.cluster_size // "unknown"' 2>/de
 if [[ -n "${BENCHMARK_TYPE:-}" ]]; then
     # Use explicit value from metadata file if provided
     :
-elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29 ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29 ]]; then
+# TPC-DS 29 queries with data size detection
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29.*1TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29.*1tb ]]; then
     BENCHMARK_TYPE="tpcds_29_1tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29.*3TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29.*3tb ]]; then
+    BENCHMARK_TYPE="tpcds_29_3tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29.*10TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29.*10tb ]]; then
+    BENCHMARK_TYPE="tpcds_29_10tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29.*30TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29.*30tb ]]; then
+    BENCHMARK_TYPE="tpcds_29_30tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*29 ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*29 ]]; then
+    # Fallback for files without data size - default to 1TB with warning
+    BENCHMARK_TYPE="tpcds_29_1tb"
+    echo "⚠️  WARNING: Query file doesn't specify data size, defaulting to tpcds_29_1tb"
+# TPC-DS 51 queries with data size detection
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*51.*1TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*51.*1tb ]]; then
+    BENCHMARK_TYPE="tpcds_51_1tb"
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*51.*10TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*51.*10tb ]]; then
+    BENCHMARK_TYPE="tpcds_51_10tb"
 elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*51 ]] || [[ "$(basename $QUERIES_FILE)" =~ 51.*[Jj]meter ]]; then
     BENCHMARK_TYPE="tpcds_51_1tb"
+    echo "⚠️  WARNING: Query file doesn't specify data size, defaulting to tpcds_51_1tb"
+# TPC-DS 81 queries
+elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*81.*1TB ]] || [[ "$(basename $QUERIES_FILE)" =~ tpcds.*81.*1tb ]]; then
+    BENCHMARK_TYPE="tpcds_81_1tb"
 elif [[ "$(basename $QUERIES_FILE)" =~ TPCDS.*81 ]]; then
     BENCHMARK_TYPE="tpcds_81_1tb"
+    echo "⚠️  WARNING: Query file doesn't specify data size, defaulting to tpcds_81_1tb"
+# TPC-H
 elif [[ "$(basename $QUERIES_FILE)" =~ [Tt][Pp][Cc][Hh] ]]; then
     BENCHMARK_TYPE="tpch_22_100gb"
+# Kantar custom
 elif [[ "$(basename $QUERIES_FILE)" =~ [Kk]antar ]]; then
     BENCHMARK_TYPE="custom_kantar"
 else
@@ -845,6 +875,11 @@ fi
 JSON_SUMMARY=$(jq -n \
     --arg run_id "$RUN_ID" \
     --arg run_date "$RUN_DATE" \
+    --arg run_mode "$RUN_MODE" \
+    --arg customer "$CUSTOMER" \
+    --arg config "$CONFIG" \
+    --arg tags "$TAGS" \
+    --arg comments "$COMMENTS" \
     --arg start_time "$START_TIME" \
     --arg end_time "$END_TIME" \
     --arg alias "$ALIAS" \
@@ -967,6 +1002,11 @@ JSON_SUMMARY=$(jq -n \
     '{
         run_id: $run_id,
     	run_date: $run_date,
+        run_mode: $run_mode,
+        customer: $customer,
+        config: $config,
+        tags: $tags,
+        comments: $comments,
     	start_time: $start_time,
     	end_time: $end_time,
     	alias: $alias,

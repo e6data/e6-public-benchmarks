@@ -311,10 +311,10 @@ echo "  ✓ JMeter plugins check complete"
 echo ""
 echo "Step 5: Installing custom JDBC drivers..."
 
-# Download DBR JDBC driver from Maven Central
-DBR_JDBC_VERSION="2.6.36"
-DBR_JDBC_URL="https://repo1.maven.org/maven2/com/dbr/dbr-jdbc/${DBR_JDBC_VERSION}/dbr-jdbc-${DBR_JDBC_VERSION}.jar"
-DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/dbr-jdbc-${DBR_JDBC_VERSION}.jar"
+# Download Databricks JDBC driver from Maven Central
+DBR_JDBC_VERSION="3.0.3"
+DBR_JDBC_URL="https://repo1.maven.org/maven2/com/databricks/databricks-jdbc/${DBR_JDBC_VERSION}/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
+DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
 
 if [ ! -f "${DBR_JDBC_JAR}" ]; then
     echo "  Downloading DBR JDBC driver ${DBR_JDBC_VERSION}..."

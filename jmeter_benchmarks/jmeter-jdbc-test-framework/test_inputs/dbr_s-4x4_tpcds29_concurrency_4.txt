@@ -1,5 +1,0 @@
-dbr_s-4x4_metadata.txt
-Test-Plan-Maintain-static-concurrency.jmx
-concurrency_4_test.properties
-dbr_dbc-33354dfe-277f_connection.properties
-DBR_TPCDS_1TB_29_queries_singleline_3.csv

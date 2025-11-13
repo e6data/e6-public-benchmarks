@@ -48,12 +48,18 @@
 
   <Loggers>
 
-    <Root level="info">
+    <Root level="warn">
       <AppenderRef ref="jmeter-log" />
       <AppenderRef ref="gui-log-event" />
     </Root>
 
-    <Logger name="org.apache.jmeter.junit" level="debug" />
+    <!-- Suppress verbose thread logging which generates massive log files -->
+    <Logger name="org.apache.jmeter.threads.JMeterThread" level="error" />
+    <Logger name="org.apache.jmeter.threads" level="error" />
+    <Logger name="org.apache.jmeter.config.CSVDataSet" level="error" />
+    <Logger name="org.apache.jorphan.util" level="error" />
+
+    <Logger name="org.apache.jmeter.junit" level="error" />
     <!--
     <Logger name="org.apache.jmeter.control" level="debug" />
     <Logger name="org.apache.jmeter.testbeans" level="debug" />
@@ -72,7 +78,7 @@
     <Logger name="org.apache.jmeter.protocol.java" level="warn" />
     <Logger name="org.apache.jmeter.testelements.property" level="debug" />
     -->
-    <Logger name="org.apache.jorphan" level="info" />
+    <Logger name="org.apache.jorphan" level="warn" />
 
     <!--
       # Apache HttpClient logging examples
