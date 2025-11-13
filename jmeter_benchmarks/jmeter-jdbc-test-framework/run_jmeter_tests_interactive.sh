@@ -95,6 +95,13 @@ SELECTED_METADATA_FILE=$(get_filename "$METADATA_PATH" "$DEFAULT_METADATA" "META
 METADATA_FILE="${METADATA_PATH}/${SELECTED_METADATA_FILE}"
 # update defaults and metadata from the selected metadata file
 source "$METADATA_FILE"
+# Set defaults for optional metadata fields (for Athena analysis)
+RUN_MODE="${RUN_MODE:-test}"        # Default to "test" if not specified
+CUSTOMER="${CUSTOMER:-default}"     # Default to "default"
+CONFIG="${CONFIG:-default}"         # Default to "default"
+TAGS="${TAGS:-}"                    # Default to empty
+COMMENTS="${COMMENTS:-}"            # Default to empty
+
 
 # TEST PLAN
 show_files "$TEST_PLAN_PATH" "*.jmx" "TEST PLAN"
@@ -868,6 +875,11 @@ fi
 JSON_SUMMARY=$(jq -n \
     --arg run_id "$RUN_ID" \
     --arg run_date "$RUN_DATE" \
+    --arg run_mode "$RUN_MODE" \
+    --arg customer "$CUSTOMER" \
+    --arg config "$CONFIG" \
+    --arg tags "$TAGS" \
+    --arg comments "$COMMENTS" \
     --arg start_time "$START_TIME" \
     --arg end_time "$END_TIME" \
     --arg alias "$ALIAS" \
@@ -990,6 +1002,11 @@ JSON_SUMMARY=$(jq -n \
     '{
         run_id: $run_id,
     	run_date: $run_date,
+        run_mode: $run_mode,
+        customer: $customer,
+        config: $config,
+        tags: $tags,
+        comments: $comments,
     	start_time: $start_time,
     	end_time: $end_time,
     	alias: $alias,

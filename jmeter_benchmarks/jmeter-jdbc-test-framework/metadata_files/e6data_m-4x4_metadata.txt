@@ -12,6 +12,39 @@ BENCHMARK_TYPE="tpcds_29_1tb"
 DATA_SIZE="1TB"
 DATA_TYPE="TPCDS"
 
+# ============================================================================
+# OPTIONAL: Run Classification and Metadata (for Athena filtering/analysis)
+# ============================================================================
+#
+# RUN_MODE: Classify the purpose of this test run
+#   - "prod"      : Official production benchmarks (use for published results)
+#   - "test"      : Development/debugging/verification runs
+#   - "benchmark" : Formal benchmark validation runs
+#   Default: "test"
+#
+# CUSTOMER: Customer or project identifier (useful for multi-tenant scenarios)
+#   Example: "acme_corp", "internal", "customer_xyz"
+#   Default: "default"
+#
+# CONFIG: Configuration label for complex setups
+#   Example: "with_caching", "no_caching", "custom_settings"
+#   Default: "default"
+#
+# TAGS: Comma-separated tags for flexible categorization
+#   Example: "tpcds,1tb,production,q4-2025"
+#   Default: empty
+#
+# COMMENTS: Free-form notes about this test run
+#   Example: "Baseline test before optimization", "After query plan changes"
+#   Default: empty
+# ============================================================================
+
+RUN_MODE="prod"
+CUSTOMER="e6data"
+CONFIG="default"
+TAGS="tpcds,1tb,production"
+COMMENTS="Baseline performance benchmark for M-4x4 cluster"
+
 CLUSTER_CONFIG='{
   "cluster_size": "M-4x4",
   "estimated_cores": 120,
