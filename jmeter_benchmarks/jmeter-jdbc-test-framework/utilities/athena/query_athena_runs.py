@@ -65,11 +65,9 @@ def execute_athena_query(query: str, database: str = 'jmeter_analysis',
 
     query_execution_id = response['QueryExecutionId']
 
-    # Determine output stream based on format (stderr for CSV to keep stdout clean)
-    out = sys.stderr if OUTPUT_FORMAT == 'csv' else sys.stdout
-
-    print(f"Query ID: {query_execution_id}", file=out)
-    print("Executing query...", end='', flush=True, file=out)
+    # Always send status messages to stderr to keep stdout clean for CSV/data output
+    print(f"Query ID: {query_execution_id}", file=sys.stderr)
+    print("Executing query...", end='', flush=True, file=sys.stderr)
 
     # Wait for query to complete
     max_attempts = 30
@@ -78,17 +76,17 @@ def execute_athena_query(query: str, database: str = 'jmeter_analysis',
         status = response['QueryExecution']['Status']['State']
 
         if status == 'SUCCEEDED':
-            print(" ✅", file=out)
+            print(" ✅", file=sys.stderr)
             break
         elif status in ['FAILED', 'CANCELLED']:
             reason = response['QueryExecution']['Status'].get('StateChangeReason', 'Unknown')
-            print(f" ❌\nQuery {status}: {reason}", file=out)
+            print(f" ❌\nQuery {status}: {reason}", file=sys.stderr)
             sys.exit(1)
 
-        print(".", end='', flush=True, file=out)
+        print(".", end='', flush=True, file=sys.stderr)
         time.sleep(1)
     else:
-        print(" ⏱️ Timeout", file=out)
+        print(" ⏱️ Timeout", file=sys.stderr)
         sys.exit(1)
 
     # Get query results
@@ -482,6 +480,8 @@ def outlier_detection():
             STDDEV(p90_latency_sec) as stddev_p90,
             AVG(p95_latency_sec) as avg_p95,
             STDDEV(p95_latency_sec) as stddev_p95,
+            AVG(p99_latency_sec) as avg_p99,
+            STDDEV(p99_latency_sec) as stddev_p99,
             COUNT(*) as total_runs
         FROM jmeter_analysis.jmeter_runs_index
         GROUP BY engine, benchmark, cluster_size, run_type, instance_type
@@ -497,15 +497,20 @@ def outlier_detection():
             r.run_id,
             r.p90_latency_sec,
             r.p95_latency_sec,
+            r.p99_latency_sec,
             g.avg_p90,
             g.stddev_p90,
             g.avg_p95,
             g.stddev_p95,
+            g.avg_p99,
+            g.stddev_p99,
             g.total_runs,
             ROUND(((r.p90_latency_sec - g.avg_p90) / NULLIF(g.avg_p90, 0)) * 100, 1) as p90_deviation_pct,
             ROUND(((r.p95_latency_sec - g.avg_p95) / NULLIF(g.avg_p95, 0)) * 100, 1) as p95_deviation_pct,
+            ROUND(((r.p99_latency_sec - g.avg_p99) / NULLIF(g.avg_p99, 0)) * 100, 1) as p99_deviation_pct,
             ROUND((r.p90_latency_sec - g.avg_p90) / NULLIF(g.stddev_p90, 0), 2) as p90_z_score,
             ROUND((r.p95_latency_sec - g.avg_p95) / NULLIF(g.stddev_p95, 0), 2) as p95_z_score,
+            ROUND((r.p99_latency_sec - g.avg_p99) / NULLIF(g.stddev_p99, 0), 2) as p99_z_score,
             CONCAT('s3://e6-jmeter/jmeter-results/engine=', r.engine,
                    '/cluster_size=', r.cluster_size,
                    '/benchmark=', r.benchmark,
@@ -534,6 +539,10 @@ def outlier_detection():
         avg_p95,
         p95_deviation_pct,
         p95_z_score,
+        p99_latency_sec,
+        avg_p99,
+        p99_deviation_pct,
+        p99_z_score,
         total_runs,
         CASE
             WHEN ABS(p90_z_score) > 2 THEN 'SEVERE - Z>2'
@@ -554,13 +563,14 @@ def outlier_detection():
 
 def best_runs_comparison():
     """Compare only the best performing run from each unique configuration."""
-    query = """
+    query = r"""
     WITH ranked_runs AS (
         SELECT
             engine,
             benchmark,
             cluster_size,
             run_type,
+            CAST(REGEXP_EXTRACT(run_type, 'concurrency_(\d+)', 1) AS INTEGER) as concurrency,
             instance_type,
             run_id,
             avg_latency_sec,
@@ -587,6 +597,7 @@ def best_runs_comparison():
         benchmark,
         cluster_size,
         run_type,
+        concurrency,
         instance_type,
         run_id as best_run_id,
         ROUND(avg_latency_sec, 2) as avg_time,
@@ -600,7 +611,7 @@ def best_runs_comparison():
         s3_path
     FROM ranked_runs
     WHERE rank = 1
-    ORDER BY engine, cluster_size, run_type, instance_type
+    ORDER BY engine, cluster_size, concurrency, instance_type
     """
 
     results = execute_athena_query(query)
