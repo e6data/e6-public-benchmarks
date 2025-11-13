@@ -243,6 +243,24 @@ def extract_run_metadata(test_result: Dict, stats: Dict, s3_base_path: str, run_
 
         'top_slowest_queries': top_slowest,
 
+        'run_metadata': {
+            'run_mode': run_info.get('run_mode', 'test'),
+            'customer': run_info.get('customer', 'default'),
+            'config': run_info.get('config', 'default'),
+            'tags': run_info.get('tags', ''),
+            'comments': run_info.get('comments', '')
+        },
+
+        'outlier_info': {
+            'outlier_severity': None,
+            'p90_z_score': None,
+            'p90_deviation_pct': None,
+            'p95_z_score': None,
+            'p95_deviation_pct': None,
+            'p99_z_score': None,
+            'p99_deviation_pct': None
+        },
+
         'status': 'completed',
 
         'files': {

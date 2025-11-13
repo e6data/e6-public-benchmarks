@@ -64,7 +64,23 @@ CREATE EXTERNAL TABLE IF NOT EXISTS jmeter_runs_index (
     avg_bytes_per_query BIGINT,
 
     -- Top slowest queries (array of structs)
-    top_slowest_queries ARRAY<STRUCT<query:STRING, avg_sec:DOUBLE>>
+    top_slowest_queries ARRAY<STRUCT<query:STRING, avg_sec:DOUBLE>>,
+
+    -- Run metadata (classification fields for filtering)
+    run_mode STRING,
+    customer STRING,
+    config STRING,
+    tags STRING,
+    comments STRING,
+
+    -- Outlier detection info (for anomaly filtering)
+    outlier_severity STRING,
+    p90_z_score DOUBLE,
+    p90_deviation_pct DOUBLE,
+    p95_z_score DOUBLE,
+    p95_deviation_pct DOUBLE,
+    p99_z_score DOUBLE,
+    p99_deviation_pct DOUBLE
 )
 PARTITIONED BY (
     engine STRING,

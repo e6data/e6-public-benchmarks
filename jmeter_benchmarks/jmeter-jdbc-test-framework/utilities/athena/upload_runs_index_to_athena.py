@@ -92,6 +92,22 @@ def flatten_run_for_athena(run: Dict, metadata: Dict) -> Dict:
         # Top slowest queries (keep as array for Athena UNNEST)
         'top_slowest_queries': run['top_slowest_queries'],
 
+        # Run metadata (classification fields)
+        'run_mode': run.get('run_metadata', {}).get('run_mode', 'test'),
+        'customer': run.get('run_metadata', {}).get('customer', 'default'),
+        'config': run.get('run_metadata', {}).get('config', 'default'),
+        'tags': run.get('run_metadata', {}).get('tags', ''),
+        'comments': run.get('run_metadata', {}).get('comments', ''),
+
+        # Outlier detection info
+        'outlier_severity': run.get('outlier_info', {}).get('outlier_severity'),
+        'p90_z_score': run.get('outlier_info', {}).get('p90_z_score'),
+        'p90_deviation_pct': run.get('outlier_info', {}).get('p90_deviation_pct'),
+        'p95_z_score': run.get('outlier_info', {}).get('p95_z_score'),
+        'p95_deviation_pct': run.get('outlier_info', {}).get('p95_deviation_pct'),
+        'p99_z_score': run.get('outlier_info', {}).get('p99_z_score'),
+        'p99_deviation_pct': run.get('outlier_info', {}).get('p99_deviation_pct'),
+
         # Partition columns (NOT part of table schema, used for S3 path)
         'engine': metadata['engine'],
         'cluster_size_partition': metadata['cluster_size'],
