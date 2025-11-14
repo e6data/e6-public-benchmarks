@@ -240,11 +240,11 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
         TEST_PLAN="$TEST_PLAN_TEMPLATE"
     fi
 
-    # Extract metadata for logging
-    METADATA_PATH="$METADATA_FILE"
+    # Extract metadata for logging (prepend directory path since METADATA_FILE is just filename)
+    METADATA_FULL_PATH="metadata_files/$METADATA_FILE"
     INSTANCE_TYPE="unknown"
-    if [ -f "$METADATA_PATH" ]; then
-        INSTANCE_TYPE=$(grep -o '"instance_type"[[:space:]]*:[[:space:]]*"[^"]*"' "$METADATA_PATH" | cut -d'"' -f4)
+    if [ -f "$METADATA_FULL_PATH" ]; then
+        INSTANCE_TYPE=$(grep -o '"instance_type"[[:space:]]*:[[:space:]]*"[^"]*"' "$METADATA_FULL_PATH" | cut -d'"' -f4)
     fi
 
     QUERY_BASENAME=$(basename "$QUERY_FILE" .csv)
