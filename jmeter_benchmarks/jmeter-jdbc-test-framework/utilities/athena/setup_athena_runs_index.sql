@@ -74,13 +74,21 @@ CREATE EXTERNAL TABLE IF NOT EXISTS jmeter_runs_index (
     comments STRING,
 
     -- Outlier detection info (for anomaly filtering)
+    is_outlier STRING,
     outlier_severity STRING,
     p90_z_score DOUBLE,
     p90_deviation_pct DOUBLE,
     p95_z_score DOUBLE,
     p95_deviation_pct DOUBLE,
     p99_z_score DOUBLE,
-    p99_deviation_pct DOUBLE
+    p99_deviation_pct DOUBLE,
+
+    -- Baseline tracking columns
+    is_best BOOLEAN,
+    is_baseline BOOLEAN,
+    baseline_marked_by STRING,
+    baseline_marked_date STRING,
+    baseline_notes STRING
 )
 PARTITIONED BY (
     engine STRING,

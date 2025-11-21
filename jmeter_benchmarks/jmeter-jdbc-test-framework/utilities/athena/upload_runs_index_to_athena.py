@@ -25,10 +25,11 @@ from typing import Dict, List
 from datetime import datetime
 
 
-def flatten_run_for_athena(run: Dict, metadata: Dict) -> Dict:
+def flatten_run_for_athena(run: Dict, metadata: Dict, baseline_info: Dict = None) -> Dict:
     """
     Flatten run data to single-level JSON for Athena.
     Add partition columns from metadata.
+    Add baseline tracking columns.
     """
     flat = {
         # Run identification
@@ -100,6 +101,7 @@ def flatten_run_for_athena(run: Dict, metadata: Dict) -> Dict:
         'comments': run.get('run_metadata', {}).get('comments', ''),
 
         # Outlier detection info
+        'is_outlier': run.get('status_info', {}).get('is_outlier', 'no'),  # Manual outlier flag
         'outlier_severity': run.get('outlier_info', {}).get('outlier_severity'),
         'p90_z_score': run.get('outlier_info', {}).get('p90_z_score'),
         'p90_deviation_pct': run.get('outlier_info', {}).get('p90_deviation_pct'),
@@ -108,6 +110,13 @@ def flatten_run_for_athena(run: Dict, metadata: Dict) -> Dict:
         'p99_z_score': run.get('outlier_info', {}).get('p99_z_score'),
         'p99_deviation_pct': run.get('outlier_info', {}).get('p99_deviation_pct'),
 
+        # Baseline tracking columns (NEW)
+        'is_best': False,  # Will be computed below
+        'is_baseline': False,  # Will be loaded from S3 baseline metadata
+        'baseline_marked_by': None,
+        'baseline_marked_date': None,
+        'baseline_notes': None,
+
         # Partition columns (NOT part of table schema, used for S3 path)
         'engine': metadata['engine'],
         'cluster_size_partition': metadata['cluster_size'],
@@ -115,12 +124,43 @@ def flatten_run_for_athena(run: Dict, metadata: Dict) -> Dict:
         'run_type': metadata['run_type']
     }
 
+    # Load baseline info if provided
+    if baseline_info and run['run_id'] == baseline_info.get('run_id'):
+        flat['is_baseline'] = True
+        flat['baseline_marked_by'] = baseline_info.get('marked_by')
+        flat['baseline_marked_date'] = baseline_info.get('marked_date')
+        flat['baseline_notes'] = baseline_info.get('notes')
+
     return flat
+
+
+def load_baseline_metadata(engine: str, cluster_size: str, benchmark: str, run_type: str) -> Dict:
+    """Load baseline metadata from S3 if it exists."""
+    import boto3
+
+    s3 = boto3.client('s3')
+    bucket = 'e6-jmeter'
+    key = (f"jmeter-results-index/baselines/"
+           f"engine={engine}/"
+           f"cluster_size={cluster_size}/"
+           f"benchmark={benchmark}/"
+           f"run_type={run_type}/"
+           f"baseline_metadata.json")
+
+    try:
+        response = s3.get_object(Bucket=bucket, Key=key)
+        return json.loads(response['Body'].read())
+    except:
+        return None
 
 
 def upload_to_s3(index_file: str, s3_base: str = 's3://e6-jmeter/jmeter-results-index', dry_run: bool = False):
     """
     Upload runs index data to S3 in partitioned structure for Athena.
+
+    Automatically marks:
+    - is_best = true for the run with lowest avg_latency_sec
+    - is_baseline = true for the run marked as baseline in S3 metadata
 
     Target structure:
     s3://bucket/jmeter-results-index/runs/
@@ -147,20 +187,45 @@ def upload_to_s3(index_file: str, s3_base: str = 's3://e6-jmeter/jmeter-results-
     print(f"   Benchmark: {metadata['benchmark']}")
     print(f"   Run Type: {metadata['run_type']}")
 
-    # Flatten all runs
-    flat_runs = [flatten_run_for_athena(run, metadata) for run in runs]
+    # Load baseline metadata from S3
+    baseline_info = load_baseline_metadata(
+        metadata['engine'],
+        metadata['cluster_size'],
+        metadata['benchmark'],
+        metadata['run_type']
+    )
+
+    if baseline_info:
+        print(f"   Baseline: {baseline_info['run_id']} (marked by {baseline_info.get('marked_by', 'unknown')})")
+
+    # Find best run (lowest avg_latency_sec)
+    best_run = min(runs, key=lambda r: r['results_summary']['latency_stats']['avg_latency_sec'])
+    best_run_id = best_run['run_id']
+    print(f"   Best Run: {best_run_id} (avg={best_run['results_summary']['latency_stats']['avg_latency_sec']:.2f}s)")
+
+    # Flatten all runs with baseline info
+    flat_runs = []
+    for run in runs:
+        flat = flatten_run_for_athena(run, metadata, baseline_info)
+        # Mark best run
+        if run['run_id'] == best_run_id:
+            flat['is_best'] = True
+        flat_runs.append(flat)
 
     # Create JSONL content (one JSON per line)
     jsonl_content = '\n'.join([json.dumps(run) for run in flat_runs])
 
     # Build S3 path with partitions
+    # Use timestamped filename to enable append behavior
+    # Athena will read all .jsonl files in the partition directory
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     s3_path = (
         f"{s3_base.rstrip('/')}/runs/"
         f"engine={metadata['engine']}/"
         f"cluster_size={metadata['cluster_size']}/"
         f"benchmark={metadata['benchmark']}/"
         f"run_type={metadata['run_type']}/"
-        f"data.jsonl"
+        f"data_{timestamp}.jsonl"
     )
 
     print(f"\n📍 Target S3 path:")
