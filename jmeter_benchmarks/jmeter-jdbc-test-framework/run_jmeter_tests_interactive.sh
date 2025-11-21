@@ -95,6 +95,8 @@ SELECTED_METADATA_FILE=$(get_filename "$METADATA_PATH" "$DEFAULT_METADATA" "META
 METADATA_FILE="${METADATA_PATH}/${SELECTED_METADATA_FILE}"
 # update defaults and metadata from the selected metadata file
 source "$METADATA_FILE"
+# Provide default for CLUSTER_CONFIG if not set (prevents jq --argjson errors)
+CLUSTER_CONFIG=${CLUSTER_CONFIG:-'{}'}
 # Set defaults for optional metadata fields (for Athena analysis)
 RUN_MODE="${RUN_MODE:-test}"        # Default to "test" if not specified
 CUSTOMER="${CUSTOMER:-default}"     # Default to "default"
@@ -589,7 +591,12 @@ NR>1 && $3 !~ /(BOOTSTRAP|JSR)/ && $8 == "false" {
     response_code = $4
     response_msg = $5
     gsub(/^"|"$/, "", label)
+    # Escape JSON special characters in error message
+    gsub(/\\/, "\\\\", response_msg)
     gsub(/"/, "\\\"", response_msg)
+    gsub(/\n/, "\\n", response_msg)
+    gsub(/\r/, "\\r", response_msg)
+    gsub(/\t/, "\\t", response_msg)
     if (!first) printf ","
     printf "{\"query\":\"%s\",\"response_code\":\"%s\",\"error_message\":\"%s\"}", label, response_code, response_msg
     first = 0
@@ -598,6 +605,11 @@ END {
     printf "]"
 }
 ' "$AGGREGATE_REPORT")
+# Ensure valid JSON (fallback to empty array if awk failed)
+failed_queries_json=${failed_queries_json:-'[]'}
+if ! echo "$failed_queries_json" | jq . > /dev/null 2>&1; then
+    failed_queries_json='[]'
+fi
 
 # Response codes summary
 response_codes_summary=$(awk -F',' '
