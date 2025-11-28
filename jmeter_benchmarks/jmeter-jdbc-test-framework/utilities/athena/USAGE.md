@@ -29,6 +29,7 @@ utilities/athena/
 ├── generate_runs_index.py             # Generate runs index from S3 results
 ├── generate_report_queries.sh         # Generate parameterized SQL query files
 ├── recreate_athena_table.sh           # Recreate Athena table with updated schema
+├── export_all_fields.sh               # Export all fields to CSV for spreadsheet analysis
 └── mark_baseline.py                   # Mark a run as baseline for comparison
 ```
 
@@ -149,7 +150,34 @@ aws athena start-query-execution \
 
 **See `ATHENA_QUERY_REFERENCE.md` for 25+ ready-to-use SQL queries organized by category.**
 
-### Method 3: Automated CSV Report Generation (Recommended)
+### Method 3: Full Data Export for Spreadsheet Analysis
+
+Export ALL fields (62 columns) from Athena to CSV for custom analysis in Google Sheets, Excel, or other tools:
+
+```bash
+# Export all fields for a specific configuration
+./utilities/athena/export_all_fields.sh e6data S-2x2 tpcds_29_1tb reports/full_export.csv
+
+# Auto-generate timestamped filename
+./utilities/athena/export_all_fields.sh e6data S-2x2 tpcds_29_1tb
+```
+
+**What it exports:**
+- All 62 fields from jmeter_runs_index table
+- Complete run metadata (engine, cluster, benchmark, instance type, run_type)
+- All latency metrics (avg, median, min, max, p50, p90, p95, p99)
+- Throughput metrics (QPS, QPM)
+- Test configuration (concurrency, hold period, ramp-up time)
+- Performance ratings and outlier detection scores
+- Baseline tracking information
+
+**When to use:**
+- Custom analysis and pivot tables in spreadsheets
+- Creating custom charts and visualizations
+- Exploring data relationships not covered by standard reports
+- Sharing data with team members who prefer Excel/Sheets
+
+### Method 4: Automated CSV Report Generation (Recommended)
 
 Generate all 8 standard reports as CSV files in a single command:
 
