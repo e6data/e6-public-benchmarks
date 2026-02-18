@@ -16,9 +16,9 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 
 - **Simple setup**:  
   You only need to:  
-  1. Create a `connection_properties` file in the `connection_properties/` folder  
-  2. Create a `test_properties` file in the `test_properties/` folder  
-  3. Add your queries as a `.csv` file in the `data_files/` folder  
+  1. Create a `connection_properties` file using `utilities/create_connection.sh`  
+  2. Add your queries as a `.csv` file in the `data_files/` folder  
+  3. Run `utilities/run_jmeter_tests_interactive.sh` — it guides you through test properties creation  
 
 - **Multi-database support**:
   The JMeter JDBC test plans can run against multiple databases that support JDBC connections (e.g., **E6Data** and others) using the appropriate `.properties` file.  
@@ -57,25 +57,45 @@ The setup script will attempt to install the following in your system, If some o
 - git: git version 2.47.3
 - JMeter: 5.6.3
 
-# Steps to run the Apache Jmeter using standard jmeter CLI command.
-### Create the connection properties files with the required connection using the template/sample properties file
+# Steps to run
 
+## Quick Start
+
+### 1. Create a connection properties file
 ```bash
-cd connection_properties
-cp sample_connection.properties <YOUR_DB_SERVER>_connection.properties
+./utilities/create_connection.sh
+```
+Interactive utility — prompts for JDBC URL, credentials, driver. Supports e6data, Databricks, Trino, HTTP endpoints.
+
+### 2. Add your queries as a CSV file
+```bash
+cp <YOUR_TEST_QUERIES>.csv data_files/
 ```
 
-### Create the test properties files with the test parameters using the template/sample properties file
+### 3. Run a test
+**Option A — Non-interactive (recommended for repeat runs):**
 ```bash
-cd test_properties
-cp sample_test.properties <YOUR_TEST>_test.properties
+export CONNECTION_FILE=connection_properties/e6data_prod_connection.properties
+export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
+export QUERY_FILE=data_files/my_queries.csv
+export CONCURRENT_QUERY_COUNT=4
+export HOLD_PERIOD=300
+./utilities/run_test.sh
+```
+Change one variable and re-run — no prompts, no file editing.
+
+**Option B — Using a suite file:**
+```bash
+cp test_suites/sample_concurrency_test.env test_suites/my_test.env
+# Edit my_test.env with your settings
+./utilities/run_test.sh test_suites/my_test.env
 ```
 
-### Create/copy the queries to the data_files folder as a .csv file
+**Option C — Fully interactive:**
 ```bash
-cd data_files
-cp <YOUR_TEST_QUERIES>.csv data_files
+./utilities/run_jmeter_tests_interactive.sh
 ```
+Guides you through selecting connection, test plan, test properties (create new or pick existing), query file, and metadata.
 
 ## ⚠️ Verify Test Plan in GUI Mode First
 
@@ -148,13 +168,14 @@ Both files can be:
 - Analyzed with spreadsheet tools (Excel, Google Sheets)
 - Processed with custom scripts for percentile calculations
 
-# Running Tests interactively using the wrapper script
+# Running Tests — All Options
 
-## Interactive Mode
-Execute the interactive test runner:
-```bash
-./run_jmeter_tests_interactive.sh
-```
+| Script | Mode | Best for |
+|--------|------|----------|
+| `utilities/run_test.sh` | Env vars or suite file | Repeat runs, CI/CD, tweak-and-rerun |
+| `utilities/run_jmeter_tests_interactive.sh` | Interactive prompts | First-time users, exploring options |
+| `utilities/run_all_concurrency.sh` | CLI args | Batch sweep across concurrency levels |
+| `utilities/create_connection.sh` | Interactive prompts | One-time connection setup |
 
 ## Automated Batch Testing
 
@@ -249,7 +270,6 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 ├── README.md
 ├── CLAUDE.md                       # AI assistant context for this framework
 ├── setup_jmeter.sh
-├── run_jmeter_tests_interactive.sh
 ├── apache-jmeter-5.6.3/           # JMeter installation (created by setup script)
 ├── connection_properties/
 │   ├── sample_connection.properties
@@ -267,6 +287,9 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 │   └── [Your test config files]
 ├── test_inputs/
 │   └── [Template files for batch test execution]
+├── test_suites/
+│   ├── sample_concurrency_test.env  # Sample suite file for concurrency testing
+│   └── sample_qps_test.env         # Sample suite file for QPS testing
 ├── Test-Plans/
 │   ├── Test-Plan-Run-Once-static-concurrency.jmx
 │   ├── Test-Plan-Maintain-static-concurrency.jmx
@@ -277,6 +300,9 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 │   ├── Test-Plan-Maintain-static-concurrency-http-endpoint.jmx
 │   └── [Other test plans]
 ├── utilities/
+│   ├── create_connection.sh        # Interactive connection properties creator
+│   ├── run_jmeter_tests_interactive.sh  # Interactive test runner
+│   ├── run_test.sh                 # Non-interactive runner (env vars or suite file)
 │   ├── run_all_concurrency.sh      # Batch concurrency sweep runner
 │   ├── post_test_analysis.sh       # Automated post-test workflow
 │   ├── athena/                     # Athena integration (upload, query, reports, baselines)

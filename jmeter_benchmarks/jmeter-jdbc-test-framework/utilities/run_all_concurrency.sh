@@ -275,7 +275,7 @@ $QUERY_FILE
 EOF
 
     # Run test with resolved input
-    if ./run_jmeter_tests_interactive.sh < "$TEMP_TEST_INPUT" 2>&1 | tee "$LOG_FILE"; then
+    if ./utilities/run_jmeter_tests_interactive.sh < "$TEMP_TEST_INPUT" 2>&1 | tee "$LOG_FILE"; then
         echo -e "${GREEN}✓ Test completed: Concurrency ${concurrency}${NC}"
     else
         echo -e "${YELLOW}⚠ Test failed or interrupted: Concurrency ${concurrency}${NC}"

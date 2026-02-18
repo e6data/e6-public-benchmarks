@@ -76,30 +76,30 @@ while IFS=',' read -r start_value end_value duration; do
     if [ "$start_value" = "StartValue" ] || [ -z "$start_value" ]; then
         continue
     fi
-    
+
     # Remove any whitespace and carriage returns
     start_value=$(echo "$start_value" | tr -d ' \r')
     end_value=$(echo "$end_value" | tr -d ' \r')
     duration=$(echo "$duration" | tr -d ' \r')
-    
+
     # Skip if any value is empty
     if [ -z "$start_value" ] || [ -z "$end_value" ] || [ -z "$duration" ]; then
         continue
     fi
-    
+
     STEP=$((STEP + 1))
-    
+
     # Calculate queries for this step
     AVG_QPS=$(( (start_value + end_value) / 2 ))
     QUERIES_THIS_STEP=$(( AVG_QPS * duration ))
     TOTAL_QUERIES=$(( TOTAL_QUERIES + QUERIES_THIS_STEP ))
     TOTAL_DURATION=$(( TOTAL_DURATION + duration ))
-    
+
     echo "  Step $STEP: ${start_value}-${end_value} QPS for ${duration}s = ${QUERIES_THIS_STEP} queries"
-    
+
     # Generate hash for this entry
     HASH=$(generate_hash "${start_value}_${end_value}_${duration}")
-    
+
     # Build XML for this schedule entry
     SCHEDULE_XML="${SCHEDULE_XML}          <collectionProp name=\"${HASH}\">
             <stringProp name=\"48\">${start_value}</stringProp>
@@ -107,7 +107,7 @@ while IFS=',' read -r start_value end_value duration; do
             <stringProp name=\"50\">${duration}</stringProp>
           </collectionProp>
 "
-    
+
 done < "$LOAD_PROFILE"
 
 # Calculate time formatting
@@ -175,16 +175,16 @@ if [ $SCHEDULE_FOUND -eq 1 ]; then
     # Move the temporary file to the original
     mv "$TEMP_FILE" "$JMX_FILE"
     echo -e "${GREEN}✅ Successfully updated schedule with $STEP entries${NC}"
-    
+
     # Verify the update
     echo -e "\n${BLUE}🔍 Verifying update...${NC}"
-    
+
     # Count schedule entries in the updated file
     ENTRY_COUNT=$(grep -c "<collectionProp name=\"[0-9]*\">" "$JMX_FILE" 2>/dev/null || echo "0")
-    
+
     if [ "$ENTRY_COUNT" -gt 0 ]; then
         echo -e "${GREEN}✓ Found $ENTRY_COUNT schedule entries in the updated JMX file${NC}"
-        
+
         echo "================================================================================"
         echo -e "${GREEN}✅ SUCCESS! JMX file updated with load profile${NC}"
         echo -e "${GREEN}📈 Expected: $TOTAL_QUERIES queries${NC}"
@@ -203,4 +203,4 @@ else
 fi
 
 echo -e "\n${BLUE}💡 To test the updated plan, run:${NC}"
-echo "   ./run_jmeter_tests_interactive.sh"
+echo "   ./utilities/run_jmeter_tests_interactive.sh"

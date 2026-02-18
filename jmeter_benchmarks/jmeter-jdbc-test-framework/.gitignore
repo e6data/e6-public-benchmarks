@@ -39,11 +39,19 @@ __pycache__/
 *.pyo
 
 # Test input files (environment-specific)
-*_test_input.txt
-*_test_http_input.txt
+test_inputs/*.txt
+!test_inputs/*_template.txt
+!test_inputs/*_sequential.txt
+
+# Test suite files (user-created, may reference real connections)
+test_suites/*.env
+!test_suites/sample_*.env
 
 # Test properties CSV files (environment-specific data)
 test_properties/*.csv
+
+# JDBC driver JARs
+jdbc_drivers/*.jar
 
 # Kantar test data
 kantar/
