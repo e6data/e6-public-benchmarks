@@ -1,7 +1,7 @@
 # DBR S-4x4 Serverless Warehouse (~120 cores)
 
 ENGINE=dbr
-COPY_TO_S3=true
+COPY_TO_S3=false
 S3_BASE_PATH=s3://e6-jmeter/jmeter-results
 
 BENCHMARK_TYPE="tpcds_29_1tb"

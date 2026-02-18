@@ -42,7 +42,10 @@ Pre-configured JMeter test plans support different load patterns:
 - **`Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx`**: Variable concurrency using load profile
 
 **HTTP Endpoint Test Plans:**
-- For testing REST API query endpoints instead of JDBC connections
+- **`Test-Plan-Run-Once-http-endpoint.jmx`**: Run all queries once against HTTP/REST API endpoint
+- **`Test-Plan-Maintain-static-concurrency-http-endpoint.jmx`**: Maintain fixed concurrency against HTTP endpoint
+- **`Test-Plan-Maintain-static-concurrency-http-endpoint-v2.jmx`**: Updated version with enhanced HTTP endpoint support
+- **`Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx`**: Variable QPS against HTTP endpoint
 - Use `utilities/test_queries_http.py` to test HTTP endpoints directly
 - Use `utilities/convert_queries_for_jmeter_http.py` to format queries for HTTP test plans
 
@@ -213,7 +216,7 @@ Key points:
 - `run_id` folders contain all files for a single test execution
 - `latest.json` at the `run_type` level points to most recent run
 - Structure enables Athena partitioning for querying results
-- See `S3_STRUCTURE_UPDATE.md` for migration details
+- See `utilities/README.md` for S3 path structure details
 
 ## Analysis and Comparison Scripts
 
@@ -235,12 +238,12 @@ python utilities/analyze_single_run_from_s3.py \
 
 ```bash
 # Compare all matching concurrency levels (RECOMMENDED - most comprehensive)
-python utilities/compare_multi_concurrency.py \
+python utilities/compare_multi_concurrency_from_s3.py \
   s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
   s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 
 # Compare single concurrency level
-python utilities/compare_jmeter_runs.py \
+python utilities/compare_jmeter_runs_from_s3.py \
   s3://path/to/engine1/.../run_type=concurrency_4/ \
   s3://path/to/engine2/.../run_type=concurrency_4/
 ```
@@ -254,7 +257,7 @@ python utilities/compare_jmeter_runs.py \
 - `{engine1}_{cluster1}_vs_{engine2}_{cluster2}_MultiConcurrency_{timestamp}.csv` - Detailed comparison data
 - `{engine1}_{cluster1}_vs_{engine2}_{cluster2}_MultiConcurrency_{timestamp}_SUMMARY.md` - Human-readable summary
 
-See `utilities/QUICK_REFERENCE.md` for more comparison examples and `utilities/COMPARISON_TOOL_README.md` for detailed documentation.
+See `utilities/README.md` for more comparison examples and detailed documentation.
 
 ### Utility Scripts
 
@@ -278,8 +281,8 @@ See `utilities/QUICK_REFERENCE.md` for more comparison examples and `utilities/C
 - `utilities/analyze_single_run_from_s3.py`: Analyze individual test runs from S3
 - `utilities/analyze_concurrency_scaling_from_s3.py`: Analyze how performance scales with concurrency
 - `utilities/compare_consecutive_runs_from_s3.py`: Compare two consecutive runs to detect regressions
-- `utilities/compare_jmeter_runs.py`: Compare two specific test runs
-- `utilities/compare_multi_concurrency.py`: Compare all concurrency levels between two engines (most comprehensive)
+- `utilities/compare_jmeter_runs_from_s3.py`: Compare two specific test runs
+- `utilities/compare_multi_concurrency_from_s3.py`: Compare all concurrency levels between two engines (most comprehensive)
 
 **DBR-Specific:**
 - `utilities/get_dbr_query_history.py`: Retrieve query execution history from Databricks
@@ -287,8 +290,14 @@ See `utilities/QUICK_REFERENCE.md` for more comparison examples and `utilities/C
 
 **Athena Integration:**
 - `utilities/athena/upload_all_runs_to_athena.sh`: Upload all test results to Athena for querying
-- `utilities/athena/regenerate_all_reports.sh`: Regenerate statistics.json for all runs in S3
 - `utilities/athena/upload_runs_index_to_athena.py`: Upload runs index with baseline tracking to Athena
+- `utilities/athena/upload_metadata.py`: Upload cluster metadata to Athena
+- `utilities/athena/run_athena_reports.sh`: Run all standard Athena reports
+- `utilities/athena/generate_comprehensive_reports.sh`: Generate comprehensive analysis reports
+- `utilities/athena/export_all_fields.sh`: Export all 62 fields to CSV for spreadsheet analysis
+- `utilities/athena/regenerate_all_reports.sh`: Regenerate statistics.json for all runs in S3
+- `utilities/athena/setup_all_athena_tables.sh`: Setup all Athena tables at once
+- `utilities/athena/recreate_athena_table.sh`: Recreate Athena table with updated schema
 
 **Baseline Management (Dual-Sync System):**
 
@@ -322,7 +331,7 @@ python3 utilities/athena/manage_baseline.py mark --run-id <new_run_id> --user <n
 python3 utilities/athena/verify_baseline_sync.py --engine e6data --verify-all
 ```
 
-**See:** `utilities/athena/BASELINE_WORKFLOW.md` for complete end-to-end workflow and `utilities/athena/BASELINE_SYSTEM_README.md` for system documentation.
+**See:** `utilities/README.md` (Athena Integration section) for complete documentation including setup, report generation, and baseline workflow.
 
 **Data Management:**
 - `utilities/manage_invalid_runs.sh`: Mark invalid test runs with metadata flag for filtering in analysis

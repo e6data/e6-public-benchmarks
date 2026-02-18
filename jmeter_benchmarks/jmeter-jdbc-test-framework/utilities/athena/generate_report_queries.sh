@@ -2,7 +2,7 @@
 # Generate Athena SQL Query Files for Analysis
 #
 # This script creates a timestamped directory with ready-to-use SQL queries
-# extracted from ATHENA_QUERIES_UPDATED.sql and parameterized for your engine/cluster.
+# extracted from WORKING_QUERIES.sql and parameterized for your engine/cluster.
 #
 # Usage:
 #   ./utilities/athena/generate_report_queries.sh <engine> <cluster_size> <benchmark> [output_dir]
@@ -335,10 +335,9 @@ response = athena.start_query_execution(
 
 ## Related Documentation
 
-- Full queries: \`utilities/athena/ATHENA_QUERIES_UPDATED.sql\`
-- Append behavior: \`utilities/athena/APPEND_BEHAVIOR_README.md\`
-- Setup guide: \`utilities/athena/ATHENA_SYNC_GUIDE.md\`
-- Compaction: \`utilities/athena/compact_athena_partition.sh\`
+- Full queries: \`utilities/athena/WORKING_QUERIES.sql\`
+- Usage guide: \`utilities/README.md\`
+- Compaction: \`utilities/athena/setup/compact_athena_partition.sh\`
 EOF
 
 echo ""

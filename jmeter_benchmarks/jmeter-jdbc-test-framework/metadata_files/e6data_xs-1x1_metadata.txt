@@ -1,7 +1,7 @@
 # E6Data XS-1x1 Cluster (30 cores: 1 executor x 30 cores)
 
 ENGINE=e6data
-COPY_TO_S3=true
+COPY_TO_S3=false
 S3_BASE_PATH=s3://e6-jmeter/jmeter-results
 
 BENCHMARK_TYPE="tpcds_29_1tb"

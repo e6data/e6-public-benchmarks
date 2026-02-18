@@ -28,6 +28,7 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 
 ## Test Plans Available
 
+**JDBC Test Plans:**
 - **Test-Plan-Run-Once-static-concurrency.jmx** - Run all queries once at a fixed concurrency level and then complete
 - **Test-Plan-Maintain-static-concurrency.jmx** - Maintain fixed load/concurrency as per concurrency till hold period in test.properties 
 - **Test-Plan-Constant-QPS-On-Arrivals.jmx** - Fire queries at constant queries-per-second rate using QPS till hold period in test.properties
@@ -35,6 +36,11 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 - **Test-Plan-Fire-QPS-with-load-profile.jmx** - Variable QPS rate using load profile CSV file
 - **Test-Plan-Fire-QPM-with-load-profile.jmx** - Variable QPM rate using load profile CSV file
 - **Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx** - Variable concurrency using load profile CSV file
+
+**HTTP Endpoint Test Plans:**
+- **Test-Plan-Run-Once-http-endpoint.jmx** - Run all queries once against HTTP/REST API endpoint
+- **Test-Plan-Maintain-static-concurrency-http-endpoint.jmx** - Maintain fixed concurrency against HTTP endpoint
+- **Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx** - Variable QPS against HTTP endpoint
 
 ## Prerequisites
 
@@ -241,6 +247,7 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 ```
 .
 ├── README.md
+├── CLAUDE.md                       # AI assistant context for this framework
 ├── setup_jmeter.sh
 ├── run_jmeter_tests_interactive.sh
 ├── apache-jmeter-5.6.3/           # JMeter installation (created by setup script)
@@ -250,9 +257,10 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 ├── data_files/
 │   ├── sample_jmeter_queries.csv
 │   └── [Your query CSV files]
-├── jdbc_drivers/            # JDBC driver JARs. Place your JDBC JARs in jdbc_drivers/ directory, then run ./setup_jmeter.sh to copy them to lib/ext
+├── jdbc_drivers/                   # JDBC driver JARs (copied to lib/ by setup script)
+├── JSR_scripts/                    # JSR223 Groovy scripts for advanced test plans
 ├── metadata_files/
-│   └── [Cluster metadata files for S3 upload]
+│   └── [Cluster metadata files for S3 upload and Athena integration]
 ├── test_properties/
 │   ├── sample_test.properties
 │   ├── load_profile.csv
@@ -265,9 +273,14 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 │   ├── Test-Plan-Constant-QPS-On-Arrivals.jmx
 │   ├── Test-Plan-Constant-QPM-On-Arrivals.jmx
 │   ├── Test-Plan-Fire-QPS-with-load-profile.jmx
+│   ├── Test-Plan-Run-Once-http-endpoint.jmx
+│   ├── Test-Plan-Maintain-static-concurrency-http-endpoint.jmx
 │   └── [Other test plans]
 ├── utilities/
-│   ├── run_all_concurrency.sh
+│   ├── run_all_concurrency.sh      # Batch concurrency sweep runner
+│   ├── post_test_analysis.sh       # Automated post-test workflow
+│   ├── athena/                     # Athena integration (upload, query, reports, baselines)
+│   ├── archive_adhoc_scripts/      # Deprecated/legacy scripts
 │   └── [Analysis and comparison scripts]
 └── reports/                        # Test results (generated at runtime)
 ```

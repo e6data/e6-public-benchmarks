@@ -41,9 +41,7 @@ python utilities/compare_multi_concurrency.py S3_BASE_PATH_1 S3_BASE_PATH_2
 ```
 
 ### Documentation:
-- **Quick Reference**: `utilities/QUICK_REFERENCE.md`
-- **Full Guide**: `utilities/COMPARISON_TOOL_README.md`
-- **Framework Summary**: `COMPARISON_FRAMEWORK_SUMMARY.md`
+- **Full Guide**: `utilities/README.md`
 
 ## Can I Delete These?
 
