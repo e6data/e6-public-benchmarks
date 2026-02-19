@@ -54,6 +54,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
@@ -226,28 +227,85 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REPORT_DIR="${REPORT_PATH}/${TIMESTAMP}"
 mkdir -p "$REPORT_DIR"
 
+# Count queries in data file
+QUERY_COUNT=$(wc -l < "$QUERY_FILE" | tr -d ' ')
+
+# Infer test type from test plan filename for display
+PLAN_BASENAME=$(basename "$TEST_PLAN" .jmx | tr '[:upper:]' '[:lower:]')
+if echo "$PLAN_BASENAME" | grep -q "run-once"; then
+    TEST_TYPE="Run Once"
+elif echo "$PLAN_BASENAME" | grep -q "variable-concurrency\|load-profile.*concurrency"; then
+    TEST_TYPE="Variable Concurrency (load profile)"
+elif echo "$PLAN_BASENAME" | grep -q "qps.*load-profile\|loadprofile.*qps\|qps-loadprofile\|loadprofile"; then
+    TEST_TYPE="QPS with Load Profile"
+elif echo "$PLAN_BASENAME" | grep -q "qpm.*load-profile"; then
+    TEST_TYPE="QPM with Load Profile"
+elif echo "$PLAN_BASENAME" | grep -q "qps"; then
+    TEST_TYPE="Constant QPS"
+elif echo "$PLAN_BASENAME" | grep -q "qpm"; then
+    TEST_TYPE="Constant QPM"
+else
+    TEST_TYPE="Static Concurrency"
+fi
+
+# Extract connection details for display
+CONN_HOST=$(grep -E "^HOSTNAME=|^mainhost=" "$CONNECTION_FILE" 2>/dev/null | head -1 | cut -d= -f2)
+CONN_ENGINE=$(grep -E "^# Engine:" "$CONNECTION_FILE" 2>/dev/null | cut -d: -f2 | tr -d ' ')
+
 echo ""
 echo -e "${BLUE}=========================================="
 echo " JMeter Test Runner"
 echo -e "==========================================${NC}"
 echo ""
-echo "  Connection:   $(basename "$CONNECTION_FILE")"
-echo "  Test Plan:    $(basename "$TEST_PLAN")"
-echo "  Query File:   $(basename "$QUERY_FILE")"
-[ -n "${METADATA_FILE:-}" ] && echo "  Metadata:     $(basename "$METADATA_FILE")"
+echo -e "  ${BOLD}Connection${NC}"
+echo "    File:       $(basename "$CONNECTION_FILE")"
+[ -n "$CONN_HOST" ] && echo "    Host:       ${CONN_HOST}"
+[ -n "$CONN_ENGINE" ] && echo "    Engine:     ${CONN_ENGINE}"
 echo ""
-echo "  Parameters:"
-echo "    CONCURRENT_QUERY_COUNT = ${CONCURRENT_QUERY_COUNT}"
-echo "    QPS = ${QPS}"
-echo "    QPM = ${QPM}"
-echo "    HOLD_PERIOD = ${HOLD_PERIOD}s"
-echo "    RAMP_UP_TIME = ${RAMP_UP_TIME}s"
-echo "    RANDOM_ORDER = ${RANDOM_ORDER}"
-echo "    RECYCLE_ON_EOF = ${RECYCLE_ON_EOF}"
-echo "    COPY_TO_S3 = ${COPY_TO_S3}"
+echo -e "  ${BOLD}Test${NC}"
+echo "    Plan:       $(basename "$TEST_PLAN")"
+echo "    Type:       ${TEST_TYPE}"
+echo "    Queries:    $(basename "$QUERY_FILE") (${QUERY_COUNT} queries)"
+[ -n "${METADATA_FILE:-}" ] && echo "    Metadata:   $(basename "$METADATA_FILE")"
 echo ""
-echo "  JMeter:  ${JMETER_HOME}"
-echo "  Output:  ${REPORT_DIR}/"
+echo -e "  ${BOLD}Parameters${NC}"
+
+# Show only relevant parameters based on test type
+case "$TEST_TYPE" in
+    "Static Concurrency")
+        echo "    Concurrency:     ${CONCURRENT_QUERY_COUNT}"
+        echo "    Hold Period:     ${HOLD_PERIOD}s"
+        echo "    Recycle on EOF:  ${RECYCLE_ON_EOF}"
+        ;;
+    "Run Once")
+        echo "    Concurrency:     ${CONCURRENT_QUERY_COUNT}"
+        ;;
+    "Constant QPS")
+        echo "    QPS:             ${QPS}"
+        echo "    Hold Period:     ${HOLD_PERIOD}s"
+        echo "    Recycle on EOF:  ${RECYCLE_ON_EOF}"
+        ;;
+    "Constant QPM")
+        echo "    QPM:             ${QPM}"
+        echo "    Hold Period:     ${HOLD_PERIOD}s"
+        echo "    Recycle on EOF:  ${RECYCLE_ON_EOF}"
+        ;;
+    *"Load Profile"*)
+        echo "    Load Profile:    ${LOAD_PROFILE}"
+        echo "    Hold Period:     ${HOLD_PERIOD}s"
+        ;;
+    *)
+        echo "    Concurrency:     ${CONCURRENT_QUERY_COUNT}"
+        echo "    Hold Period:     ${HOLD_PERIOD}s"
+        echo "    Recycle on EOF:  ${RECYCLE_ON_EOF}"
+        ;;
+esac
+echo "    Random Order:    ${RANDOM_ORDER}"
+[ "${COPY_TO_S3}" = "true" ] && echo "    Copy to S3:      ${COPY_TO_S3}"
+echo ""
+echo -e "  ${BOLD}Output${NC}"
+echo "    JMeter:  ${JMETER_HOME}"
+echo "    Results: ${REPORT_DIR}/"
 echo ""
 
 # ============================================================================
