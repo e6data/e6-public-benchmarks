@@ -23,7 +23,7 @@ set -e
 DROP_EXISTING=false
 ATHENA_DATABASE="${ATHENA_DATABASE:-jmeter_analysis}"
 ATHENA_WORKGROUP="${ATHENA_WORKGROUP:-primary}"
-ATHENA_OUTPUT_LOCATION="${ATHENA_OUTPUT_LOCATION:-s3://e6-jmeter/athena-query-results/}"
+ATHENA_OUTPUT_LOCATION="${ATHENA_OUTPUT_LOCATION:-s3://your-s3-bucket/athena-query-results/}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in

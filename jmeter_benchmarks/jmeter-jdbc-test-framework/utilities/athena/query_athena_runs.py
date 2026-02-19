@@ -42,48 +42,60 @@ Usage:
 """
 
 import argparse
-import boto3
-import time
-import sys
 import csv
-from typing import List, Dict
+import sys
+import time
+from typing import Dict, List
+
+import boto3
 
 
-def execute_athena_query(query: str, database: str = 'jmeter_analysis',
-                         region: str = 'us-east-1',
-                         output_location: str = 's3://e6-jmeter/athena-results/') -> List[Dict]:
+def execute_athena_query(
+    query: str,
+    database: str = "jmeter_analysis",
+    region: str = "us-east-1",
+    output_location: str = None,
+) -> List[Dict]:
     """Execute Athena query and return results."""
+    import os
 
-    client = boto3.client('athena', region_name=region)
+    if output_location is None:
+        output_location = os.environ.get(
+            "ATHENA_OUTPUT_LOCATION", "s3://your-s3-bucket/athena-results/"
+        )
+
+    client = boto3.client("athena", region_name=region)
 
     # Start query execution
     response = client.start_query_execution(
         QueryString=query,
-        QueryExecutionContext={'Database': database},
-        ResultConfiguration={'OutputLocation': output_location}
+        QueryExecutionContext={"Database": database},
+        ResultConfiguration={"OutputLocation": output_location},
     )
 
-    query_execution_id = response['QueryExecutionId']
+    query_execution_id = response["QueryExecutionId"]
 
     # Always send status messages to stderr to keep stdout clean for CSV/data output
     print(f"Query ID: {query_execution_id}", file=sys.stderr)
-    print("Executing query...", end='', flush=True, file=sys.stderr)
+    print("Executing query...", end="", flush=True, file=sys.stderr)
 
     # Wait for query to complete
     max_attempts = 30
     for attempt in range(max_attempts):
         response = client.get_query_execution(QueryExecutionId=query_execution_id)
-        status = response['QueryExecution']['Status']['State']
+        status = response["QueryExecution"]["Status"]["State"]
 
-        if status == 'SUCCEEDED':
+        if status == "SUCCEEDED":
             print(" ✅", file=sys.stderr)
             break
-        elif status in ['FAILED', 'CANCELLED']:
-            reason = response['QueryExecution']['Status'].get('StateChangeReason', 'Unknown')
+        elif status in ["FAILED", "CANCELLED"]:
+            reason = response["QueryExecution"]["Status"].get(
+                "StateChangeReason", "Unknown"
+            )
             print(f" ❌\nQuery {status}: {reason}", file=sys.stderr)
             sys.exit(1)
 
-        print(".", end='', flush=True, file=sys.stderr)
+        print(".", end="", flush=True, file=sys.stderr)
         time.sleep(1)
     else:
         print(" ⏱️ Timeout", file=sys.stderr)
@@ -91,17 +103,17 @@ def execute_athena_query(query: str, database: str = 'jmeter_analysis',
 
     # Get query results
     results = []
-    paginator = client.get_paginator('get_query_results')
+    paginator = client.get_paginator("get_query_results")
 
     for page in paginator.paginate(QueryExecutionId=query_execution_id):
-        for row in page['ResultSet']['Rows']:
-            results.append([col.get('VarCharValue', '') for col in row['Data']])
+        for row in page["ResultSet"]["Rows"]:
+            results.append([col.get("VarCharValue", "") for col in row["Data"]])
 
     return results
 
 
 # Global variable to hold output format
-OUTPUT_FORMAT = 'table'  # Default to table format
+OUTPUT_FORMAT = "table"  # Default to table format
 
 
 def format_csv(results: List[List[str]]):
@@ -122,7 +134,7 @@ def format_table(results: List[List[str]], title: str = None):
         return
 
     # If CSV format requested, use CSV formatter
-    if OUTPUT_FORMAT == 'csv':
+    if OUTPUT_FORMAT == "csv":
         format_csv(results)
         return
 
@@ -146,7 +158,9 @@ def format_table(results: List[List[str]], title: str = None):
     print()
 
     # Print header
-    header_line = " | ".join(str(headers[i]).ljust(widths[i]) for i in range(len(headers)))
+    header_line = " | ".join(
+        str(headers[i]).ljust(widths[i]) for i in range(len(headers))
+    )
     print(header_line)
     print("-" * total_width)
 
@@ -455,7 +469,7 @@ def variance_analysis():
             WHEN (STDDEV(p90_latency_sec) / NULLIF(AVG(p90_latency_sec), 0)) * 100 < 20 THEN 'Moderate (CV < 20%)'
             ELSE 'High variance - investigate'
         END as consistency_rating,
-        CONCAT('s3://e6-jmeter/jmeter-results/engine=', engine, '/cluster_size=', cluster_size, '/benchmark=', benchmark, '/run_type=', run_type, '/') as s3_path
+        CONCAT('s3://your-s3-bucket/jmeter-results/engine=', engine, '/cluster_size=', cluster_size, '/benchmark=', benchmark, '/run_type=', run_type, '/') as s3_path
     FROM jmeter_analysis.jmeter_runs_index
     GROUP BY engine, benchmark, cluster_size, run_type, instance_type
     HAVING COUNT(*) >= 1
@@ -511,7 +525,7 @@ def outlier_detection():
             ROUND((r.p90_latency_sec - g.avg_p90) / NULLIF(g.stddev_p90, 0), 2) as p90_z_score,
             ROUND((r.p95_latency_sec - g.avg_p95) / NULLIF(g.stddev_p95, 0), 2) as p95_z_score,
             ROUND((r.p99_latency_sec - g.avg_p99) / NULLIF(g.stddev_p99, 0), 2) as p99_z_score,
-            CONCAT('s3://e6-jmeter/jmeter-results/engine=', r.engine,
+            CONCAT('s3://your-s3-bucket/jmeter-results/engine=', r.engine,
                    '/cluster_size=', r.cluster_size,
                    '/benchmark=', r.benchmark,
                    '/run_type=', r.run_type,
@@ -584,7 +598,7 @@ def best_runs_comparison():
                 PARTITION BY engine, benchmark, cluster_size, run_type, instance_type
                 ORDER BY p90_latency_sec ASC
             ) as rank,
-            CONCAT('s3://e6-jmeter/jmeter-results/engine=', engine,
+            CONCAT('s3://your-s3-bucket/jmeter-results/engine=', engine,
                    '/cluster_size=', cluster_size,
                    '/benchmark=', benchmark,
                    '/run_type=', run_type,
@@ -615,112 +629,96 @@ def best_runs_comparison():
     """
 
     results = execute_athena_query(query)
-    format_table(results, "Best Runs Comparison - Top Performing Run from Each Configuration")
+    format_table(
+        results, "Best Runs Comparison - Top Performing Run from Each Configuration"
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Query Athena runs index from command line',
+        description="Query Athena runs index from command line",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
     parser.add_argument(
-        '--engine',
-        help='Filter by engine (e6data, databricks, etc.)',
-        choices=['e6data', 'databricks', 'trino', 'presto', 'athena']
+        "--engine",
+        help="Filter by engine (e6data, databricks, etc.)",
+        choices=["e6data", "databricks", "trino", "presto", "athena"],
+    )
+
+    parser.add_argument("--cluster", help="Filter by cluster size (S-2x2, M-4x4, etc.)")
+
+    parser.add_argument(
+        "--compare-instances", action="store_true", help="Compare instance types"
     )
 
     parser.add_argument(
-        '--cluster',
-        help='Filter by cluster size (S-2x2, M-4x4, etc.)'
+        "--compare-clusters", action="store_true", help="Compare cluster sizes"
     )
 
     parser.add_argument(
-        '--compare-instances',
-        action='store_true',
-        help='Compare instance types'
+        "--slowest-queries", action="store_true", help="Show slowest queries"
     )
 
     parser.add_argument(
-        '--compare-clusters',
-        action='store_true',
-        help='Compare cluster sizes'
+        "--compare-concurrency",
+        action="store_true",
+        help="Compare performance across concurrency levels",
     )
 
     parser.add_argument(
-        '--slowest-queries',
-        action='store_true',
-        help='Show slowest queries'
+        "--compare-engines",
+        action="store_true",
+        help="Compare e6data vs Databricks performance",
     )
 
     parser.add_argument(
-        '--compare-concurrency',
-        action='store_true',
-        help='Compare performance across concurrency levels'
+        "--instance-by-concurrency",
+        action="store_true",
+        help="Show how each instance performs at different concurrency",
     )
 
     parser.add_argument(
-        '--compare-engines',
-        action='store_true',
-        help='Compare e6data vs Databricks performance'
+        "--scaling-analysis",
+        action="store_true",
+        help="Analyze how performance scales with concurrency",
     )
 
     parser.add_argument(
-        '--instance-by-concurrency',
-        action='store_true',
-        help='Show how each instance performs at different concurrency'
+        "--variance-analysis",
+        action="store_true",
+        help="Analyze performance variance within each configuration",
     )
 
     parser.add_argument(
-        '--scaling-analysis',
-        action='store_true',
-        help='Analyze how performance scales with concurrency'
+        "--outlier-detection",
+        action="store_true",
+        help="Detect outlier runs that deviate significantly from their group average",
     )
 
     parser.add_argument(
-        '--variance-analysis',
-        action='store_true',
-        help='Analyze performance variance within each configuration'
+        "--best-runs",
+        action="store_true",
+        help="Compare only the best performing run from each unique configuration",
     )
 
     parser.add_argument(
-        '--outlier-detection',
-        action='store_true',
-        help='Detect outlier runs that deviate significantly from their group average'
+        "--instance-type", help="Filter by specific instance type (e.g., r6id.8xlarge)"
+    )
+
+    parser.add_argument("--run-type", help="Filter by run type (e.g., concurrency_2)")
+
+    parser.add_argument("--query", help="Execute custom SQL query")
+
+    parser.add_argument(
+        "--region", help="AWS region (default: us-east-1)", default="us-east-1"
     )
 
     parser.add_argument(
-        '--best-runs',
-        action='store_true',
-        help='Compare only the best performing run from each unique configuration'
-    )
-
-    parser.add_argument(
-        '--instance-type',
-        help='Filter by specific instance type (e.g., r6id.8xlarge)'
-    )
-
-    parser.add_argument(
-        '--run-type',
-        help='Filter by run type (e.g., concurrency_2)'
-    )
-
-    parser.add_argument(
-        '--query',
-        help='Execute custom SQL query'
-    )
-
-    parser.add_argument(
-        '--region',
-        help='AWS region (default: us-east-1)',
-        default='us-east-1'
-    )
-
-    parser.add_argument(
-        '--csv',
-        action='store_true',
-        help='Output results in CSV format for Excel/Google Sheets'
+        "--csv",
+        action="store_true",
+        help="Output results in CSV format for Excel/Google Sheets",
     )
 
     args = parser.parse_args()
@@ -728,7 +726,7 @@ def main():
     # Set output format based on CSV flag
     if args.csv:
         global OUTPUT_FORMAT
-        OUTPUT_FORMAT = 'csv'
+        OUTPUT_FORMAT = "csv"
 
     try:
         if args.query:
@@ -762,5 +760,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -48,5 +48,6 @@ PARTITIONED BY (
     cluster_size STRING COMMENT 'Cluster size (XS-1x1, S-2x2, M-4x4, etc.)'
 )
 ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
-LOCATION 's3://e6-jmeter/athena-tables/run_metadata/'
+-- UPDATE: Replace with your S3 bucket
+LOCATION 's3://your-s3-bucket/athena-tables/run_metadata/'
 TBLPROPERTIES ('has_encrypted_data'='false');

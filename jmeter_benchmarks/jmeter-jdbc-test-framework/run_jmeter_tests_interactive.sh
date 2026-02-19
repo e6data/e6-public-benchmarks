@@ -217,7 +217,7 @@ if [[ "$props_choice" =~ ^[Nn]$ ]]; then
     # Common parameters
     REPORT_PATH="reports"
     COPY_TO_S3=$(prompt_with_default "Copy results to S3? (true/false)" "false")
-    S3_REPORT_PATH="s3://e6-jmeter/jmeter-results"
+    S3_REPORT_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
     RANDOM_ORDER=$(prompt_with_default "Random query order? (true/false)" "false")
     RECYCLE_ON_EOF=$(prompt_with_default "Recycle queries at EOF? (true/false)" "false")
     QUERY_TIMEOUT=$(prompt_with_default "Query timeout (seconds)" "300")

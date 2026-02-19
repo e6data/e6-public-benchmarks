@@ -9,7 +9,7 @@ This directory contains scripts that have been deprecated due to incompatibility
 
 **Old S3 Structure**:
 ```
-s3://e6-jmeter/jmeter-results/latest.json
+s3://your-s3-bucket/jmeter-results/latest.json
 ```
 
 **Replacement**: Use `utilities/compare_s3_runs.sh --list`
@@ -30,12 +30,12 @@ s3://e6-jmeter/jmeter-results/latest.json
 
 **Old S3 Structure**:
 ```
-s3://e6-jmeter/jmeter-results/run_date=20251029/run_id=20251029-083259/
+s3://your-s3-bucket/jmeter-results/run_date=20251029/run_id=20251029-083259/
 ```
 
 **New S3 Structure** (since 2025-10-29):
 ```
-s3://e6-jmeter/jmeter-results/engine=$ENGINE/cluster_size=$SIZE/benchmark=$BENCHMARK/run_type=$TYPE/
+s3://your-s3-bucket/jmeter-results/engine=$ENGINE/cluster_size=$SIZE/benchmark=$BENCHMARK/run_type=$TYPE/
 ```
 
 **Replacement**: Use `utilities/compare_s3_runs.sh --run-id`

@@ -13,63 +13,75 @@ Usage:
     python utilities/athena/verify_baseline_sync.py --engine e6data --verify-all
 """
 
-import boto3
 import argparse
 import json
+import os
 import time
 from typing import Dict, Optional
 
+import boto3
+
 
 class BaselineSyncVerifier:
-    def __init__(self, region='us-east-1'):
-        self.athena = boto3.client('athena', region_name=region)
-        self.s3 = boto3.client('s3', region_name=region)
-        self.database = 'jmeter_analysis'
-        self.output_location = 's3://e6-jmeter/athena-query-results/'
-        self.baseline_bucket = 'e6-jmeter'
-        self.baseline_prefix = 'jmeter-results-index/baselines/'
+    def __init__(self, region="us-east-1"):
+        self.athena = boto3.client("athena", region_name=region)
+        self.s3 = boto3.client("s3", region_name=region)
+        self.database = "jmeter_analysis"
+        self.output_location = os.environ.get(
+            "ATHENA_OUTPUT_LOCATION", "s3://your-s3-bucket/athena-query-results/"
+        )
+        self.baseline_bucket = os.environ.get("S3_BUCKET", "your-s3-bucket")
+        self.baseline_prefix = "jmeter-results-index/baselines/"
 
     def execute_query(self, query):
         """Execute Athena query and return results"""
         response = self.athena.start_query_execution(
             QueryString=query,
-            QueryExecutionContext={'Database': self.database},
-            ResultConfiguration={'OutputLocation': self.output_location}
+            QueryExecutionContext={"Database": self.database},
+            ResultConfiguration={"OutputLocation": self.output_location},
         )
 
-        query_id = response['QueryExecutionId']
+        query_id = response["QueryExecutionId"]
 
         # Wait for completion
         while True:
             result = self.athena.get_query_execution(QueryExecutionId=query_id)
-            state = result['QueryExecution']['Status']['State']
+            state = result["QueryExecution"]["Status"]["State"]
 
-            if state == 'SUCCEEDED':
+            if state == "SUCCEEDED":
                 break
-            elif state in ['FAILED', 'CANCELLED']:
-                reason = result['QueryExecution']['Status'].get('StateChangeReason', 'Unknown')
+            elif state in ["FAILED", "CANCELLED"]:
+                reason = result["QueryExecution"]["Status"].get(
+                    "StateChangeReason", "Unknown"
+                )
                 raise Exception(f"Query {state}: {reason}")
             time.sleep(0.5)
 
         # Get results
         return self.athena.get_query_results(QueryExecutionId=query_id)
 
-    def get_baseline_from_s3(self, engine, cluster_size, benchmark, run_type) -> Optional[Dict]:
+    def get_baseline_from_s3(
+        self, engine, cluster_size, benchmark, run_type
+    ) -> Optional[Dict]:
         """Get baseline from S3 metadata file"""
-        key = (f"{self.baseline_prefix}"
-               f"engine={engine}/"
-               f"cluster_size={cluster_size}/"
-               f"benchmark={benchmark}/"
-               f"run_type={run_type}/"
-               f"baseline_metadata.json")
+        key = (
+            f"{self.baseline_prefix}"
+            f"engine={engine}/"
+            f"cluster_size={cluster_size}/"
+            f"benchmark={benchmark}/"
+            f"run_type={run_type}/"
+            f"baseline_metadata.json"
+        )
 
         try:
             response = self.s3.get_object(Bucket=self.baseline_bucket, Key=key)
-            return json.loads(response['Body'].read())
+            return json.loads(response["Body"].read())
         except:
             return None
 
-    def get_baseline_from_athena(self, engine, cluster_size, benchmark, run_type) -> Optional[Dict]:
+    def get_baseline_from_athena(
+        self, engine, cluster_size, benchmark, run_type
+    ) -> Optional[Dict]:
         """Get baseline from Athena table"""
         query = f"""
         SELECT
@@ -93,25 +105,25 @@ class BaselineSyncVerifier:
 
         results = self.execute_query(query)
 
-        if len(results['ResultSet']['Rows']) <= 1:
+        if len(results["ResultSet"]["Rows"]) <= 1:
             return None
 
-        row = results['ResultSet']['Rows'][1]
-        data = [col.get('VarCharValue', '') for col in row['Data']]
+        row = results["ResultSet"]["Rows"][1]
+        data = [col.get("VarCharValue", "") for col in row["Data"]]
 
         return {
-            'run_id': data[0],
-            'is_baseline': data[1] == 'true',
-            'baseline_marked_by': data[2] if data[2] else None,
-            'baseline_marked_date': data[3] if data[3] else None,
-            'baseline_notes': data[4] if data[4] else None,
-            'metrics': {
-                'avg_latency_sec': float(data[5]) if data[5] else None,
-                'p50_latency_sec': float(data[6]) if data[6] else None,
-                'p90_latency_sec': float(data[7]) if data[7] else None,
-                'p95_latency_sec': float(data[8]) if data[8] else None,
-                'p99_latency_sec': float(data[9]) if data[9] else None
-            }
+            "run_id": data[0],
+            "is_baseline": data[1] == "true",
+            "baseline_marked_by": data[2] if data[2] else None,
+            "baseline_marked_date": data[3] if data[3] else None,
+            "baseline_notes": data[4] if data[4] else None,
+            "metrics": {
+                "avg_latency_sec": float(data[5]) if data[5] else None,
+                "p50_latency_sec": float(data[6]) if data[6] else None,
+                "p90_latency_sec": float(data[7]) if data[7] else None,
+                "p95_latency_sec": float(data[8]) if data[8] else None,
+                "p99_latency_sec": float(data[9]) if data[9] else None,
+            },
         }
 
     def verify_config(self, engine, cluster_size, benchmark, run_type):
@@ -127,8 +139,12 @@ class BaselineSyncVerifier:
         print()
 
         # Get from both sources
-        s3_baseline = self.get_baseline_from_s3(engine, cluster_size, benchmark, run_type)
-        athena_baseline = self.get_baseline_from_athena(engine, cluster_size, benchmark, run_type)
+        s3_baseline = self.get_baseline_from_s3(
+            engine, cluster_size, benchmark, run_type
+        )
+        athena_baseline = self.get_baseline_from_athena(
+            engine, cluster_size, benchmark, run_type
+        )
 
         # Check if both exist or both don't exist
         if s3_baseline is None and athena_baseline is None:
@@ -150,7 +166,7 @@ class BaselineSyncVerifier:
             return False
 
         # Compare run_id
-        if s3_baseline['run_id'] != athena_baseline['run_id']:
+        if s3_baseline["run_id"] != athena_baseline["run_id"]:
             print("❌ SYNC ERROR: Different run_id in S3 vs Athena!")
             print(f"   S3 shows:     {s3_baseline['run_id']}")
             print(f"   Athena shows: {athena_baseline['run_id']}")
@@ -158,8 +174,8 @@ class BaselineSyncVerifier:
             return False
 
         # Compare metadata
-        s3_marked_by = s3_baseline.get('marked_by')
-        athena_marked_by = athena_baseline.get('baseline_marked_by')
+        s3_marked_by = s3_baseline.get("marked_by")
+        athena_marked_by = athena_baseline.get("baseline_marked_by")
 
         if s3_marked_by != athena_marked_by:
             print("⚠️  SYNC WARNING: Different marked_by values")
@@ -193,24 +209,21 @@ class BaselineSyncVerifier:
 
         # List all S3 baseline metadata files for this engine
         prefix = f"{self.baseline_prefix}engine={engine}/"
-        response = self.s3.list_objects_v2(
-            Bucket=self.baseline_bucket,
-            Prefix=prefix
-        )
+        response = self.s3.list_objects_v2(Bucket=self.baseline_bucket, Prefix=prefix)
 
-        if 'Contents' not in response:
+        if "Contents" not in response:
             print("No baselines found in S3")
             return
 
         configs = []
-        for obj in response['Contents']:
-            if obj['Key'].endswith('baseline_metadata.json'):
+        for obj in response["Contents"]:
+            if obj["Key"].endswith("baseline_metadata.json"):
                 # Parse path to extract config
-                parts = obj['Key'].split('/')
+                parts = obj["Key"].split("/")
                 config = {}
                 for part in parts:
-                    if '=' in part:
-                        key, val = part.split('=', 1)
+                    if "=" in part:
+                        key, val = part.split("=", 1)
                         config[key] = val
                 configs.append(config)
 
@@ -224,10 +237,10 @@ class BaselineSyncVerifier:
         all_synced = True
         for config in configs:
             result = self.verify_config(
-                config['engine'],
-                config['cluster_size'],
-                config['benchmark'],
-                config['run_type']
+                config["engine"],
+                config["cluster_size"],
+                config["benchmark"],
+                config["run_type"],
             )
             if not result:
                 all_synced = False
@@ -240,15 +253,18 @@ class BaselineSyncVerifier:
         print("=" * 80)
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Verify baseline sync between S3 and Athena')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Verify baseline sync between S3 and Athena"
+    )
 
-    parser.add_argument('--engine', required=True, help='Engine name (e.g., e6data)')
-    parser.add_argument('--cluster', help='Cluster size (e.g., S-2x2)')
-    parser.add_argument('--benchmark', help='Benchmark name (e.g., tpcds_29_1tb)')
-    parser.add_argument('--run-type', help='Run type (e.g., concurrency_4)')
-    parser.add_argument('--verify-all', action='store_true',
-                       help='Verify all baselines for the engine')
+    parser.add_argument("--engine", required=True, help="Engine name (e.g., e6data)")
+    parser.add_argument("--cluster", help="Cluster size (e.g., S-2x2)")
+    parser.add_argument("--benchmark", help="Benchmark name (e.g., tpcds_29_1tb)")
+    parser.add_argument("--run-type", help="Run type (e.g., concurrency_4)")
+    parser.add_argument(
+        "--verify-all", action="store_true", help="Verify all baselines for the engine"
+    )
 
     args = parser.parse_args()
 
@@ -261,4 +277,6 @@ if __name__ == '__main__':
     else:
         parser.print_help()
         print()
-        print("Error: Either provide --verify-all or all of: --cluster, --benchmark, --run-type")
+        print(
+            "Error: Either provide --verify-all or all of: --cluster, --benchmark, --run-type"
+        )

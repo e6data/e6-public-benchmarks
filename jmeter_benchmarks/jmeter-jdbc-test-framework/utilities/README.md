@@ -49,15 +49,15 @@ s3://bucket/jmeter-results/
 
 **Discover available paths:**
 ```bash
-aws s3 ls s3://e6-jmeter/jmeter-results/                              # engines
-aws s3 ls s3://e6-jmeter/jmeter-results/engine=e6data/                # cluster sizes
-aws s3 ls s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/  # benchmarks
+aws s3 ls s3://your-s3-bucket/jmeter-results/                              # engines
+aws s3 ls s3://your-s3-bucket/jmeter-results/engine=e6data/                # cluster sizes
+aws s3 ls s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/  # benchmarks
 ```
 
 ## Quick Start
 
 **Pre-flight checklist:**
-1. AWS credentials configured: `aws s3 ls s3://e6-jmeter/`
+1. AWS credentials configured: `aws s3 ls s3://your-s3-bucket/`
 2. Python 3.7+ installed: `python3 --version`
 3. In correct directory: `cd jmeter-jdbc-test-framework`
 
@@ -65,8 +65,8 @@ aws s3 ls s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/  # ben
 
 ```bash
 python utilities/compare_multi_concurrency_from_s3.py \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
+  s3://your-s3-bucket/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 ```
 
 ## Comparison Scripts
@@ -77,8 +77,8 @@ Compare two engines/clusters across ALL concurrency levels automatically. This i
 
 ```bash
 python utilities/compare_multi_concurrency_from_s3.py \
-  s3://e6-jmeter/jmeter-results/engine=ENGINE1/cluster_size=CLUSTER1/benchmark=BENCHMARK/ \
-  s3://e6-jmeter/jmeter-results/engine=ENGINE2/cluster_size=CLUSTER2/benchmark=BENCHMARK/
+  s3://your-s3-bucket/jmeter-results/engine=ENGINE1/cluster_size=CLUSTER1/benchmark=BENCHMARK/ \
+  s3://your-s3-bucket/jmeter-results/engine=ENGINE2/cluster_size=CLUSTER2/benchmark=BENCHMARK/
 ```
 
 **How it works:**
@@ -95,8 +95,8 @@ Deep-dive comparison of two engines at a single concurrency level.
 
 ```bash
 python utilities/compare_jmeter_runs_from_s3.py \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/ \
-  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/ \
+  s3://your-s3-bucket/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/
 ```
 
 **Output:** `reports/{eng1}_{cl1}_vs_{eng2}_{cl2}_C{X}_{date}.csv` + `_SUMMARY.md`
@@ -108,11 +108,11 @@ Compare two consecutive runs of the same engine to detect regressions or improve
 ```bash
 # Automatic — compares 2 most recent runs
 python utilities/compare_consecutive_runs_from_s3.py \
-  --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 
 # Specific run IDs
 python utilities/compare_consecutive_runs_from_s3.py \
-  --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
+  --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
   --run-id1 20251030-171659 \
   --run-id2 20251031-070614
 ```
@@ -133,7 +133,7 @@ Analyze how a single engine scales as concurrency increases.
 
 ```bash
 python utilities/analyze_concurrency_scaling_from_s3.py \
-  --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 ```
 
 **Reports:**
@@ -246,7 +246,7 @@ Quick local analysis?
 
 # Compare with previous run
 python utilities/compare_consecutive_runs_from_s3.py \
-  --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 ```
 
 Look for: BOOTSTRAP query degradation (cold start), uniform improvement (good optimization), specific query regressions (investigate those).
@@ -256,12 +256,12 @@ Look for: BOOTSTRAP query degradation (cold start), uniform improvement (good op
 ```bash
 # Compare clusters
 python utilities/compare_multi_concurrency_from_s3.py \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/
 
 # Analyze scaling for each
 python utilities/analyze_concurrency_scaling_from_s3.py \
-  --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 ```
 
 ### Engine Evaluation (E6Data vs DBR)
@@ -269,8 +269,8 @@ python utilities/analyze_concurrency_scaling_from_s3.py \
 ```bash
 # Full comparison + scaling analysis
 python utilities/compare_multi_concurrency_from_s3.py \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
+  s3://your-s3-bucket/jmeter-results/engine=dbr/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 ```
 
 ### Automated Post-Test Analysis
@@ -319,14 +319,14 @@ utilities/athena/
 aws athena start-query-execution \
   --query-string "$(cat utilities/athena/setup_athena_runs_index.sql)" \
   --query-execution-context Database=default \
-  --result-configuration OutputLocation=s3://e6-jmeter/athena-query-results/
+  --result-configuration OutputLocation=s3://your-s3-bucket/athena-query-results/
 ```
 
 **2. Upload data:**
 ```bash
 # From S3 directly
 python utilities/athena/upload_runs_index_to_athena.py --from-s3 \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/run_type=concurrency_4/
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/run_type=concurrency_4/
 ```
 
 **3. Query:**
@@ -436,4 +436,4 @@ Run `aws configure` or set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`.
 2. **Check for cold starts** when seeing regressions — BOOTSTRAP queries with massive degradation indicate cold cluster.
 3. **Compare scaling before choosing cluster size** — check scaling efficiency at your target concurrency, not just raw performance.
 4. **Track performance over time** — run `compare_consecutive_runs_from_s3.py` regularly to catch regressions early.
-5. **Verify S3 paths first**: `aws s3 ls s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/`
+5. **Verify S3 paths first**: `aws s3 ls s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/`

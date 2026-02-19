@@ -202,7 +202,7 @@ Run all concurrency levels (1, 2, 4, 8, 12, 16) for any engine, cluster, and ben
 
 **Arguments map directly to S3 path structure:**
 ```
-s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/
+s3://your-s3-bucket/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/
 ```
 
 **Features:**

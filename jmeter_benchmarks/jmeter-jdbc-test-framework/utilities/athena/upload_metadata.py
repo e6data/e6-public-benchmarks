@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -42,15 +43,22 @@ def find_metadata_files(base_dir: str) -> List[Tuple[Path, str]]:
         # Extract partition from path
         # Example: /tmp/metadata/engine=e6data/cluster_size=S-2x2/metadata.jsonl
         relative_path = jsonl_file.relative_to(base_path)
-        partition_path = str(relative_path.parent)  # e.g., "engine=e6data/cluster_size=S-2x2"
+        partition_path = str(
+            relative_path.parent
+        )  # e.g., "engine=e6data/cluster_size=S-2x2"
 
         files.append((jsonl_file, partition_path))
 
     return sorted(files, key=lambda x: x[1])
 
 
-def upload_to_s3(local_file: Path, s3_partition_path: str, s3_bucket: str,
-                 s3_prefix: str, dry_run: bool = False) -> bool:
+def upload_to_s3(
+    local_file: Path,
+    s3_partition_path: str,
+    s3_bucket: str,
+    s3_prefix: str,
+    dry_run: bool = False,
+) -> bool:
     """
     Upload JSONL file to S3 at the correct partition path.
 
@@ -67,7 +75,7 @@ def upload_to_s3(local_file: Path, s3_partition_path: str, s3_bucket: str,
     # Build S3 destination
     s3_path = f"s3://{s3_bucket}/{s3_prefix}/{s3_partition_path}/metadata.jsonl"
 
-    cmd = ['aws', 's3', 'cp', str(local_file), s3_path]
+    cmd = ["aws", "s3", "cp", str(local_file), s3_path]
 
     if dry_run:
         print(f"[DRY RUN] Would upload: {local_file} -> {s3_path}")
@@ -81,7 +89,7 @@ def upload_to_s3(local_file: Path, s3_partition_path: str, s3_bucket: str,
         return False
 
 
-def repair_partitions(database: str = 'default', dry_run: bool = False) -> bool:
+def repair_partitions(database: str = "default", dry_run: bool = False) -> bool:
     """
     Run MSCK REPAIR TABLE to discover new partitions in Athena.
 
@@ -95,12 +103,19 @@ def repair_partitions(database: str = 'default', dry_run: bool = False) -> bool:
     query = "MSCK REPAIR TABLE jmeter_run_metadata"
 
     cmd = [
-        'aws', 'athena', 'start-query-execution',
-        '--query-string', query,
-        '--query-execution-context', f'Database={database}',
-        '--result-configuration', 'OutputLocation=s3://e6-jmeter/athena-query-results/',
-        '--output', 'text',
-        '--query', 'QueryExecutionId'
+        "aws",
+        "athena",
+        "start-query-execution",
+        "--query-string",
+        query,
+        "--query-execution-context",
+        f"Database={database}",
+        "--result-configuration",
+        f"OutputLocation={os.environ.get('ATHENA_OUTPUT_LOCATION', 's3://your-s3-bucket/athena-query-results/')}",
+        "--output",
+        "text",
+        "--query",
+        "QueryExecutionId",
     ]
 
     if dry_run:
@@ -119,50 +134,49 @@ def repair_partitions(database: str = 'default', dry_run: bool = False) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Upload metadata JSONL files to S3 for Athena ingestion',
+        description="Upload metadata JSONL files to S3 for Athena ingestion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
     parser.add_argument(
-        'metadata_dir',
-        help='Local directory containing partitioned metadata JSONL files'
+        "metadata_dir",
+        help="Local directory containing partitioned metadata JSONL files",
     )
 
     parser.add_argument(
-        '--bucket', '-b',
-        help='S3 bucket name (default: e6-jmeter)',
-        default='e6-jmeter'
+        "--bucket",
+        "-b",
+        help="S3 bucket name (default: e6-jmeter)",
+        default="e6-jmeter",
     )
 
     parser.add_argument(
-        '--prefix', '-p',
-        help='S3 prefix (default: athena-tables/run_metadata)',
-        default='athena-tables/run_metadata'
+        "--prefix",
+        "-p",
+        help="S3 prefix (default: athena-tables/run_metadata)",
+        default="athena-tables/run_metadata",
     )
 
     parser.add_argument(
-        '--database', '-d',
-        help='Athena database name (default: default)',
-        default='default'
+        "--database",
+        "-d",
+        help="Athena database name (default: default)",
+        default="default",
     )
 
     parser.add_argument(
-        '--partition',
-        help='Upload specific partition only (e.g., engine=e6data/cluster_size=S-2x2)',
-        default=None
+        "--partition",
+        help="Upload specific partition only (e.g., engine=e6data/cluster_size=S-2x2)",
+        default=None,
     )
 
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Print commands without executing'
+        "--dry-run", action="store_true", help="Print commands without executing"
     )
 
     parser.add_argument(
-        '--skip-repair',
-        action='store_true',
-        help='Skip MSCK REPAIR TABLE after upload'
+        "--skip-repair", action="store_true", help="Skip MSCK REPAIR TABLE after upload"
     )
 
     args = parser.parse_args()
@@ -211,7 +225,9 @@ def main():
         print(f"   Records: {record_count}")
 
         # Upload
-        if upload_to_s3(local_file, partition_path, args.bucket, args.prefix, args.dry_run):
+        if upload_to_s3(
+            local_file, partition_path, args.bucket, args.prefix, args.dry_run
+        ):
             print(f"   ✅ Uploaded successfully")
             uploaded += 1
         else:
@@ -261,5 +277,5 @@ def main():
     print("=" * 70)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

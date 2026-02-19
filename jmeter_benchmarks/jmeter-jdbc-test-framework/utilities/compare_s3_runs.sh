@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-S3_BASE="s3://e6-jmeter/jmeter-results"
+S3_BASE="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}"
 TEMP_DIR="/tmp/jmeter_s3_comparison"
 
 usage() {

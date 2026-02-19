@@ -24,7 +24,7 @@ fi
 BENCHMARK="$1"
 RUN_TYPE="$2"
 
-S3_BASE="s3://e6-jmeter/jmeter-results"
+S3_BASE="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}"
 
 echo "==========================================="
 echo "Comparing Runs"

@@ -263,7 +263,7 @@ All Python scripts are in `utilities/` directory:
 ```bash
 # Analyze latest run for a benchmark
 python utilities/analyze_single_run_from_s3.py \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 
 # Analyze specific run
 python utilities/analyze_single_run_from_s3.py \
@@ -275,8 +275,8 @@ python utilities/analyze_single_run_from_s3.py \
 ```bash
 # Compare all matching concurrency levels (RECOMMENDED - most comprehensive)
 python utilities/compare_multi_concurrency_from_s3.py \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 
 # Compare single concurrency level
 python utilities/compare_jmeter_runs_from_s3.py \

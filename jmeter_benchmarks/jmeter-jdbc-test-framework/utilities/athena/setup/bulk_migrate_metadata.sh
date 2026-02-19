@@ -2,7 +2,7 @@
 # Bulk migration script for jmeter_run_metadata (HYBRID APPROACH)
 # - Extracts metadata from test_result.json files in S3
 # - Transforms to JSONL format
-# - Uploads to s3://e6-jmeter/athena-tables/run_metadata/
+# - Uploads to s3://$S3_BUCKET/athena-tables/run_metadata/
 # - Results table uses existing CSV files (no migration needed)
 #
 # Usage:
@@ -94,7 +94,7 @@ TOTAL_RECORDS=0
 
 # Process each run_type
 for RUN_TYPE in "${RUN_TYPES[@]}"; do
-    S3_PATH="s3://e6-jmeter/jmeter-results/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=${RUN_TYPE}/"
+    S3_PATH="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=${RUN_TYPE}/"
 
     echo "================================================"
     echo "Processing: $RUN_TYPE"
@@ -158,7 +158,7 @@ echo ""
 QUERY_ID=$(aws athena start-query-execution \
     --query-string "MSCK REPAIR TABLE jmeter_query_results" \
     --query-execution-context Database="$DATABASE" \
-    --result-configuration OutputLocation=s3://e6-jmeter/athena-query-results/ \
+    --result-configuration OutputLocation=${ATHENA_OUTPUT_LOCATION:-s3://your-s3-bucket/athena-query-results/} \
     --output text \
     --query 'QueryExecutionId' 2>/dev/null || echo "FAILED")
 

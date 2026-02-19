@@ -1,7 +1,7 @@
 -- Create jmeter_query_results table (CSV-based - points directly at existing data)
 -- Purpose: Query-level execution results from JMeter CSV files
 -- Cardinality: Many rows per run_id (30-100 queries per run)
--- Data Source: Existing JmeterResultFile.csv files in s3://e6-jmeter/jmeter-results/
+-- Data Source: Existing JmeterResultFile.csv files in s3://your-s3-bucket/jmeter-results/
 --
 -- HYBRID APPROACH: This table reads CSV files directly (no transformation needed)
 -- Companion table jmeter_run_metadata uses JSONL transformation for metadata
@@ -38,7 +38,8 @@ WITH SERDEPROPERTIES (
    'field.delim' = ',',
    'serialization.format' = ','
 )
-LOCATION 's3://e6-jmeter/jmeter-results/'
+-- UPDATE: Replace with your S3 bucket
+LOCATION 's3://your-s3-bucket/jmeter-results/'
 TBLPROPERTIES (
     'skip.header.line.count'='1',
     'has_encrypted_data'='false',

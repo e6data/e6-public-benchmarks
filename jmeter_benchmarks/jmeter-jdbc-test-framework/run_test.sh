@@ -23,7 +23,7 @@
 #   RANDOM_ORDER              - random query order true/false (default: false)
 #   RECYCLE_ON_EOF            - repeat queries true/false (default: false)
 #   COPY_TO_S3                - upload results to S3 true/false (default: false)
-#   S3_REPORT_PATH            - S3 path for results (default: s3://e6-jmeter/jmeter-results)
+#   S3_REPORT_PATH            - S3 path for results (default: s3://your-s3-bucket/jmeter-results)
 #   REPORT_PATH               - local report directory (default: reports)
 #   QUERY_TIMEOUT             - query timeout in seconds (default: 300)
 #   LIMIT_RESULTSET           - max result rows (default: 1000)
@@ -186,7 +186,7 @@ LOAD_PROFILE="${LOAD_PROFILE:-test_properties/load_profile.csv}"
 RANDOM_ORDER="${RANDOM_ORDER:-false}"
 RECYCLE_ON_EOF="${RECYCLE_ON_EOF:-false}"
 COPY_TO_S3="${COPY_TO_S3:-false}"
-S3_REPORT_PATH="${S3_REPORT_PATH:-s3://e6-jmeter/jmeter-results}"
+S3_REPORT_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
 REPORT_PATH="${REPORT_PATH:-reports}"
 QUERY_TIMEOUT="${QUERY_TIMEOUT:-300}"
 LIMIT_RESULTSET="${LIMIT_RESULTSET:-1000}"

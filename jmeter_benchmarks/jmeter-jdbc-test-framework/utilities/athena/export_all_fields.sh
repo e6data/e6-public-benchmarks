@@ -103,7 +103,7 @@ echo "Executing query..."
 EXEC_ID=$(aws athena start-query-execution \
     --query-string "$QUERY" \
     --query-execution-context Database="$ATHENA_DATABASE" \
-    --result-configuration OutputLocation=s3://e6-jmeter/athena-query-results/ \
+    --result-configuration OutputLocation=${ATHENA_OUTPUT_LOCATION:-s3://your-s3-bucket/athena-query-results/} \
     --output text --query 'QueryExecutionId')
 
 echo "Query ID: $EXEC_ID"
@@ -114,7 +114,7 @@ for i in {1..60}; do
     STATUS=$(aws athena get-query-execution \
         --query-execution-id "$EXEC_ID" \
         --output text --query 'QueryExecution.Status.State')
-    
+
     if [[ "$STATUS" == "SUCCEEDED" ]]; then
         echo " ✓"
         break
@@ -125,7 +125,7 @@ for i in {1..60}; do
             jq -r '.QueryExecution.Status.StateChangeReason'
         exit 1
     fi
-    
+
     echo -n "."
     sleep 2
 done

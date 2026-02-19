@@ -1,7 +1,7 @@
 #!/bin/bash
 # Setup script for jmeter_run_metadata and jmeter_query_results tables (HYBRID APPROACH)
-# - jmeter_run_metadata: JSONL format in s3://e6-jmeter/athena-tables/run_metadata/
-# - jmeter_query_results: Points directly at existing CSV files in s3://e6-jmeter/jmeter-results/
+# - jmeter_run_metadata: JSONL format in s3://your-s3-bucket/athena-tables/run_metadata/
+# - jmeter_query_results: Points directly at existing CSV files in s3://your-s3-bucket/jmeter-results/
 #
 # Usage: ./setup_tables.sh [--skip-s3] [--database DATABASE_NAME]
 #

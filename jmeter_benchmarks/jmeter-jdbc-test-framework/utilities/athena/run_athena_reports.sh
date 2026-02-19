@@ -26,7 +26,7 @@ BENCHMARK="${3:-all}"
 OUTPUT_DIR="${4:-reports/athena_csv_reports_$(date +%Y%m%d_%H%M%S)}"
 
 ATHENA_DB="${ATHENA_DB:-default}"
-ATHENA_OUTPUT_LOCATION="${ATHENA_OUTPUT_LOCATION:-s3://e6-jmeter/athena-query-results/}"
+ATHENA_OUTPUT_LOCATION="${ATHENA_OUTPUT_LOCATION:-s3://your-s3-bucket/athena-query-results/}"
 
 # Build WHERE conditions (without WHERE keyword)
 WHERE_CONDITIONS=""

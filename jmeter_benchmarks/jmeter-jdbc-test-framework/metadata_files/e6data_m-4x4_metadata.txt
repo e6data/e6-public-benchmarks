@@ -2,7 +2,7 @@
 
 ENGINE=e6data
 COPY_TO_S3=false
-S3_BASE_PATH=s3://e6-jmeter/jmeter-results
+S3_BASE_PATH=s3://your-s3-bucket/jmeter-results
 
 BENCHMARK_TYPE="tpcds_29_1tb"
 DATA_SIZE="1TB"

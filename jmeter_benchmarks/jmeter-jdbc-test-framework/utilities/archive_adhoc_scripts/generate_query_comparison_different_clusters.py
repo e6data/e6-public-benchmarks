@@ -10,15 +10,15 @@ Usage:
         --output comparison.csv
 """
 
-import json
-import subprocess
-import sys
 import argparse
 import csv
+import json
+import re
+import statistics
+import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
-import statistics
-import re
 
 
 def run_command(cmd: List[str]) -> Tuple[str, int]:
@@ -32,7 +32,7 @@ def run_command(cmd: List[str]) -> Tuple[str, int]:
 
 def list_test_results(engine: str, cluster_size: str, benchmark: str) -> Dict[int, str]:
     """List all test result JSON files grouped by concurrency level."""
-    s3_base = f"s3://e6-jmeter/jmeter-results/engine={engine}/cluster_size={cluster_size}/benchmark={benchmark}/"
+    s3_base = f"s3://your-s3-bucket/jmeter-results/engine={engine}/cluster_size={cluster_size}/benchmark={benchmark}/"
 
     cmd = ["aws", "s3", "ls", s3_base]
     output, code = run_command(cmd)
@@ -42,20 +42,23 @@ def list_test_results(engine: str, cluster_size: str, benchmark: str) -> Dict[in
         return {}
 
     concurrency_files = {}
-    for line in output.strip().split('\n'):
-        if 'run_type=' in line:
-            match = re.search(r'run_type=concurrency_(\d+)', line)
+    for line in output.strip().split("\n"):
+        if "run_type=" in line:
+            match = re.search(r"run_type=concurrency_(\d+)", line)
             if match:
                 concurrency = int(match.group(1))
                 run_path = f"{s3_base}run_type=concurrency_{concurrency}/"
                 cmd = ["aws", "s3", "ls", run_path, "--recursive"]
                 files_output, _ = run_command(cmd)
 
-                test_results = [line for line in files_output.strip().split('\n')
-                               if 'test_result_' in line and line.endswith('.json')]
+                test_results = [
+                    line
+                    for line in files_output.strip().split("\n")
+                    if "test_result_" in line and line.endswith(".json")
+                ]
                 if test_results:
                     latest = test_results[-1].strip().split()[-1]
-                    concurrency_files[concurrency] = f"s3://e6-jmeter/{latest}"
+                    concurrency_files[concurrency] = f"s3://your-s3-bucket/{latest}"
 
     return concurrency_files
 
@@ -71,7 +74,7 @@ def load_test_result(s3_path: str) -> Dict:
         return {}
 
     try:
-        with open(local_file, 'r') as f:
+        with open(local_file, "r") as f:
             return json.load(f)
     except Exception as e:
         print(f"Error loading JSON: {e}", file=sys.stderr)
@@ -80,9 +83,9 @@ def load_test_result(s3_path: str) -> Dict:
 
 def parse_aggregate_data(test_data: Dict) -> Dict[str, Dict]:
     """Parse test_result JSON to extract query-level metrics from statistics.json."""
-    run_id = test_data.get('run_id', '')
-    output_locations = test_data.get('output_file_locations', {})
-    s3_upload_path = output_locations.get('s3_upload_path', '')
+    run_id = test_data.get("run_id", "")
+    output_locations = test_data.get("output_file_locations", {})
+    s3_upload_path = output_locations.get("s3_upload_path", "")
 
     if not run_id or not s3_upload_path:
         print(f"Warning: Missing run_id or s3_upload_path", file=sys.stderr)
@@ -100,21 +103,21 @@ def parse_aggregate_data(test_data: Dict) -> Dict[str, Dict]:
 
     query_data = {}
     try:
-        with open(local_json, 'r') as f:
+        with open(local_json, "r") as f:
             stats = json.load(f)
 
         for query_name, metrics in stats.items():
-            if 'BOOTSTRAP' in query_name.upper() or query_name == 'Total':
+            if "BOOTSTRAP" in query_name.upper() or query_name == "Total":
                 continue
 
             query_data[query_name] = {
-                'avg_sec': metrics.get('meanResTime', 0) / 1000.0,
-                'min_sec': metrics.get('minResTime', 0) / 1000.0,
-                'max_sec': metrics.get('maxResTime', 0) / 1000.0,
-                'median_sec': metrics.get('medianResTime', 0) / 1000.0,
-                'p90_sec': metrics.get('pct1ResTime', 0) / 1000.0,
-                'p95_sec': metrics.get('pct2ResTime', 0) / 1000.0,
-                'p99_sec': metrics.get('pct3ResTime', 0) / 1000.0,
+                "avg_sec": metrics.get("meanResTime", 0) / 1000.0,
+                "min_sec": metrics.get("minResTime", 0) / 1000.0,
+                "max_sec": metrics.get("maxResTime", 0) / 1000.0,
+                "median_sec": metrics.get("medianResTime", 0) / 1000.0,
+                "p90_sec": metrics.get("pct1ResTime", 0) / 1000.0,
+                "p95_sec": metrics.get("pct2ResTime", 0) / 1000.0,
+                "p99_sec": metrics.get("pct3ResTime", 0) / 1000.0,
             }
     except Exception as e:
         print(f"Error parsing statistics JSON: {e}", file=sys.stderr)
@@ -125,10 +128,10 @@ def parse_aggregate_data(test_data: Dict) -> Dict[str, Dict]:
 
 def normalize_query_name(name: str) -> str:
     """Normalize query names for comparison."""
-    if name.startswith('query-'):
-        parts = name.split('-')
+    if name.startswith("query-"):
+        parts = name.split("-")
         if len(parts) >= 3:
-            return '-'.join(parts[2:])
+            return "-".join(parts[2:])
     return name
 
 
@@ -136,31 +139,36 @@ def calculate_statistics(values: List[float]) -> Dict[str, float]:
     """Calculate summary statistics."""
     if not values:
         return {
-            'avg': 0.0,
-            'min': 0.0,
-            'max': 0.0,
-            'median': 0.0,
-            'p90': 0.0,
-            'p95': 0.0,
-            'p99': 0.0,
+            "avg": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "median": 0.0,
+            "p90": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
         }
 
     sorted_values = sorted(values)
     n = len(sorted_values)
 
     return {
-        'avg': statistics.mean(values),
-        'min': min(values),
-        'max': max(values),
-        'median': statistics.median(values),
-        'p90': sorted_values[int(n * 0.90)] if n > 0 else 0.0,
-        'p95': sorted_values[int(n * 0.95)] if n > 0 else 0.0,
-        'p99': sorted_values[int(n * 0.99)] if n > 0 else 0.0,
+        "avg": statistics.mean(values),
+        "min": min(values),
+        "max": max(values),
+        "median": statistics.median(values),
+        "p90": sorted_values[int(n * 0.90)] if n > 0 else 0.0,
+        "p95": sorted_values[int(n * 0.95)] if n > 0 else 0.0,
+        "p99": sorted_values[int(n * 0.99)] if n > 0 else 0.0,
     }
 
 
-def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
-                            concurrency_levels: List[int], output_file: str):
+def generate_comparison_csv(
+    e6_cluster: str,
+    dbr_cluster: str,
+    benchmark: str,
+    concurrency_levels: List[int],
+    output_file: str,
+):
     """Generate comparison CSV file."""
 
     print(f"Generating query latency comparison...", file=sys.stderr)
@@ -169,10 +177,7 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
 
     # Collect data
     all_data = {}
-    engine_configs = {
-        'e6data': e6_cluster,
-        'dbr': dbr_cluster
-    }
+    engine_configs = {"e6data": e6_cluster, "dbr": dbr_cluster}
 
     for engine, cluster_size in engine_configs.items():
         print(f"\nProcessing {engine} ({cluster_size})...", file=sys.stderr)
@@ -182,7 +187,9 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
 
         for concurrency in concurrency_levels:
             if concurrency not in test_results:
-                print(f"  Warning: Concurrency {concurrency} not found", file=sys.stderr)
+                print(
+                    f"  Warning: Concurrency {concurrency} not found", file=sys.stderr
+                )
                 continue
 
             print(f"  Loading concurrency {concurrency}...", file=sys.stderr)
@@ -202,14 +209,14 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
     all_queries = sorted(all_queries)
 
     # Build CSV header
-    header = ['Query']
+    header = ["Query"]
     for concurrency in concurrency_levels:
-        header.append(f'e6data_C{concurrency}_avg(s)')
-        header.append(f'dbr_C{concurrency}_avg(s)')
-        header.append(f'diff_C{concurrency}(%)')
+        header.append(f"e6data_C{concurrency}_avg(s)")
+        header.append(f"dbr_C{concurrency}_avg(s)")
+        header.append(f"diff_C{concurrency}(%)")
 
     # Write CSV
-    with open(output_file, 'w', newline='') as f:
+    with open(output_file, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(header)
 
@@ -217,14 +224,20 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
         for query in all_queries:
             row = [query]
             for concurrency in concurrency_levels:
-                e6_val = ''
-                dbr_val = ''
-                diff = ''
+                e6_val = ""
+                dbr_val = ""
+                diff = ""
 
-                if concurrency in all_data['e6data'] and query in all_data['e6data'][concurrency]:
+                if (
+                    concurrency in all_data["e6data"]
+                    and query in all_data["e6data"][concurrency]
+                ):
                     e6_val = f"{all_data['e6data'][concurrency][query]['avg_sec']:.2f}"
 
-                if concurrency in all_data['dbr'] and query in all_data['dbr'][concurrency]:
+                if (
+                    concurrency in all_data["dbr"]
+                    and query in all_data["dbr"][concurrency]
+                ):
                     dbr_val = f"{all_data['dbr'][concurrency][query]['avg_sec']:.2f}"
 
                 # Calculate difference
@@ -242,59 +255,72 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
         writer.writerow([])
 
         # Add summary statistics
-        stat_labels = ['SUMMARY', 'Average', 'Median (p50)', 'p90', 'p95', 'p99', 'Min', 'Max']
+        stat_labels = [
+            "SUMMARY",
+            "Average",
+            "Median (p50)",
+            "p90",
+            "p95",
+            "p99",
+            "Min",
+            "Max",
+        ]
 
         for stat_label in stat_labels:
-            if stat_label == 'SUMMARY':
+            if stat_label == "SUMMARY":
                 writer.writerow([stat_label])
                 continue
 
             row = [stat_label]
             for concurrency in concurrency_levels:
                 # E6Data stats
-                e6_val = ''
-                if concurrency in all_data['e6data']:
-                    values = [q['avg_sec'] for q in all_data['e6data'][concurrency].values()]
+                e6_val = ""
+                if concurrency in all_data["e6data"]:
+                    values = [
+                        q["avg_sec"] for q in all_data["e6data"][concurrency].values()
+                    ]
                     if values:
                         stats = calculate_statistics(values)
-                        if stat_label == 'Average':
-                            e6_val = f'{stats["avg"]:.2f}'
-                        elif stat_label == 'Median (p50)':
-                            e6_val = f'{stats["median"]:.2f}'
-                        elif stat_label == 'p90':
-                            e6_val = f'{stats["p90"]:.2f}'
-                        elif stat_label == 'p95':
-                            e6_val = f'{stats["p95"]:.2f}'
-                        elif stat_label == 'p99':
-                            e6_val = f'{stats["p99"]:.2f}'
-                        elif stat_label == 'Min':
-                            e6_val = f'{stats["min"]:.2f}'
-                        elif stat_label == 'Max':
-                            e6_val = f'{stats["max"]:.2f}'
+                        if stat_label == "Average":
+                            e6_val = f"{stats['avg']:.2f}"
+                        elif stat_label == "Median (p50)":
+                            e6_val = f"{stats['median']:.2f}"
+                        elif stat_label == "p90":
+                            e6_val = f"{stats['p90']:.2f}"
+                        elif stat_label == "p95":
+                            e6_val = f"{stats['p95']:.2f}"
+                        elif stat_label == "p99":
+                            e6_val = f"{stats['p99']:.2f}"
+                        elif stat_label == "Min":
+                            e6_val = f"{stats['min']:.2f}"
+                        elif stat_label == "Max":
+                            e6_val = f"{stats['max']:.2f}"
 
                 # DBR stats
-                dbr_val = ''
-                if concurrency in all_data['dbr']:
-                    values = [q['avg_sec'] for q in all_data['dbr'][concurrency].values()]
+                dbr_val = ""
+                if concurrency in all_data["dbr"]:
+                    values = [
+                        q["avg_sec"] for q in all_data["dbr"][concurrency].values()
+                    ]
                     if values:
                         stats = calculate_statistics(values)
-                        if stat_label == 'Average':
-                            dbr_val = f'{stats["avg"]:.2f}'
-                        elif stat_label == 'Median (p50)':
-                            dbr_val = f'{stats["median"]:.2f}'
-                        elif stat_label == 'p90':
-                            dbr_val = f'{stats["p90"]:.2f}'
-                        elif stat_label == 'p95':
-                            dbr_val = f'{stats["p95"]:.2f}'
-                        elif stat_label == 'p99':
-                            dbr_val = f'{stats["p99"]:.2f}'
-                        elif stat_label == 'Min':
-                            dbr_val = f'{stats["min"]:.2f}'
-                        elif stat_label == 'Max':
-                            dbr_val = f'{stats["max"]:.2f}'
+                        if stat_label == "Average":
+                            dbr_val = f"{stats['avg']:.2f}"
+                        elif stat_label == "Median (p50)":
+                            dbr_val = f"{stats['median']:.2f}"
+                        elif stat_label == "p90":
+                            dbr_val = f"{stats['p90']:.2f}"
+                        elif stat_label == "p95":
+                            dbr_val = f"{stats['p95']:.2f}"
+                        elif stat_label == "p99":
+                            dbr_val = f"{stats['p99']:.2f}"
+                        elif stat_label == "Min":
+                            dbr_val = f"{stats['min']:.2f}"
+                        elif stat_label == "Max":
+                            dbr_val = f"{stats['max']:.2f}"
 
                 # Calculate difference for summary
-                diff = ''
+                diff = ""
                 if e6_val and dbr_val:
                     e6_num = float(e6_val)
                     dbr_num = float(dbr_val)
@@ -309,24 +335,34 @@ def generate_comparison_csv(e6_cluster: str, dbr_cluster: str, benchmark: str,
     print(f"   Queries: {len(all_queries)}", file=sys.stderr)
     print(f"   E6Data cluster: {e6_cluster}", file=sys.stderr)
     print(f"   DBR cluster: {dbr_cluster}", file=sys.stderr)
-    print(f"   Concurrency levels: {', '.join(map(str, concurrency_levels))}", file=sys.stderr)
+    print(
+        f"   Concurrency levels: {', '.join(map(str, concurrency_levels))}",
+        file=sys.stderr,
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Generate query-level latency comparison CSV for different cluster sizes'
+        description="Generate query-level latency comparison CSV for different cluster sizes"
     )
 
-    parser.add_argument('--e6-cluster', required=True,
-                       help='E6Data cluster size (e.g., M, L)')
-    parser.add_argument('--dbr-cluster', required=True,
-                       help='DBR cluster size (e.g., M, S-2x2)')
-    parser.add_argument('--benchmark', required=True,
-                       help='Benchmark name (e.g., tpcds_29_1tb)')
-    parser.add_argument('--concurrency', nargs='+', type=int, default=[2, 4, 8, 12, 16],
-                       help='Concurrency levels (default: 2 4 8 12 16)')
-    parser.add_argument('--output', required=True,
-                       help='Output CSV file path')
+    parser.add_argument(
+        "--e6-cluster", required=True, help="E6Data cluster size (e.g., M, L)"
+    )
+    parser.add_argument(
+        "--dbr-cluster", required=True, help="DBR cluster size (e.g., M, S-2x2)"
+    )
+    parser.add_argument(
+        "--benchmark", required=True, help="Benchmark name (e.g., tpcds_29_1tb)"
+    )
+    parser.add_argument(
+        "--concurrency",
+        nargs="+",
+        type=int,
+        default=[2, 4, 8, 12, 16],
+        help="Concurrency levels (default: 2 4 8 12 16)",
+    )
+    parser.add_argument("--output", required=True, help="Output CSV file path")
 
     args = parser.parse_args()
 
@@ -335,9 +371,9 @@ def main():
         dbr_cluster=args.dbr_cluster,
         benchmark=args.benchmark,
         concurrency_levels=args.concurrency,
-        output_file=args.output
+        output_file=args.output,
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -22,7 +22,7 @@ RUN_TYPES=("concurrency_2" "concurrency_4" "concurrency_8" "concurrency_12" "con
 
 ATHENA_DATABASE="${ATHENA_DATABASE:-jmeter_analysis}"
 ATHENA_WORKGROUP="${ATHENA_WORKGROUP:-primary}"
-ATHENA_OUTPUT_LOCATION="${ATHENA_OUTPUT_LOCATION:-s3://e6-jmeter/athena-query-results/}"
+ATHENA_OUTPUT_LOCATION="${ATHENA_OUTPUT_LOCATION:-s3://your-s3-bucket/athena-query-results/}"
 
 echo "=========================================="
 echo "Athena Table Recreation"
@@ -121,7 +121,7 @@ TOTAL_RUNS=0
 SUCCESSFUL_UPLOADS=0
 
 for RUN_TYPE in "${RUN_TYPES[@]}"; do
-    S3_PATH="s3://e6-jmeter/jmeter-results/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=${RUN_TYPE}/"
+    S3_PATH="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=${RUN_TYPE}/"
     INDEX_FILE="/tmp/runs_index_recreate_${RUN_TYPE}.json"
 
     echo "Processing: $RUN_TYPE"

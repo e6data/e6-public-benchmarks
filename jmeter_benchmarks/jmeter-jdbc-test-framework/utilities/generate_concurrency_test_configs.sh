@@ -49,7 +49,7 @@ REPORT_PATH=reports
 
 #Change below to copy the reports to s3. The copy script will use the aws configure credentials, so you should run aws creds in env set.
 COPY_TO_S3=true
-S3_REPORT_PATH=s3://e6-jmeter/jmeter-results
+S3_REPORT_PATH=${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}
 
 #Change below for concurrency based test plan which will maintain this concurrency. This applicable only for concurrency based plan
 CONCURRENT_QUERY_COUNT=${concurrency}
@@ -96,7 +96,7 @@ create_dbr_metadata() {
     # All DBR tests use min=1, max=1 (no autoscaling)
     local cluster_size_formatted="${cluster_size}-1x1"
 
-    local metadata_file="$METADATA_DIR/dbr_dbc-33354dfe-277f_${cluster_size,,}_concurrency${concurrency}_metadata.txt"
+    local metadata_file="$METADATA_DIR/dbr_${cluster_size,,}_concurrency${concurrency}_metadata.txt"
 
     echo "  Creating: $metadata_file"
     cat > "$metadata_file" << EOF
@@ -119,7 +119,7 @@ AVAILABILITY_ZONE="unknown"
 
 # DBR Cluster/Warehouse Configuration
 CLUSTER_CONFIG='{
-  "warehouse_id": "e020ff73ae69ed5a",
+  "warehouse_id": "your-warehouse-id",
   "warehouse_type": "SQL Warehouse",
   "cluster_size": "${cluster_size_formatted}",
   "warehouse_size": "$(case $cluster_size in S) echo "Small";; M) echo "Medium";; L) echo "Large";; *) echo "Unknown";; esac)",
@@ -138,8 +138,8 @@ CLUSTER_CONFIG='{
 }'
 
 # Cluster Endpoints
-CLUSTER_HOSTNAME="dbc-33354dfe-277f.cloud.dbr.com"
-HTTP_PATH="/sql/1.0/warehouses/e020ff73ae69ed5a"
+CLUSTER_HOSTNAME="your-workspace.cloud.databricks.com"
+HTTP_PATH="/sql/1.0/warehouses/your-warehouse-id"
 JDBC_PORT="443"
 
 # Database Configuration
@@ -179,8 +179,8 @@ BASELINE_CLUSTER="${cluster_size} cluster comparison"
 COMPARISON_GOAL="Compare DBR ${cluster_size} cluster vs e6data on TPCDS 29 queries with ${concurrency} concurrent threads"
 
 # S3 Upload Configuration
-COPY_TO_S3=true
-S3_PATH="s3://e6-jmeter/jmeter-results"
+COPY_TO_S3=false
+S3_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
 
 # Default file references
 DEFAULT_TEST_PLAN="Test-Plan-Maintain-static-concurrency.jmx"
@@ -253,7 +253,7 @@ CLUSTER_CONFIG='{
 }'
 
 # Cluster Endpoints
-CLUSTER_HOSTNAME="t2mhr5k871-us-east-1.e6data.io"
+CLUSTER_HOSTNAME="your-cluster-us-east-1.e6data.io"
 JDBC_PORT="443"
 HTTP_PATH="/"
 
@@ -295,8 +295,8 @@ BASELINE_CLUSTER="${cluster_size}-1x1 cluster comparison"
 COMPARISON_GOAL="Compare e6data ${cluster_size}-${executor_count}x${executor_count} ($((executor_count * 30)) cores) vs DBR ${cluster_size}-1x1 on TPCDS 29 queries with ${concurrency} concurrent threads"
 
 # S3 Upload Configuration
-COPY_TO_S3=true
-S3_PATH="s3://e6-jmeter/jmeter-results"
+COPY_TO_S3=false
+S3_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
 
 # Default file references
 DEFAULT_TEST_PLAN="Test-Plan-Maintain-static-concurrency.jmx"

@@ -19,7 +19,7 @@ if [[ $# -ne 5 ]]; then
     echo "  $0 e6data 8xlarge tpcds_29_1tb sequential 20251029-184002"
     echo ""
     echo "Available runs:"
-    echo "  aws s3 ls s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=8xlarge/benchmark=tpcds_29_1tb/run_type=sequential/"
+    echo "  aws s3 ls \$S3_BASE/engine=e6data/cluster_size=8xlarge/benchmark=tpcds_29_1tb/run_type=sequential/"
     exit 1
 fi
 
@@ -29,7 +29,7 @@ BENCHMARK="$3"
 RUN_TYPE="$4"
 RUN_ID="$5"
 
-S3_BASE="s3://e6-jmeter/jmeter-results"
+S3_BASE="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}"
 S3_PATH="$S3_BASE/engine=$ENGINE/cluster_size=$CLUSTER_SIZE/benchmark=$BENCHMARK/run_type=$RUN_TYPE"
 
 echo "==========================================="

@@ -72,7 +72,7 @@ echo ""
 
 for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     echo "Syncing concurrency_${concurrency}..."
-    S3_PATH="s3://e6-jmeter/jmeter-results/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=concurrency_${concurrency}/"
+    S3_PATH="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=concurrency_${concurrency}/"
 
     if python3 utilities/athena/upload_runs_index_to_athena.py --from-s3 "$S3_PATH" 2>&1 | grep -q "Successfully uploaded"; then
         echo -e "  ${GREEN}✓${NC} concurrency_${concurrency} synced"
@@ -117,7 +117,7 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     echo "Checking $RUN_TYPE..."
 
     # Get latest run ID from S3
-    LATEST_RUN=$(aws s3 ls s3://e6-jmeter/jmeter-results/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=${RUN_TYPE}/ \
+    LATEST_RUN=$(aws s3 ls ${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=${RUN_TYPE}/ \
         | grep "PRE run_id=" \
         | tail -1 \
         | awk '{print $2}' \
@@ -132,9 +132,10 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     echo "  Latest run: $LATEST_RUN"
 
     # Check if baseline exists
+    S3_BUCKET_NAME=$(echo "${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}" | sed 's|s3://||' | cut -d/ -f1)
     BASELINE_KEY="jmeter-results-index/baselines/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=${RUN_TYPE}/baseline_metadata.json"
 
-    if aws s3 ls "s3://e6-jmeter/${BASELINE_KEY}" > /dev/null 2>&1; then
+    if aws s3 ls "s3://${S3_BUCKET_NAME}/${BASELINE_KEY}" > /dev/null 2>&1; then
         echo "  Comparing against baseline..."
 
         # Run comparison and capture output (also write to CSV)

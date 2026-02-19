@@ -11,7 +11,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-S3_BUCKET="s3://e6-jmeter/jmeter-results"
+S3_BUCKET="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}"
 INVALID_RUNS_LOG="utilities/invalidated_runs.txt"
 
 show_usage() {
@@ -207,7 +207,7 @@ invalidate_run() {
         echo -e "${YELLOW}Next steps:${NC}"
         echo "1. Regenerate index for this configuration:"
         echo "   PYTHONPATH=utilities/athena python3 utilities/athena/generate_runs_index.py \\"
-        echo "     \"s3://e6-jmeter/jmeter-results/$(echo $relative_path | cut -d'/' -f1-4)/\" --upload"
+        echo "     \"${S3_BUCKET}/jmeter-results/$(echo $relative_path | cut -d'/' -f1-4)/\" --upload"
         echo ""
         echo "2. Or regenerate all indices:"
         echo "   bash /tmp/regenerate_all_indices.sh"

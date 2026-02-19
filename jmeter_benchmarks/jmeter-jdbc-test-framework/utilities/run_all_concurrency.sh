@@ -43,7 +43,7 @@ if [ $# -lt 3 ]; then
     echo "  $0 e6data S-2x2 tpcds_29_1tb prod-cluster Test-Plan-Stress-Test.jmx"
     echo ""
     echo "Arguments match S3 structure:"
-    echo "  s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/"
+    echo "  s3://\$S3_BUCKET/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/"
     echo ""
     echo "Note: Test input files use template placeholders substituted at runtime:"
     echo "      {ENGINE}, {CLUSTER_SIZE}, {CONCURRENCY}, {CLUSTER}, {BENCHMARK}"
@@ -57,7 +57,7 @@ BENCHMARK="$3"
 CLUSTER="${4:-default}"  # Default: "default"
 TEST_PLAN_OVERRIDE="${5:-}"  # Empty means use test input file's test plan
 CONCURRENCY_LEVELS=(1 2 4 8 12 16)
-S3_BASE_PATH="s3://e6-jmeter/jmeter-results"
+S3_BASE_PATH="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}"
 
 # Validate engine
 if [[ ! "$ENGINE" =~ ^(e6data|dbr)$ ]]; then

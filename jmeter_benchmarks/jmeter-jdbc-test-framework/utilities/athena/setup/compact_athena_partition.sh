@@ -30,7 +30,7 @@ CLUSTER_SIZE="$2"
 BENCHMARK="$3"
 RUN_TYPE="$4"
 
-S3_BASE="s3://e6-jmeter/jmeter-results-index"
+S3_BASE="${S3_INDEX_PATH:-s3://your-s3-bucket/jmeter-results-index}"
 PARTITION_PATH="${S3_BASE}/runs/engine=${ENGINE}/cluster_size=${CLUSTER_SIZE}/benchmark=${BENCHMARK}/run_type=${RUN_TYPE}/"
 
 echo "=========================================="
