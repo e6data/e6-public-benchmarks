@@ -363,5 +363,28 @@ echo "  ./run_test.sh ${CONFIG_FILE}"
 echo ""
 echo -e "${BOLD}To re-run with different parameters:${NC}"
 echo "  CONCURRENT_QUERY_COUNT=8 ./run_test.sh ${CONFIG_FILE}"
-echo "  QPS=10 HOLD_PERIOD=600 ./run_test.sh ${CONFIG_FILE}"
+echo ""
+echo -e "${BOLD}Or use env vars directly (copy-paste):${NC}"
+echo "  export CONNECTION_FILE=${CONNECTION_FILE}"
+echo "  export TEST_PLAN=${TEST_PLAN}"
+echo "  export QUERY_FILE=${QUERY_FILE}"
+case "$PLAN_TYPE" in
+    concurrency)
+        echo "  export CONCURRENT_QUERY_COUNT=${CONCURRENT_QUERY_COUNT}"
+        ;;
+    run_once)
+        echo "  export CONCURRENT_QUERY_COUNT=${CONCURRENT_QUERY_COUNT}"
+        ;;
+    qps)
+        echo "  export QPS=${QPS}"
+        ;;
+    qpm)
+        echo "  export QPM=${QPM}"
+        ;;
+    qps_profile|var_concurrency)
+        echo "  export LOAD_PROFILE=${LOAD_PROFILE}"
+        ;;
+esac
+[ "${HOLD_PERIOD:-0}" != "0" ] && echo "  export HOLD_PERIOD=${HOLD_PERIOD}"
+echo "  ./run_test.sh"
 echo ""
