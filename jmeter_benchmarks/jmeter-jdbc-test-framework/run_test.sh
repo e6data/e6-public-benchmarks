@@ -84,18 +84,23 @@ MISSING=()
 [ -z "${QUERY_FILE:-}" ] && MISSING+=("QUERY_FILE")
 
 if [ ${#MISSING[@]} -gt 0 ]; then
-    echo -e "${RED}Error: Missing required variables:${NC}"
-    for var in "${MISSING[@]}"; do
-        echo "  - $var"
-    done
+    echo -e "${RED}Error: Missing required variables: ${MISSING[*]}${NC}"
     echo ""
-    echo "Set them via environment variables or pass a suite file:"
-    echo "  $0 <suite_file.env>"
+    echo "Usage:"
     echo ""
-    echo "Required:"
-    echo "  CONNECTION_FILE   - e.g., connection_properties/e6data_default_connection.properties"
-    echo "  TEST_PLAN         - e.g., Test-Plans/Test-Plan-Maintain-static-concurrency.jmx"
-    echo "  QUERY_FILE        - e.g., data_files/E6Data_TPCDS_queries_29_1TB.csv"
+    echo "  Option 1 — Suite file (recommended):"
+    echo "    ./run_test.sh test_suites/my_test.env"
+    echo ""
+    echo "  Option 2 — Export environment variables, then run:"
+    echo "    export CONNECTION_FILE=connection_properties/e6data_default_connection.properties"
+    echo "    export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx"
+    echo "    export QUERY_FILE=data_files/E6Data_TPCDS_queries_29_1TB.csv"
+    echo "    ./run_test.sh"
+    echo ""
+    echo "  Option 3 — Inline (single command):"
+    echo "    CONNECTION_FILE=... TEST_PLAN=... QUERY_FILE=... ./run_test.sh"
+    echo ""
+    echo "See sample suite files in test_suites/ for reference."
     exit 1
 fi
 
