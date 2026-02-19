@@ -196,12 +196,6 @@ Run all concurrency levels (1, 2, 4, 8, 12, 16) for any engine, cluster, and ben
 # E6Data M-4x4 (120 cores) with TPCDS 29 queries on 1TB dataset
 ./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_29_1tb
 
-# DBR S-2x2 (60 cores) with TPCDS 29 queries on 1TB dataset
-./utilities/run_all_concurrency.sh dbr S-2x2 tpcds_29_1tb
-
-# DBR S-4x4 (120 cores) with TPCDS 29 queries on 1TB dataset
-./utilities/run_all_concurrency.sh dbr S-4x4 tpcds_29_1tb
-
 # Run with different benchmark (e.g., TPCDS 51 queries on 1TB)
 ./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_51_1tb
 ```
@@ -212,7 +206,7 @@ s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>
 ```
 
 **Features:**
-- Single unified script for all engines (e6data, dbr)
+- Single unified script for all engines
 - Runs all concurrency levels sequentially
 - Uses template system with runtime substitution for test inputs
 - Validates template files before starting
@@ -235,8 +229,6 @@ test_configs/{ENGINE}_{CLUSTER_SIZE}_{BENCHMARK}_template.txt
 - `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
 - `test_configs/e6data_m-4x4_tpcds_29_1tb_template.txt`
 - `test_configs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
-- `test_configs/dbr_s-2x2_tpcds_29_1tb_template.txt`
-- `test_configs/dbr_s-4x4_tpcds_29_1tb_template.txt`
 
 **Template Structure:**
 
@@ -251,7 +243,7 @@ E6Data_TPCDS_queries_29_1TB.csv
 ```
 
 **Supported Placeholders:**
-- `{ENGINE}` - Engine name (e6data, dbr)
+- `{ENGINE}` - Engine name (e.g., e6data)
 - `{CLUSTER_SIZE}` - Normalized cluster size (xs-1x1, s-2x2, m-4x4, s-4x4)
 - `{CLUSTER}` - Cluster identifier used in connection properties
 - `{CONCURRENCY}` - Concurrency level (1, 2, 4, 8, 12, 16)

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a JMeter-based JDBC performance testing framework for comparing database query execution across different database engines (primarily E6Data and DBR). The framework uses a property-file-driven architecture to enable reusable, automation-friendly load testing.
+This is a JMeter-based JDBC performance testing framework for benchmarking database query execution across different database engines. The framework uses a property-file-driven architecture to enable reusable, automation-friendly load testing.
 
 ## Core Architecture
 
@@ -15,7 +15,7 @@ The framework separates concerns into three distinct configuration layers:
 1. **Connection Properties** (`connection_properties/*.properties`)
    - JDBC connection settings (hostname, port, driver class, connection string)
    - Database credentials and catalog configuration
-   - Driver-specific parameters for E6Data, DBR, Trino, etc.
+   - Driver-specific parameters for E6Data, Trino, etc.
 
 2. **Test Properties** (`test_properties/*.properties`)
    - Load characteristics (concurrency levels, QPS, QPM)
@@ -53,7 +53,7 @@ Pre-configured JMeter test plans support different load patterns:
 
 Contain cluster-specific metadata for organizing test results:
 
-- Engine type (e6data, dbr)
+- Engine type (e.g., e6data)
 - Cluster configuration (size, cores, instance types)
 - S3 storage settings for results
 - Used by batch testing scripts and S3 upload functionality
@@ -79,7 +79,7 @@ E6Data_TPCDS_queries_29_1TB.csv
 ```
 
 **Supported Placeholders:**
-- `{ENGINE}` - Engine name (e6data, dbr)
+- `{ENGINE}` - Engine name (e.g., e6data)
 - `{CLUSTER_SIZE}` - Normalized cluster size (xs-1x1, s-2x2, m-4x4, s-4x4, s-1x1)
 - `{CLUSTER}` - Cluster identifier for connection file (default, demo-graviton, etc.)
 - `{CONCURRENCY}` - Concurrency level (1, 2, 4, 8, 12, 16)
@@ -92,14 +92,12 @@ test_configs/{engine}_{cluster_size}_{benchmark}_template.txt
 
 **Examples:**
 - `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
-- `test_configs/dbr_s-4x4_tpcds_29_1tb_template.txt`
 - `test_configs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
 
 **Non-Template Files (Sequential Tests):**
 
 For tests that don't loop through concurrency levels (e.g., run-once sequential tests), use non-template files:
 - `test_configs/e6data_xs_tpcds_29_1tb_sequential.txt`
-- `test_configs/dbr_xs_tpcds_29_1tb_sequential.txt`
 
 These files enable automated batch testing without needing separate input files for each concurrency level.
 
@@ -210,20 +208,16 @@ Run all concurrency levels (1, 2, 4, 8, 12, 16) sequentially using the unified s
 ./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb
 ./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_51_1tb
 
-# DBR cluster testing (uses default connection)
-./utilities/run_all_concurrency.sh dbr S-2x2 tpcds_29_1tb
-./utilities/run_all_concurrency.sh dbr S-4x4 tpcds_51_1tb
-
 # With custom cluster connection
 ./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb demo-graviton
 
 # With custom test plan
-./utilities/run_all_concurrency.sh dbr S-4x4 tpcds_29_1tb default Test-Plan-Sequential.jmx
+./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_29_1tb default Test-Plan-Sequential.jmx
 ```
 
 **Parameters:**
-- `engine` (required): Database engine (e6data, dbr)
-- `cluster_size` (required): Cluster size (S-2x2, M-4x4, XS-1x1, S-4x4, S-1x1)
+- `engine` (required): Database engine (e.g., e6data)
+- `cluster_size` (required): Cluster size (e.g., S-2x2, M-4x4, XS-1x1)
 - `benchmark` (required): Benchmark name (tpcds_29_1tb, tpcds_51_1tb)
 - `cluster` (optional): Cluster identifier for connection properties (default: "default")
   - Connection file: `connection_properties/{engine}_{cluster}_connection.properties`
@@ -282,7 +276,7 @@ python utilities/analyze_single_run_from_s3.py \
 # Compare all matching concurrency levels (RECOMMENDED - most comprehensive)
 python utilities/compare_multi_concurrency_from_s3.py \
   s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 
 # Compare single concurrency level
 python utilities/compare_jmeter_runs_from_s3.py \
@@ -329,10 +323,6 @@ See `utilities/README.md` for more comparison examples and detailed documentatio
 - `utilities/compare_consecutive_runs_from_s3.py`: Compare two consecutive runs to detect regressions
 - `utilities/compare_jmeter_runs_from_s3.py`: Compare two specific test runs
 - `utilities/compare_multi_concurrency_from_s3.py`: Compare all concurrency levels between two engines (most comprehensive)
-
-**DBR-Specific:**
-- `utilities/get_dbr_query_history.py`: Retrieve query execution history from Databricks
-- `utilities/test_dbr_connectivity.sh`: Test Databricks connection before running tests
 
 **Athena Integration:**
 - `utilities/athena/upload_all_runs_to_athena.sh`: Upload all test results to Athena for querying
@@ -433,7 +423,6 @@ RECYCLE_ON_EOF=false
 JDBC drivers are stored in `jdbc_drivers/` directory:
 
 - E6Data driver: `e6data-jdbc-<version>.jar`
-- DBR driver: `DBRJDBC42-<version>.jar`
 - Drivers must be copied to `apache-jmeter-5.6.3/lib/` for JMeter to load
 
 The `setup_jmeter.sh` script handles this automatically.

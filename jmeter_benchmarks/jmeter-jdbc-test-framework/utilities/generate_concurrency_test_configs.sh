@@ -185,9 +185,9 @@ S3_PATH="s3://e6-jmeter/jmeter-results"
 # Default file references
 DEFAULT_TEST_PLAN="Test-Plan-Maintain-static-concurrency.jmx"
 DEFAULT_TEST_PROPERTIES="concurrency_${concurrency}_test.properties"
-DEFAULT_CONNECTION_PROPERTIES="dbr_dbc-33354dfe-277f_connection.properties"
-DEFAULT_QUERIES="DBR_TPCDS_1TB_29_queries_singleline_3.csv"
-DEFAULT_METADATA="dbr_dbc-33354dfe-277f_${cluster_size,,}_concurrency${concurrency}_metadata.txt"
+DEFAULT_CONNECTION_PROPERTIES="${engine}_default_connection.properties"
+DEFAULT_QUERIES="E6Data_TPCDS_queries_29_1TB.csv"
+DEFAULT_METADATA="${engine}_${cluster_size,,}_metadata.txt"
 
 # Test Execution Details
 CONCURRENCY="${concurrency}"
@@ -326,11 +326,11 @@ create_test_input() {
 
     if [[ "$engine" == "dbr" ]]; then
         cat > "$input_file" << EOF
-dbr_dbc-33354dfe-277f_${cluster_size,,}_concurrency${concurrency}_metadata.txt
+${engine}_${cluster_size,,}_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
 concurrency_${concurrency}_test.properties
-dbr_dbc-33354dfe-277f_connection.properties
-DBR_TPCDS_1TB_29_queries_singleline_3.csv
+${engine}_default_connection.properties
+E6Data_TPCDS_queries_29_1TB.csv
 EOF
     else  # e6data
         cat > "$input_file" << EOF
