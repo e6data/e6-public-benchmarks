@@ -73,25 +73,53 @@ if [ -n "$1" ]; then
     fi
     echo -e "${BLUE}Loading suite file: ${SUITE_FILE}${NC}"
 
-    # Save any pre-set env vars so they take priority over suite file
-    declare -A _saved_vars
-    for _var in CONNECTION_FILE TEST_PLAN QUERY_FILE METADATA_FILE \
-                CONCURRENT_QUERY_COUNT QPS QPM HOLD_PERIOD RAMP_UP_TIME \
-                RAMP_UP_STEPS LOAD_PROFILE RANDOM_ORDER RECYCLE_ON_EOF \
-                COPY_TO_S3 S3_REPORT_PATH REPORT_PATH QUERY_TIMEOUT \
-                LIMIT_RESULTSET MAX_CONCURRANCY JMETER_HOME THREADS_SCHEDULE; do
-        if [ -n "${!_var:-}" ]; then
-            _saved_vars[$_var]="${!_var}"
-        fi
-    done
+    # Save any pre-set env vars so they take priority over config file
+    _SAVE_CONNECTION_FILE="${CONNECTION_FILE:-}"
+    _SAVE_TEST_PLAN="${TEST_PLAN:-}"
+    _SAVE_QUERY_FILE="${QUERY_FILE:-}"
+    _SAVE_METADATA_FILE="${METADATA_FILE:-}"
+    _SAVE_CONCURRENT_QUERY_COUNT="${CONCURRENT_QUERY_COUNT:-}"
+    _SAVE_QPS="${QPS:-}"
+    _SAVE_QPM="${QPM:-}"
+    _SAVE_HOLD_PERIOD="${HOLD_PERIOD:-}"
+    _SAVE_RAMP_UP_TIME="${RAMP_UP_TIME:-}"
+    _SAVE_RAMP_UP_STEPS="${RAMP_UP_STEPS:-}"
+    _SAVE_LOAD_PROFILE="${LOAD_PROFILE:-}"
+    _SAVE_RANDOM_ORDER="${RANDOM_ORDER:-}"
+    _SAVE_RECYCLE_ON_EOF="${RECYCLE_ON_EOF:-}"
+    _SAVE_COPY_TO_S3="${COPY_TO_S3:-}"
+    _SAVE_S3_REPORT_PATH="${S3_REPORT_PATH:-}"
+    _SAVE_REPORT_PATH="${REPORT_PATH:-}"
+    _SAVE_QUERY_TIMEOUT="${QUERY_TIMEOUT:-}"
+    _SAVE_LIMIT_RESULTSET="${LIMIT_RESULTSET:-}"
+    _SAVE_MAX_CONCURRANCY="${MAX_CONCURRANCY:-}"
+    _SAVE_JMETER_HOME="${JMETER_HOME:-}"
+    _SAVE_THREADS_SCHEDULE="${THREADS_SCHEDULE:-}"
 
     source "$SUITE_FILE"
 
-    # Restore env vars that were set before sourcing (env overrides suite)
-    for _var in "${!_saved_vars[@]}"; do
-        export "$_var"="${_saved_vars[$_var]}"
-    done
-    unset _saved_vars _var
+    # Restore env vars that were set before sourcing (env overrides config)
+    [ -n "$_SAVE_CONNECTION_FILE" ] && CONNECTION_FILE="$_SAVE_CONNECTION_FILE"
+    [ -n "$_SAVE_TEST_PLAN" ] && TEST_PLAN="$_SAVE_TEST_PLAN"
+    [ -n "$_SAVE_QUERY_FILE" ] && QUERY_FILE="$_SAVE_QUERY_FILE"
+    [ -n "$_SAVE_METADATA_FILE" ] && METADATA_FILE="$_SAVE_METADATA_FILE"
+    [ -n "$_SAVE_CONCURRENT_QUERY_COUNT" ] && CONCURRENT_QUERY_COUNT="$_SAVE_CONCURRENT_QUERY_COUNT"
+    [ -n "$_SAVE_QPS" ] && QPS="$_SAVE_QPS"
+    [ -n "$_SAVE_QPM" ] && QPM="$_SAVE_QPM"
+    [ -n "$_SAVE_HOLD_PERIOD" ] && HOLD_PERIOD="$_SAVE_HOLD_PERIOD"
+    [ -n "$_SAVE_RAMP_UP_TIME" ] && RAMP_UP_TIME="$_SAVE_RAMP_UP_TIME"
+    [ -n "$_SAVE_RAMP_UP_STEPS" ] && RAMP_UP_STEPS="$_SAVE_RAMP_UP_STEPS"
+    [ -n "$_SAVE_LOAD_PROFILE" ] && LOAD_PROFILE="$_SAVE_LOAD_PROFILE"
+    [ -n "$_SAVE_RANDOM_ORDER" ] && RANDOM_ORDER="$_SAVE_RANDOM_ORDER"
+    [ -n "$_SAVE_RECYCLE_ON_EOF" ] && RECYCLE_ON_EOF="$_SAVE_RECYCLE_ON_EOF"
+    [ -n "$_SAVE_COPY_TO_S3" ] && COPY_TO_S3="$_SAVE_COPY_TO_S3"
+    [ -n "$_SAVE_S3_REPORT_PATH" ] && S3_REPORT_PATH="$_SAVE_S3_REPORT_PATH"
+    [ -n "$_SAVE_REPORT_PATH" ] && REPORT_PATH="$_SAVE_REPORT_PATH"
+    [ -n "$_SAVE_QUERY_TIMEOUT" ] && QUERY_TIMEOUT="$_SAVE_QUERY_TIMEOUT"
+    [ -n "$_SAVE_LIMIT_RESULTSET" ] && LIMIT_RESULTSET="$_SAVE_LIMIT_RESULTSET"
+    [ -n "$_SAVE_MAX_CONCURRANCY" ] && MAX_CONCURRANCY="$_SAVE_MAX_CONCURRANCY"
+    [ -n "$_SAVE_JMETER_HOME" ] && JMETER_HOME="$_SAVE_JMETER_HOME"
+    [ -n "$_SAVE_THREADS_SCHEDULE" ] && THREADS_SCHEDULE="$_SAVE_THREADS_SCHEDULE"
 fi
 
 # ============================================================================
