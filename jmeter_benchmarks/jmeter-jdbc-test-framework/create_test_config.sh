@@ -45,8 +45,22 @@ CONN_FILES=($(ls -1 connection_properties/*.properties 2>/dev/null | grep -v '\.
 
 if [ ${#CONN_FILES[@]} -eq 0 ]; then
     echo -e "${YELLOW}No connection files found.${NC}"
-    echo "Run ./create_connection.sh first to create one."
-    exit 1
+    read -p "Create one now? (y/n): " create_conn
+    if [[ "$create_conn" =~ ^[Yy]$ ]]; then
+        "${PROJECT_ROOT}/create_connection.sh"
+        # Re-scan after creation
+        CONN_FILES=($(ls -1 connection_properties/*.properties 2>/dev/null | grep -v '\.template$' || true))
+        if [ ${#CONN_FILES[@]} -eq 0 ]; then
+            echo -e "${RED}No connection file was created. Exiting.${NC}"
+            exit 1
+        fi
+        echo ""
+        echo -e "${BOLD}Step 1: Select connection file${NC}"
+        echo ""
+    else
+        echo "Run ./create_connection.sh first to create one."
+        exit 1
+    fi
 fi
 
 for i in "${!CONN_FILES[@]}"; do
