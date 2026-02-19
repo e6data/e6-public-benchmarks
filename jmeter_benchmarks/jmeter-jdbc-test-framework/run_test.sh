@@ -4,6 +4,7 @@
 # Usage:
 #   ./run_test.sh                     # reads from env vars
 #   ./run_test.sh my_suite.env        # sources suite file, then runs
+#   QPS=10 ./run_test.sh my_suite.env # suite file + override specific values
 #
 # Required (set via env or suite file):
 #   CONNECTION_FILE   - path to connection properties file
@@ -61,7 +62,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
 # ============================================================================
-# Source suite file if provided
+# Source suite file if provided (env vars override suite file values)
 # ============================================================================
 
 if [ -n "$1" ]; then
@@ -71,7 +72,26 @@ if [ -n "$1" ]; then
         exit 1
     fi
     echo -e "${BLUE}Loading suite file: ${SUITE_FILE}${NC}"
+
+    # Save any pre-set env vars so they take priority over suite file
+    declare -A _saved_vars
+    for _var in CONNECTION_FILE TEST_PLAN QUERY_FILE METADATA_FILE \
+                CONCURRENT_QUERY_COUNT QPS QPM HOLD_PERIOD RAMP_UP_TIME \
+                RAMP_UP_STEPS LOAD_PROFILE RANDOM_ORDER RECYCLE_ON_EOF \
+                COPY_TO_S3 S3_REPORT_PATH REPORT_PATH QUERY_TIMEOUT \
+                LIMIT_RESULTSET MAX_CONCURRANCY JMETER_HOME THREADS_SCHEDULE; do
+        if [ -n "${!_var:-}" ]; then
+            _saved_vars[$_var]="${!_var}"
+        fi
+    done
+
     source "$SUITE_FILE"
+
+    # Restore env vars that were set before sourcing (env overrides suite)
+    for _var in "${!_saved_vars[@]}"; do
+        export "$_var"="${_saved_vars[$_var]}"
+    done
+    unset _saved_vars _var
 fi
 
 # ============================================================================
@@ -99,6 +119,10 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     echo ""
     echo "  Option 3 — Inline (single command):"
     echo "    CONNECTION_FILE=... TEST_PLAN=... QUERY_FILE=... ./run_test.sh"
+    echo ""
+    echo "To re-run with different parameters, override individual values:"
+    echo "    CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_suites/my_test.env"
+    echo "    QPS=10 HOLD_PERIOD=600 ./run_test.sh test_suites/my_test.env"
     echo ""
     echo "See sample suite files in test_suites/ for reference."
     exit 1
