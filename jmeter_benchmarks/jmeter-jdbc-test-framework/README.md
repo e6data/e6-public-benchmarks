@@ -84,11 +84,15 @@ export HOLD_PERIOD=300
 ```
 Change one variable and re-run — no prompts, no file editing.
 
-**Option B — Using a suite file:**
+**Option B — Using a config file:**
 ```bash
-cp test_suites/sample_concurrency_test.env test_suites/my_test.env
+# Create config interactively
+./create_test_config.sh
+
+# Or copy a sample and edit
+cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 # Edit my_test.env with your settings
-./run_test.sh test_suites/my_test.env
+./run_test.sh test_configs/my_test.env
 ```
 
 **Option C — Fully interactive:**
@@ -172,10 +176,11 @@ Both files can be:
 
 | Script | Mode | Best for |
 |--------|------|----------|
-| `run_test.sh` | Env vars or suite file | Repeat runs, CI/CD, tweak-and-rerun |
-| `run_jmeter_tests_interactive.sh` | Interactive prompts | First-time users, exploring options |
-| `utilities/run_all_concurrency.sh` | CLI args | Batch sweep across concurrency levels |
 | `create_connection.sh` | Interactive prompts | One-time connection setup |
+| `create_test_config.sh` | Interactive prompts | Create test config (connection + plan + queries + params) |
+| `run_test.sh` | Config file or env vars | Run tests — repeat runs, CI/CD, tweak-and-rerun |
+| `run_jmeter_tests_interactive.sh` | Interactive prompts | Run tests — guided setup for first-time users |
+| `utilities/run_all_concurrency.sh` | CLI args | Batch sweep across concurrency levels |
 
 ## Automated Batch Testing
 
@@ -223,15 +228,15 @@ The batch runner uses a **template-based system** to eliminate redundancy. Inste
 
 **Template File Naming:**
 ```
-test_inputs/{ENGINE}_{CLUSTER_SIZE}_{BENCHMARK}_template.txt
+test_configs/{ENGINE}_{CLUSTER_SIZE}_{BENCHMARK}_template.txt
 ```
 
 **Examples:**
-- `test_inputs/e6data_s-2x2_tpcds_29_1tb_template.txt`
-- `test_inputs/e6data_m-4x4_tpcds_29_1tb_template.txt`
-- `test_inputs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
-- `test_inputs/dbr_s-2x2_tpcds_29_1tb_template.txt`
-- `test_inputs/dbr_s-4x4_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_m-4x4_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
+- `test_configs/dbr_s-2x2_tpcds_29_1tb_template.txt`
+- `test_configs/dbr_s-4x4_tpcds_29_1tb_template.txt`
 
 **Template Structure:**
 
@@ -255,7 +260,7 @@ E6Data_TPCDS_queries_29_1TB.csv
 **How It Works:**
 
 When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
-1. Script locates template: `test_inputs/e6data_s-2x2_tpcds_29_1tb_template.txt`
+1. Script locates template: `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
 2. For each concurrency level (1, 2, 4, 8, 12, 16):
    - Reads template and substitutes placeholders with actual values
    - Creates temporary resolved input file
@@ -271,7 +276,8 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 ├── CLAUDE.md                       # AI assistant context for this framework
 ├── setup_jmeter.sh
 ├── create_connection.sh             # Interactive connection properties creator
-├── run_test.sh                      # Non-interactive runner (env vars or suite file)
+├── create_test_config.sh            # Interactive test config creator
+├── run_test.sh                      # Non-interactive runner (config file or env vars)
 ├── run_jmeter_tests_interactive.sh  # Interactive test runner
 ├── apache-jmeter-5.6.3/           # JMeter installation (created by setup script)
 ├── connection_properties/
@@ -288,11 +294,10 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 │   ├── sample_test.properties
 │   ├── load_profile.csv
 │   └── [Your test config files]
-├── test_inputs/
-│   └── [Template files for batch test execution]
-├── test_suites/
-│   ├── sample_concurrency_test.env  # Sample suite file for concurrency testing
-│   └── sample_qps_test.env         # Sample suite file for QPS testing
+├── test_configs/
+│   ├── sample_concurrency_test.env  # Sample config for concurrency testing
+│   ├── sample_qps_test.env         # Sample config for QPS testing
+│   └── *_template.txt              # Template files for batch test execution
 ├── Test-Plans/
 │   ├── Test-Plan-Run-Once-static-concurrency.jmx
 │   ├── Test-Plan-Maintain-static-concurrency.jmx

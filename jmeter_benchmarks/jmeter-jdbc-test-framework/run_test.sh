@@ -3,8 +3,8 @@
 #
 # Usage:
 #   ./run_test.sh                     # reads from env vars
-#   ./run_test.sh my_suite.env        # sources suite file, then runs
-#   QPS=10 ./run_test.sh my_suite.env # suite file + override specific values
+#   ./run_test.sh test_configs/my.env  # sources config file, then runs
+#   QPS=10 ./run_test.sh test_configs/my.env # config file + override specific values
 #
 # Required (set via env or suite file):
 #   CONNECTION_FILE   - path to connection properties file
@@ -45,7 +45,7 @@
 #   ./run_test.sh
 #
 #   # Using a suite file
-#   ./run_test.sh test_suites/e6data_qps_test.env
+#   ./run_test.sh test_configs/e6data_qps_test.env
 
 set -e
 
@@ -108,8 +108,8 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     echo ""
     echo "Usage:"
     echo ""
-    echo "  Option 1 — Suite file (recommended):"
-    echo "    ./run_test.sh test_suites/my_test.env"
+    echo "  Option 1 — Config file (recommended):"
+    echo "    ./run_test.sh test_configs/my_test.env"
     echo ""
     echo "  Option 2 — Export environment variables, then run:"
     echo "    export CONNECTION_FILE=connection_properties/e6data_default_connection.properties"
@@ -121,10 +121,11 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     echo "    CONNECTION_FILE=... TEST_PLAN=... QUERY_FILE=... ./run_test.sh"
     echo ""
     echo "To re-run with different parameters, override individual values:"
-    echo "    CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_suites/my_test.env"
-    echo "    QPS=10 HOLD_PERIOD=600 ./run_test.sh test_suites/my_test.env"
+    echo "    CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_configs/my_test.env"
+    echo "    QPS=10 HOLD_PERIOD=600 ./run_test.sh test_configs/my_test.env"
     echo ""
-    echo "See sample suite files in test_suites/ for reference."
+    echo "Create a config interactively:  ./create_test_config.sh"
+    echo "See sample config files in test_configs/ for reference."
     exit 1
 fi
 

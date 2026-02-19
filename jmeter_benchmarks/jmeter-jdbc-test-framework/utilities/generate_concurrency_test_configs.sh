@@ -11,7 +11,7 @@ ENGINES=("e6data" "dbr")
 
 # Directories
 METADATA_DIR="metadata_files"
-TEST_INPUT_DIR="test_inputs"
+TEST_INPUT_DIR="test_configs"
 TEST_PROPS_DIR="test_properties"
 
 # Base paths (relative to project root)

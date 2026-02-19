@@ -135,7 +135,7 @@ fi
 
 # Check if test input template file exists
 echo "Checking for test input template file..."
-TEST_INPUT_TEMPLATE="test_inputs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_template.txt"
+TEST_INPUT_TEMPLATE="test_configs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_template.txt"
 if [ ! -f "$TEST_INPUT_TEMPLATE" ]; then
     echo ""
     echo -e "${YELLOW}==========================================="
@@ -145,7 +145,7 @@ if [ ! -f "$TEST_INPUT_TEMPLATE" ]; then
     echo "Expected: $TEST_INPUT_TEMPLATE"
     echo ""
     echo "Available template files:"
-    ls -1 test_inputs/*_template.txt 2>/dev/null || echo "  (none found)"
+    ls -1 test_configs/*_template.txt 2>/dev/null || echo "  (none found)"
     echo ""
     exit 1
 else

@@ -38,14 +38,14 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Test input files (environment-specific)
-test_inputs/*.txt
-!test_inputs/*_template.txt
-!test_inputs/*_sequential.txt
+# Test config files (user-created, may reference real connections)
+test_configs/*.env
+!test_configs/sample_*.env
 
-# Test suite files (user-created, may reference real connections)
-test_suites/*.env
-!test_suites/sample_*.env
+# Test config template files (environment-specific)
+test_configs/*.txt
+!test_configs/*_template.txt
+!test_configs/*_sequential.txt
 
 # Test properties CSV files (environment-specific data)
 test_properties/*.csv

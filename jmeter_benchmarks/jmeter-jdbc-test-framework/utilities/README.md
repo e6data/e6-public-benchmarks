@@ -7,8 +7,9 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 | Script | Data Source | Purpose | Output |
 |--------|-------------|---------|--------|
 | `../create_connection.sh` | Interactive | Create connection properties (JDBC or HTTP) | Properties file |
+| `../create_test_config.sh` | Interactive | Create test config (connection + plan + queries + params) | `.env` config file |
+| `../run_test.sh` | Config file or env vars | Non-interactive test runner | Test results |
 | `../run_jmeter_tests_interactive.sh` | Interactive | Run JMeter tests with guided setup | Test results |
-| `../run_test.sh` | Env vars / suite file | Non-interactive test runner | Test results |
 | `compare_multi_concurrency_from_s3.py` | S3 | Compare 2 engines across all concurrency levels | CSV + MD |
 | `compare_jmeter_runs_from_s3.py` | S3 | Compare 2 engines at single concurrency level | CSV + MD |
 | `compare_consecutive_runs_from_s3.py` | S3 | Compare 2 runs of same engine (regression detection) | MD |

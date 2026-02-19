@@ -58,9 +58,16 @@ Contain cluster-specific metadata for organizing test results:
 - S3 storage settings for results
 - Used by batch testing scripts and S3 upload functionality
 
-### Test Input Files (`test_inputs/*.txt`)
+### Test Config Files (`test_configs/`)
 
-Test input files use a **template system** to eliminate redundancy and enable batch testing. Each template contains 5 lines with placeholders that are substituted at runtime:
+The `test_configs/` directory contains two types of files:
+
+1. **`.env` config files** — complete test configurations for `run_test.sh` (connection + plan + queries + params)
+2. **`*_template.txt` files** — template files for batch testing with `run_all_concurrency.sh`
+
+#### Template Files
+
+Template files use a **template system** to eliminate redundancy and enable batch testing. Each template contains 5 lines with placeholders that are substituted at runtime:
 
 **Template Structure:**
 ```
@@ -80,19 +87,19 @@ E6Data_TPCDS_queries_29_1TB.csv
 
 **Template File Naming Convention:**
 ```
-test_inputs/{engine}_{cluster_size}_{benchmark}_template.txt
+test_configs/{engine}_{cluster_size}_{benchmark}_template.txt
 ```
 
 **Examples:**
-- `test_inputs/e6data_s-2x2_tpcds_29_1tb_template.txt`
-- `test_inputs/dbr_s-4x4_tpcds_29_1tb_template.txt`
-- `test_inputs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
+- `test_configs/dbr_s-4x4_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
 
 **Non-Template Files (Sequential Tests):**
 
 For tests that don't loop through concurrency levels (e.g., run-once sequential tests), use non-template files:
-- `test_inputs/e6data_xs_tpcds_29_1tb_sequential.txt`
-- `test_inputs/dbr_xs_tpcds_29_1tb_sequential.txt`
+- `test_configs/e6data_xs_tpcds_29_1tb_sequential.txt`
+- `test_configs/dbr_xs_tpcds_29_1tb_sequential.txt`
 
 These files enable automated batch testing without needing separate input files for each concurrency level.
 
@@ -130,13 +137,24 @@ This script:
 6. Shows configuration summary and runs the JMeter test
 7. Test properties created during the flow are saved as files for reuse in future runs
 
+### Create Test Config
+
+```bash
+./create_test_config.sh
+```
+
+Interactive utility that creates a `.env` config file in `test_configs/`. Walks through selecting connection, test plan, query file, and parameters. Config files are reusable and can be overridden at runtime.
+
 ### Non-Interactive Mode (Recommended for Repeat Runs)
 
 ```bash
-# Using a suite file
-./run_test.sh test_suites/sample_concurrency_test.env
+# Using a config file
+./run_test.sh test_configs/my_test.env
 
-# Using env vars
+# Override specific values for re-runs
+CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_configs/my_test.env
+
+# Using env vars directly
 export CONNECTION_FILE=connection_properties/e6data_default_connection.properties
 export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
 export QUERY_FILE=data_files/E6Data_TPCDS_queries_29_1TB.csv
@@ -144,7 +162,7 @@ export CONCURRENT_QUERY_COUNT=4
 ./run_test.sh
 ```
 
-Reads all configuration from env vars or a `.env` suite file. No prompts. Change one variable and re-run. Sample suite files in `test_suites/`.
+Reads all configuration from a `.env` config file or env vars. No prompts. Change one variable and re-run. Sample config files in `test_configs/`.
 
 ### Verifying Test Configuration (GUI Mode)
 
@@ -213,7 +231,7 @@ Run all concurrency levels (1, 2, 4, 8, 12, 16) sequentially using the unified s
 
 This script:
 - Uses template system with runtime placeholder substitution
-- Automatically looks up test input templates from `test_inputs/` directory
+- Automatically looks up test input templates from `test_configs/` directory
 - Validates all required files exist before starting
 - Runs all concurrency levels sequentially with 30-second pauses between tests
 - Logs each test to `/tmp/jmeter_test_logs/` with descriptive filenames
@@ -288,7 +306,8 @@ See `utilities/README.md` for more comparison examples and detailed documentatio
 **Test Setup & Configuration:**
 - `create_connection.sh`: Interactive connection properties creator (JDBC and HTTP endpoint)
 - `run_jmeter_tests_interactive.sh`: Interactive test runner (select connection, plan, properties, data file)
-- `run_test.sh`: Non-interactive runner — reads from env vars or suite file (`test_suites/*.env`)
+- `create_test_config.sh`: Interactive test config creator — saves `.env` files to `test_configs/`
+- `run_test.sh`: Non-interactive runner — reads from config file (`test_configs/*.env`) or env vars
 - `utilities/test_jdbc_connection.sh`: Test JDBC connectivity before running full test
 - `utilities/generate_concurrency_test_configs.sh`: Auto-generate test property files for different concurrency levels
 - `utilities/cleanup_logs.sh`: Clean up old test logs from `/tmp/jmeter_test_logs/`
@@ -466,7 +485,7 @@ To enable batch testing for a new engine/cluster/benchmark combination:
 
 5. **Create template file**:
    ```bash
-   cat > test_inputs/my_engine_my-cluster_my_benchmark_template.txt << 'EOF'
+   cat > test_configs/my_engine_my-cluster_my_benchmark_template.txt << 'EOF'
    {ENGINE}_{CLUSTER_SIZE}_metadata.txt
    Test-Plan-Maintain-static-concurrency.jmx
    concurrency_{CONCURRENCY}_test.properties
@@ -482,16 +501,18 @@ To enable batch testing for a new engine/cluster/benchmark combination:
 
 ### Creating New Test Configuration (Single Run)
 
-For interactive single test runs:
+For single test runs:
 
 1. Create connection (if not exists): `./create_connection.sh`
 2. Add query CSV file to `data_files/`
-3. Run test: `./run_test.sh` or `./run_jmeter_tests_interactive.sh`
+3. Create test config: `./create_test_config.sh`
    - Select your connection file
    - Choose test plan type
-   - Create new test properties (script prompts for relevant parameters and saves for reuse)
    - Select query file
-   - Optionally attach metadata for S3 upload
+   - Set parameters (concurrency, QPS, hold period, etc.)
+   - Saves `.env` config to `test_configs/`
+4. Run test: `./run_test.sh test_configs/<your_config>.env`
+   - Override params inline: `CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_configs/<your_config>.env`
 
 ### Adding New Query Set
 

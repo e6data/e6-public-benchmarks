@@ -407,8 +407,9 @@ if [ -n "$JAVA_HOME" ]; then
 fi
 echo "Next steps:"
 echo "  1. Copy your JDBC drivers to jdbc_drivers/ (if not already there)"
-echo "  2. Create connection properties: ./create_connection.sh"
-echo "  3. Run tests with: ./run_test.sh (or ./run_jmeter_tests_interactive.sh)"
+echo "  2. Create connection: ./create_connection.sh"
+echo "  3. Create test config: ./create_test_config.sh"
+echo "  4. Run test: ./run_test.sh test_configs/<your_config>.env"
 echo ""
 echo "To verify installation:"
 echo "  ./${JMETER_DIR}/bin/jmeter --version"
