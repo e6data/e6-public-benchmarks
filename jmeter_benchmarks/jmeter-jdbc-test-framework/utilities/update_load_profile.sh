@@ -203,4 +203,4 @@ else
 fi
 
 echo -e "\n${BLUE}💡 To test the updated plan, run:${NC}"
-echo "   ./utilities/run_jmeter_tests_interactive.sh"
+echo "   ./run_jmeter_tests_interactive.sh"

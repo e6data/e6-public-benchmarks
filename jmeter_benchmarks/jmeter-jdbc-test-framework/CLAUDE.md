@@ -110,7 +110,7 @@ These files enable automated batch testing without needing separate input files 
 ### Create Connection Properties (First Time Setup)
 
 ```bash
-./utilities/create_connection.sh
+./create_connection.sh
 ```
 
 Interactive utility that creates connection properties files for JDBC (e6data, Databricks, Trino) or HTTP endpoints. Run once per cluster/engine — files are saved in `connection_properties/` for reuse.
@@ -118,7 +118,7 @@ Interactive utility that creates connection properties files for JDBC (e6data, D
 ### Interactive Mode (Recommended)
 
 ```bash
-./utilities/run_jmeter_tests_interactive.sh
+./run_jmeter_tests_interactive.sh
 ```
 
 This script:
@@ -134,14 +134,14 @@ This script:
 
 ```bash
 # Using a suite file
-./utilities/run_test.sh test_suites/sample_concurrency_test.env
+./run_test.sh test_suites/sample_concurrency_test.env
 
 # Using env vars
 export CONNECTION_FILE=connection_properties/e6data_default_connection.properties
 export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
 export QUERY_FILE=data_files/E6Data_TPCDS_queries_29_1TB.csv
 export CONCURRENT_QUERY_COUNT=4
-./utilities/run_test.sh
+./run_test.sh
 ```
 
 Reads all configuration from env vars or a `.env` suite file. No prompts. Change one variable and re-run. Sample suite files in `test_suites/`.
@@ -286,9 +286,9 @@ See `utilities/README.md` for more comparison examples and detailed documentatio
 ### Utility Scripts
 
 **Test Setup & Configuration:**
-- `utilities/create_connection.sh`: Interactive connection properties creator (JDBC and HTTP endpoint)
-- `utilities/run_jmeter_tests_interactive.sh`: Interactive test runner (select connection, plan, properties, data file)
-- `utilities/run_test.sh`: Non-interactive runner — reads from env vars or suite file (`test_suites/*.env`)
+- `create_connection.sh`: Interactive connection properties creator (JDBC and HTTP endpoint)
+- `run_jmeter_tests_interactive.sh`: Interactive test runner (select connection, plan, properties, data file)
+- `run_test.sh`: Non-interactive runner — reads from env vars or suite file (`test_suites/*.env`)
 - `utilities/test_jdbc_connection.sh`: Test JDBC connectivity before running full test
 - `utilities/generate_concurrency_test_configs.sh`: Auto-generate test property files for different concurrency levels
 - `utilities/cleanup_logs.sh`: Clean up old test logs from `/tmp/jmeter_test_logs/`
@@ -484,9 +484,9 @@ To enable batch testing for a new engine/cluster/benchmark combination:
 
 For interactive single test runs:
 
-1. Create connection (if not exists): `./utilities/create_connection.sh`
+1. Create connection (if not exists): `./create_connection.sh`
 2. Add query CSV file to `data_files/`
-3. Run interactive script: `./utilities/run_jmeter_tests_interactive.sh`
+3. Run test: `./run_test.sh` or `./run_jmeter_tests_interactive.sh`
    - Select your connection file
    - Choose test plan type
    - Create new test properties (script prompts for relevant parameters and saves for reuse)

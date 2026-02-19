@@ -2,8 +2,8 @@
 # Non-interactive JMeter test runner — runs from env vars or a suite file
 #
 # Usage:
-#   ./utilities/run_test.sh                     # reads from env vars
-#   ./utilities/run_test.sh my_suite.env        # sources suite file, then runs
+#   ./run_test.sh                     # reads from env vars
+#   ./run_test.sh my_suite.env        # sources suite file, then runs
 #
 # Required (set via env or suite file):
 #   CONNECTION_FILE   - path to connection properties file
@@ -36,15 +36,15 @@
 #   export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
 #   export QUERY_FILE=data_files/E6Data_TPCDS_queries_29_1TB.csv
 #   export CONCURRENT_QUERY_COUNT=4
-#   ./utilities/run_test.sh
+#   ./run_test.sh
 #
 #   # Change just QPS and re-run
 #   export QPS=10
 #   export TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx
-#   ./utilities/run_test.sh
+#   ./run_test.sh
 #
 #   # Using a suite file
-#   ./utilities/run_test.sh test_suites/e6data_qps_test.env
+#   ./run_test.sh test_suites/e6data_qps_test.env
 
 set -e
 
@@ -57,7 +57,7 @@ DIM='\033[2m'
 NC='\033[0m'
 
 # Navigate to project root
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
 # ============================================================================

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Create a connection properties file interactively
-# Usage: ./utilities/create_connection.sh
+# Usage: ./create_connection.sh
 #
 # Supports two connection types:
 #   1. JDBC - for e6data, Databricks, Trino, etc.
@@ -19,7 +19,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # Navigate to project root
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
 CONN_DIR="connection_properties"
@@ -203,6 +203,7 @@ echo ""
 echo "  File: ${FILEPATH}"
 echo ""
 echo "Next steps:"
-echo "  - Run a test: ./utilities/run_jmeter_tests_interactive.sh"
+echo "  - Run a test:        ./run_test.sh"
+echo "  - Interactive mode:  ./run_jmeter_tests_interactive.sh"
 echo "  - Or batch tests: ./utilities/run_all_concurrency.sh"
 echo ""
