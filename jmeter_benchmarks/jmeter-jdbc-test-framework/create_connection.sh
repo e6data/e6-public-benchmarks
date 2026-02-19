@@ -16,6 +16,7 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 # Navigate to project root
@@ -73,31 +74,57 @@ case "$conn_type" in
         esac
 
         echo ""
-        read -p "Connection name (e.g., prod, demo, test): " CONN_NAME
+        read -p "Connection name (e.g., prod, demo, cluster-name): " CONN_NAME
         echo ""
 
-        # Collect JDBC parameters
-        read -p "Hostname: " HOSTNAME
-        read -p "Port [80]: " PORT
-        PORT=${PORT:-80}
-        read -p "Database: " DATABASE
-        read -p "Catalog: " CATALOG
-        echo ""
+        # Collect parameters — flow depends on engine
+        if [ "$engine_choice" = "1" ]; then
+            # e6data: ask for JDBC URL and parse fields from it
+            echo -e "${DIM}Example: jdbc:e6data://my-cluster.example.com:443/database=tpcds_1000_delta&catalog=glue${NC}"
+            read -p "JDBC URL: " CONNECTION_STRING
+            echo ""
+
+            # Parse host, port, database, catalog from e6data JDBC URL
+            # Format: jdbc:e6data://host:port/database=X&catalog=Y
+            HOSTNAME=$(echo "$CONNECTION_STRING" | sed -n 's|.*://\([^:/]*\).*|\1|p')
+            PORT=$(echo "$CONNECTION_STRING" | sed -n 's|.*://[^:]*:\([0-9]*\).*|\1|p')
+            PORT=${PORT:-80}
+            DATABASE=$(echo "$CONNECTION_STRING" | sed -n 's|.*database=\([^&]*\).*|\1|p')
+            CATALOG=$(echo "$CONNECTION_STRING" | sed -n 's|.*catalog=\([^&]*\).*|\1|p')
+
+            echo -e "${DIM}Parsed: host=${HOSTNAME} port=${PORT} database=${DATABASE} catalog=${CATALOG}${NC}"
+            echo ""
+
+        elif [ "$engine_choice" = "2" ]; then
+            # Databricks: paste full JDBC URL
+            echo -e "${YELLOW}Paste the full JDBC URL from your SQL Warehouse > Connection Details${NC}"
+            read -p "JDBC URL: " CONNECTION_STRING
+            echo ""
+
+            # Parse host from Databricks URL
+            HOSTNAME=$(echo "$CONNECTION_STRING" | sed -n 's|.*://\([^:/]*\).*|\1|p')
+            PORT=$(echo "$CONNECTION_STRING" | sed -n 's|.*://[^:]*:\([0-9]*\).*|\1|p')
+            PORT=${PORT:-443}
+            DATABASE=""
+            CATALOG=""
+
+        else
+            # Trino/Other: ask for individual fields
+            read -p "Hostname: " HOSTNAME
+            read -p "Port [443]: " PORT
+            PORT=${PORT:-443}
+            read -p "Database: " DATABASE
+            read -p "Catalog: " CATALOG
+            echo ""
+
+            # Build connection string
+            read -p "JDBC URL: " CONNECTION_STRING
+        fi
+
         read -p "Username: " USER_VAL
         read -sp "Password: " PASSWORD_VAL
         echo ""
         echo ""
-
-        # Build connection string based on engine
-        if [ "$engine_choice" = "2" ]; then
-            echo -e "${YELLOW}For Databricks, paste the full JDBC URL from your SQL Warehouse > Connection Details${NC}"
-            read -p "JDBC Connection String: " CONNECTION_STRING
-        else
-            # Default connection string pattern
-            DEFAULT_CONN="jdbc:e6://${HOSTNAME}:${PORT}"
-            read -p "Connection string [${DEFAULT_CONN}]: " CONNECTION_STRING
-            CONNECTION_STRING=${CONNECTION_STRING:-$DEFAULT_CONN}
-        fi
 
         # Generate filename
         FILENAME="${ENGINE}_${CONN_NAME}_connection.properties"
