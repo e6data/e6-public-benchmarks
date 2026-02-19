@@ -91,7 +91,7 @@ fi
 echo -e "${BOLD}Step 2: Select test plan${NC}"
 echo ""
 
-# Show test plan categories based on connection type
+# Show common test plans based on connection type, plus "Other" for all remaining
 if [ "$CONN_TYPE" = "jdbc" ]; then
     echo "  JDBC test plans:"
     echo ""
@@ -101,16 +101,18 @@ if [ "$CONN_TYPE" = "jdbc" ]; then
     echo "  4) Constant QPM              — maintain steady queries per minute"
     echo "  5) QPS with Load Profile     — QPS varies over time (CSV schedule)"
     echo "  6) Variable Concurrency      — concurrency varies over time (CSV schedule)"
+    echo "  7) Other                     — show all available test plans"
     echo ""
-    read -p "Select test type [1-6]: " plan_choice
+    read -p "Select test type [1-7]: " plan_choice
 
     case "$plan_choice" in
-        1) TEST_PLAN="Test-Plans/Test-Plan-Maintain-static-concurrency.jmx"; PLAN_TYPE="concurrency" ;;
-        2) TEST_PLAN="Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx"; PLAN_TYPE="run_once" ;;
-        3) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx"; PLAN_TYPE="qps" ;;
-        4) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx"; PLAN_TYPE="qpm" ;;
-        5) TEST_PLAN="Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx"; PLAN_TYPE="qps_profile" ;;
-        6) TEST_PLAN="Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx"; PLAN_TYPE="var_concurrency" ;;
+        1) TEST_PLAN="Test-Plans/Test-Plan-Maintain-static-concurrency.jmx" ;;
+        2) TEST_PLAN="Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx" ;;
+        3) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx" ;;
+        4) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx" ;;
+        5) TEST_PLAN="Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx" ;;
+        6) TEST_PLAN="Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx" ;;
+        7) ;; # handled below
         *) echo -e "${RED}Invalid choice${NC}"; exit 1 ;;
     esac
 else
@@ -119,18 +121,58 @@ else
     echo "  1) Static Concurrency        — fixed number of concurrent queries"
     echo "  2) Run Once                   — each query runs exactly once"
     echo "  3) QPS with Load Profile     — QPS varies over time (CSV schedule)"
+    echo "  4) Other                     — show all available test plans"
     echo ""
-    read -p "Select test type [1-3]: " plan_choice
+    read -p "Select test type [1-4]: " plan_choice
 
     case "$plan_choice" in
-        1) TEST_PLAN="Test-Plans/Test-Plan-Maintain-static-concurrency-http-endpoint-v2.jmx"; PLAN_TYPE="concurrency" ;;
-        2) TEST_PLAN="Test-Plans/Test-Plan-Run-Once-http-endpoint.jmx"; PLAN_TYPE="run_once" ;;
-        3) TEST_PLAN="Test-Plans/Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx"; PLAN_TYPE="qps_profile" ;;
+        1) TEST_PLAN="Test-Plans/Test-Plan-Maintain-static-concurrency-http-endpoint-v2.jmx" ;;
+        2) TEST_PLAN="Test-Plans/Test-Plan-Run-Once-http-endpoint.jmx" ;;
+        3) TEST_PLAN="Test-Plans/Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx" ;;
+        4) ;; # handled below
         *) echo -e "${RED}Invalid choice${NC}"; exit 1 ;;
     esac
 fi
 
+# Handle "Other" — list all .jmx files not in the curated list
+if { [ "$CONN_TYPE" = "jdbc" ] && [ "$plan_choice" = "7" ]; } || \
+   { [ "$CONN_TYPE" = "http" ] && [ "$plan_choice" = "4" ]; }; then
+    echo ""
+    echo -e "${BOLD}All available test plans:${NC}"
+    echo ""
+    ALL_PLANS=($(ls -1 Test-Plans/*.jmx 2>/dev/null))
+    for i in "${!ALL_PLANS[@]}"; do
+        echo "  $((i+1))) $(basename "${ALL_PLANS[$i]}")"
+    done
+    echo ""
+    read -p "Select test plan [1-${#ALL_PLANS[@]}]: " other_idx
+    if [[ ! "$other_idx" =~ ^[0-9]+$ ]] || [ "$other_idx" -lt 1 ] || [ "$other_idx" -gt "${#ALL_PLANS[@]}" ]; then
+        echo -e "${RED}Invalid selection${NC}"
+        exit 1
+    fi
+    TEST_PLAN="${ALL_PLANS[$((other_idx-1))]}"
+fi
+
 echo -e "  ${GREEN}Selected: $(basename "$TEST_PLAN")${NC}"
+
+# Infer PLAN_TYPE from filename for parameter prompts
+PLAN_NAME=$(basename "$TEST_PLAN" .jmx | tr '[:upper:]' '[:lower:]')
+if echo "$PLAN_NAME" | grep -q "run-once"; then
+    PLAN_TYPE="run_once"
+elif echo "$PLAN_NAME" | grep -q "variable-concurrency\|load-profile.*concurrency"; then
+    PLAN_TYPE="var_concurrency"
+elif echo "$PLAN_NAME" | grep -q "qps.*load-profile\|loadprofile.*qps\|qps-loadprofile\|loadprofile"; then
+    PLAN_TYPE="qps_profile"
+elif echo "$PLAN_NAME" | grep -q "qpm.*load-profile"; then
+    PLAN_TYPE="qpm_profile"
+elif echo "$PLAN_NAME" | grep -q "qps"; then
+    PLAN_TYPE="qps"
+elif echo "$PLAN_NAME" | grep -q "qpm"; then
+    PLAN_TYPE="qpm"
+else
+    PLAN_TYPE="concurrency"
+fi
+echo -e "  ${DIM}(type: ${PLAN_TYPE})${NC}"
 echo ""
 
 # ============================================================================
@@ -209,7 +251,7 @@ case "$PLAN_TYPE" in
         read -p "Recycle queries on EOF (true/false) [true]: " RECYCLE_ON_EOF
         RECYCLE_ON_EOF=${RECYCLE_ON_EOF:-true}
         ;;
-    qps_profile)
+    qps_profile|qpm_profile)
         read -p "Load profile CSV [test_properties/load_profile.csv]: " LOAD_PROFILE
         LOAD_PROFILE=${LOAD_PROFILE:-test_properties/load_profile.csv}
         if [ ! -f "$LOAD_PROFILE" ]; then
@@ -338,7 +380,7 @@ fi
             echo "RANDOM_ORDER=${RANDOM_ORDER}"
             echo "RECYCLE_ON_EOF=${RECYCLE_ON_EOF}"
             ;;
-        qps_profile|var_concurrency)
+        qps_profile|qpm_profile|var_concurrency)
             echo "LOAD_PROFILE=${LOAD_PROFILE}"
             echo "HOLD_PERIOD=${HOLD_PERIOD}"
             echo "RANDOM_ORDER=${RANDOM_ORDER}"
@@ -381,7 +423,7 @@ case "$PLAN_TYPE" in
     qpm)
         echo "  export QPM=${QPM}"
         ;;
-    qps_profile|var_concurrency)
+    qps_profile|qpm_profile|var_concurrency)
         echo "  export LOAD_PROFILE=${LOAD_PROFILE}"
         ;;
 esac
