@@ -138,9 +138,9 @@
             <stringProp name="Argument.value">${scheme}</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
-          <elementProp name="kantarLoginURL" elementType="Argument">
-            <stringProp name="Argument.name">kantarLoginURL</stringProp>
-            <stringProp name="Argument.value">https://kantar.e6.run/</stringProp>
+          <elementProp name="loginURL" elementType="Argument">
+            <stringProp name="Argument.name">loginURL</stringProp>
+            <stringProp name="Argument.value">https://your-app.example.com/</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
@@ -172,7 +172,7 @@
       <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="CSV Data Set Config login" enabled="true">
         <stringProp name="delimiter">,</stringProp>
         <stringProp name="fileEncoding"></stringProp>
-        <stringProp name="filename">kantar/Products/OCC_Login_postman.csv</stringProp>
+        <stringProp name="filename">data_files/login_credentials.csv</stringProp>
         <boolProp name="ignoreFirstLine">true</boolProp>
         <boolProp name="quotedData">false</boolProp>
         <boolProp name="recycle">true</boolProp>
@@ -386,7 +386,7 @@ if (authToken != null &amp;&amp; !authToken.equals(&quot;NOT_FOUND&quot;)) {
               </elementProp>
               <elementProp name="Referer" elementType="Header">
                 <stringProp name="Header.name">Referer</stringProp>
-                <stringProp name="Header.value">https://espresso-dev.kantar.com/</stringProp>
+                <stringProp name="Header.value">https://your-app.example.com/</stringProp>
               </elementProp>
               <elementProp name="Sec-Fetch-Site" elementType="Header">
                 <stringProp name="Header.name">Sec-Fetch-Site</stringProp>
@@ -402,7 +402,7 @@ if (authToken != null &amp;&amp; !authToken.equals(&quot;NOT_FOUND&quot;)) {
               </elementProp>
               <elementProp name="Origin" elementType="Header">
                 <stringProp name="Header.name">Origin</stringProp>
-                <stringProp name="Header.value">https://espresso-dev.kantar.com</stringProp>
+                <stringProp name="Header.value">https://your-app.example.com</stringProp>
               </elementProp>
               <elementProp name="Access-Control-Allow-Methods" elementType="Header">
                 <stringProp name="Header.name">Access-Control-Allow-Methods</stringProp>

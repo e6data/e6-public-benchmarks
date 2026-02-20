@@ -109,7 +109,7 @@ create_dbr_metadata() {
 ALIAS="dbr-${cluster_size,,}-1x1-concurrency${concurrency}"
 ENGINE="dbr"
 MODE="benchmark"
-TAGS="performance,benchmark,dbr,tpcds,azure,JPMC,concurrency-${concurrency},${cluster_size,,}-1x1,run-1"
+TAGS="performance,benchmark,dbr,tpcds,azure,concurrency-${concurrency},${cluster_size,,}-1x1,run-1"
 COMMENTS="DBR SQL Warehouse ${cluster_size}-1x1 cluster - 29 TPCDS queries on 1TB dataset with ${concurrency} concurrent threads - Cold start, Run 1"
 
 # Cloud & Region
@@ -153,7 +153,7 @@ PARTITION_STRATEGY="unknown"
 DATA_TYPE="TPCDS"
 DATASET_NAME="TPCDS 1TB"
 QUERY_COUNT="29"
-QUERY_SOURCE="JPMC selected TPCDS queries"
+QUERY_SOURCE="Selected TPCDS queries"
 ADDITIONAL_INFO="DBR SQL Warehouse ${cluster_size} cluster on Azure, ${concurrency} concurrent threads, hive_metastore catalog, tpcds_1000_delta schema, Delta Lake format, 29 optimized TPCDS queries"
 
 # Benchmark & Run Type (Optional - auto-detected if not specified)
@@ -227,7 +227,7 @@ create_e6data_metadata() {
 ALIAS="e6data-demo-graviton-${cluster_size,,}-${executor_count}x${executor_count}-concurrency${concurrency}"
 ENGINE="e6data"
 MODE="benchmark"
-TAGS="performance,benchmark,e6data,tpcds,aws,JPMC,concurrency-${concurrency},${cluster_size,,}-${executor_count}x${executor_count},run-1"
+TAGS="performance,benchmark,e6data,tpcds,aws,concurrency-${concurrency},${cluster_size,,}-${executor_count}x${executor_count},run-1"
 COMMENTS="e6data graviton ${cluster_size}-${executor_count}x${executor_count} cluster - 29 TPCDS queries on 1TB dataset with ${concurrency} concurrent threads - Cold start, Run 1"
 
 # Cloud & Region
@@ -268,7 +268,7 @@ PARTITION_STRATEGY="unknown"
 DATA_TYPE="TPCDS"
 DATASET_NAME="TPCDS 1TB"
 QUERY_COUNT="29"
-QUERY_SOURCE="JPMC selected TPCDS queries (sorted)"
+QUERY_SOURCE="Selected TPCDS queries (sorted)"
 ADDITIONAL_INFO="e6data demo-graviton ${cluster_size}-${executor_count}x${executor_count} cluster, ${concurrency} concurrent threads, ${executor_count} executors × 30 cores = $((executor_count * 30)) cores, glue_catalog, tpcds_1000_delta schema, Delta Lake format, 29 TPCDS queries"
 
 # Benchmark & Run Type (Optional - auto-detected if not specified)

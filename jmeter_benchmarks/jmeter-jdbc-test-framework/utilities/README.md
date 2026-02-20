@@ -2,32 +2,112 @@
 
 Comprehensive guide to all utility scripts for analyzing, comparing, and managing JMeter test results.
 
-## Overview
+## Script Inventory
 
-| Script | Data Source | Purpose | Output |
-|--------|-------------|---------|--------|
-| `../create_connection.sh` | Interactive | Create connection properties (JDBC or HTTP) | Properties file |
-| `../create_test_config.sh` | Interactive | Create test config (connection + plan + queries + params) | `.env` config file |
-| `../run_test.sh` | Config file or env vars | Non-interactive test runner | Test results |
-| `../run_jmeter_tests_interactive.sh` | Interactive | Run JMeter tests with guided setup | Test results |
-| `compare_multi_concurrency_from_s3.py` | S3 | Compare 2 engines across all concurrency levels | CSV + MD |
-| `compare_jmeter_runs_from_s3.py` | S3 | Compare 2 engines at single concurrency level | CSV + MD |
-| `compare_consecutive_runs_from_s3.py` | S3 | Compare 2 runs of same engine (regression detection) | MD |
-| `analyze_concurrency_scaling_from_s3.py` | S3 | Analyze single engine scaling behavior | MD |
-| `analyze_aggregate_report.py` | Local | Analyze single run from local aggregate report | Console |
-| `post_test_analysis.sh` | S3 | Automated post-test workflow (sync, compare, report) | Multiple |
-| `run_all_concurrency.sh` | - | Batch run all concurrency levels (1,2,4,8,12,16) | Test results |
+**43 scripts total** (22 top-level + 21 athena)
 
-**Athena Integration** (in `athena/` subdirectory):
+### Analysis & Comparison (9)
 
 | Script | Purpose |
 |--------|---------|
-| `athena/upload_runs_index_to_athena.py` | Upload runs index to S3 for Athena |
-| `athena/export_all_fields.sh` | Export all 62 fields to CSV for spreadsheet analysis |
-| `athena/run_athena_reports.sh` | Run all 8 standard Athena reports |
-| `athena/manage_baseline.py` | Mark/unmark baselines and compare runs |
-| `athena/query_athena_runs.py` | Query Athena with flexible filters |
-| `athena/verify_baseline_sync.py` | Verify S3 and Athena baseline data sync |
+| `analyze_aggregate_report.py` | Analyze JMeter aggregate report CSV with performance stats and error categorization |
+| `analyze_concurrency_scaling_from_s3.py` | Show how performance changes as concurrency increases for one engine |
+| `analyze_single_run_from_s3.py` | Fetch a single run from S3 and generate detailed markdown report |
+| `compare_consecutive_runs_from_s3.py` | Compare two consecutive runs for regression testing |
+| `compare_jmeter_runs_from_s3.py` | Compare any two JMeter runs from S3 (CSV + markdown output) |
+| `compare_multi_concurrency_from_s3.py` | Find and compare all concurrency levels between two engines |
+| `compare_multiple_runs_from_s3.py` | Compare N runs with metadata columns, supports batch directory scanning |
+| `compare_engines_concurrency.sh` | Compare concurrency scaling between two engines (text/markdown/json output) |
+| `post_test_analysis.sh` | End-to-end post-test workflow: sync to Athena, compare baseline, generate reports |
+
+### Runner & Config (3)
+
+| Script | Purpose |
+|--------|---------|
+| `run_all_concurrency.sh` | Run all concurrency levels (1, 2, 4, 8, 12, 16) for a given engine/cluster/benchmark |
+| `generate_concurrency_test_configs.sh` | Generate metadata + test property files for concurrency testing |
+| `update_load_profile.sh` | Update JMX test plan with load profile from CSV file |
+
+### Query Conversion (2)
+
+| Script | Purpose |
+|--------|---------|
+| `convert_queries_for_jmeter_http.py` | Convert multiline SQL to single-line for JMeter HTTP API (no quote escaping) |
+| `convert_queries_for_json_api.py` | Convert multiline SQL to single-line with JSON/e6data fixes (backticks, keywords, CTEs) |
+
+### Testing & Diagnostics (3)
+
+| Script | Purpose |
+|--------|---------|
+| `test_jdbc_connection.sh` | Test JDBC connectivity by compiling and running TestDriver.java |
+| `test_dbr_connectivity.sh` | Diagnose DBR connectivity issues with repeated DNS/HTTPS tests |
+| `test_queries_http.py` | Test SQL queries via e6data HTTP API (bypasses JMeter) |
+
+### Housekeeping (3)
+
+| Script | Purpose |
+|--------|---------|
+| `cleanup_logs.sh` | Clean up JMeter logs and temp files with configurable retention |
+| `manage_invalid_runs.sh` | Move invalid runs to INVALID/ subfolder to exclude from analysis |
+| `mark_best_run.sh` | Mark a run as "best" for comparison/baseline purposes |
+
+### Shared Library (1)
+
+| Script | Purpose |
+|--------|---------|
+| `jmeter_s3_utils.py` | Reusable functions for S3 path parsing, file downloading, statistics loading |
+
+### DBR-specific (1)
+
+| Script | Purpose |
+|--------|---------|
+| `get_dbr_query_history.py` | Fetch DBR SQL query history and export to CSV |
+
+### Athena — Setup & DDL (7)
+
+| Script | Purpose |
+|--------|---------|
+| `athena/setup_all_athena_tables.sh` | Create all 3 Athena tables (runs_index, run_metadata, query_results) |
+| `athena/setup_athena_runs_index.sql` | DDL for jmeter_runs_index table |
+| `athena/ddl/create_metadata_table.sql` | DDL for jmeter_run_metadata table |
+| `athena/ddl/create_results_table_csv.sql` | DDL for jmeter_query_results table |
+| `athena/recreate_athena_table.sh` | Drop and recreate runs_index table with updated schema |
+| `athena/setup/setup_tables.sh` | Setup metadata + query_results tables (hybrid approach) |
+| `athena/setup/repair_partitions.sh` | Run MSCK REPAIR TABLE to discover S3 partitions |
+
+### Athena — Data Upload & Sync (5)
+
+| Script | Purpose |
+|--------|---------|
+| `athena/sync_s3_to_athena.py` | Auto-discover S3 runs and upload only missing ones to Athena |
+| `athena/upload_runs_index_to_athena.py` | Convert runs_index.json to partitioned JSONL and upload to S3 |
+| `athena/upload_metadata.py` | Upload partitioned JSONL metadata to S3 with dry-run support |
+| `athena/generate_runs_index.py` | Generate consolidated runs index from S3 test results |
+| `athena/generate_metadata_index.py` | Generate metadata JSONL index from test_result.json files |
+
+### Athena — Querying & Reports (5)
+
+| Script | Purpose |
+|--------|---------|
+| `athena/WORKING_QUERIES.sql` | Reference SQL queries for JMeter analysis |
+| `athena/query_athena_runs.py` | Query runs with multiple modes (engine comparison, scaling, variance, custom SQL) |
+| `athena/compare_runs_athena.py` | Compare runs via Athena instead of direct S3 access |
+| `athena/run_athena_reports.sh` | Execute predefined Athena queries and save as CSV |
+| `athena/generate_report_queries.sh` | Generate parameterized SQL files from WORKING_QUERIES.sql |
+
+### Athena — Baseline Management (2)
+
+| Script | Purpose |
+|--------|---------|
+| `athena/manage_baseline.py` | Mark/unmark baseline runs and compare against baselines |
+| `athena/verify_baseline_sync.py` | Verify S3 metadata and Athena baseline info are in sync |
+
+### Athena — Maintenance (2)
+
+| Script | Purpose |
+|--------|---------|
+| `athena/setup/compact_athena_partition.sh` | Merge and deduplicate JSONL files within a partition |
+| `athena/export_all_fields.sh` | Export all 62 fields from runs_index to CSV for spreadsheets |
 
 ## S3 Path Structure
 
@@ -293,12 +373,10 @@ utilities/athena/
 ├── setup_all_athena_tables.sh         # Setup all tables at once
 ├── recreate_athena_table.sh           # Recreate table with updated schema
 ├── upload_runs_index_to_athena.py     # Upload runs index to S3 for Athena
-├── upload_all_runs_to_athena.sh       # Bulk upload for all runs
 ├── upload_metadata.py                 # Upload cluster metadata
 ├── generate_runs_index.py             # Generate runs index from S3
 ├── generate_metadata_index.py         # Generate metadata index from S3
 ├── generate_report_queries.sh         # Generate parameterized SQL files
-├── generate_comprehensive_reports.sh  # Generate comprehensive reports
 ├── run_athena_reports.sh              # Run all 8 standard reports
 ├── export_all_fields.sh               # Export all 62 fields to CSV
 ├── manage_baseline.py                 # Mark/unmark baselines
@@ -306,10 +384,13 @@ utilities/athena/
 ├── query_athena_runs.py               # Query with flexible filters
 ├── compare_runs_athena.py             # Compare runs via Athena
 ├── sync_s3_to_athena.py               # Sync S3 results to Athena
-├── regenerate_all_reports.sh          # Regenerate statistics.json for all S3 runs
-├── jmeter_s3_utils.py                 # S3 utility functions
-├── ddl/                               # DDL scripts for table creation
-└── setup/                             # Setup and migration scripts
+├── ddl/
+│   ├── create_metadata_table.sql      # DDL for jmeter_run_metadata
+│   └── create_results_table_csv.sql   # DDL for jmeter_query_results
+└── setup/
+    ├── compact_athena_partition.sh     # Merge/deduplicate partition files
+    ├── repair_partitions.sh           # MSCK REPAIR TABLE for partitions
+    └── setup_tables.sh                # Setup metadata + query_results tables
 ```
 
 ### Quick Start

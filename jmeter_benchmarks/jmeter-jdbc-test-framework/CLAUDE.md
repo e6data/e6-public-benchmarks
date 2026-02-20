@@ -307,7 +307,6 @@ See `utilities/README.md` for more comparison examples and detailed documentatio
 - `utilities/cleanup_logs.sh`: Clean up old test logs from `/tmp/jmeter_test_logs/`
 
 **Query Management:**
-- `utilities/convert_multiline_csv.sh`: Convert multi-line SQL queries to single-line for JMeter compatibility
 - `utilities/convert_queries_for_json_api.py`: Convert queries for JSON API format
 - `utilities/convert_queries_for_jmeter_http.py`: Format queries for HTTP test plans
 
@@ -325,13 +324,10 @@ See `utilities/README.md` for more comparison examples and detailed documentatio
 - `utilities/compare_multi_concurrency_from_s3.py`: Compare all concurrency levels between two engines (most comprehensive)
 
 **Athena Integration:**
-- `utilities/athena/upload_all_runs_to_athena.sh`: Upload all test results to Athena for querying
 - `utilities/athena/upload_runs_index_to_athena.py`: Upload runs index with baseline tracking to Athena
 - `utilities/athena/upload_metadata.py`: Upload cluster metadata to Athena
 - `utilities/athena/run_athena_reports.sh`: Run all standard Athena reports
-- `utilities/athena/generate_comprehensive_reports.sh`: Generate comprehensive analysis reports
 - `utilities/athena/export_all_fields.sh`: Export all 62 fields to CSV for spreadsheet analysis
-- `utilities/athena/regenerate_all_reports.sh`: Regenerate statistics.json for all runs in S3
 - `utilities/athena/setup_all_athena_tables.sh`: Setup all Athena tables at once
 - `utilities/athena/recreate_athena_table.sh`: Recreate Athena table with updated schema
 
@@ -507,7 +503,7 @@ For single test runs:
 
 1. Place CSV file in `data_files/` directory
 2. Ensure CSV has no header row or uses optional header comment format
-3. For multi-line queries, use `utilities/convert_multiline_csv.sh` to convert
+3. For multi-line queries, use `utilities/convert_queries_for_json_api.py` to convert
 4. Reference in test properties: `QUERY_PATH=data_files/my_queries.csv`
 
 ### Testing Against New Database

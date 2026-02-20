@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 # Add utilities to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from jmeter_s3_utils import list_s3_files, load_statistics_from_s3
 
 

@@ -109,7 +109,7 @@ TBLPROPERTIES (
     'projection.cluster_size_partition.type' = 'enum',
     'projection.cluster_size_partition.values' = 'XS-1x1,S-1x1,S-2x2,S-4x4,M-4x4,L-8x8,XL-16x16',
     'projection.benchmark_partition.type' = 'enum',
-    'projection.benchmark_partition.values' = 'tpcds_29_1tb,tpcds_51_1tb,kantar',
+    'projection.benchmark_partition.values' = 'tpcds_29_1tb,tpcds_51_1tb',
     'projection.run_type.type' = 'enum',
     'projection.run_type.values' = 'concurrency_1,concurrency_2,concurrency_4,concurrency_8,concurrency_12,concurrency_16,sequential',
     'storage.location.template' = 's3://your-s3-bucket/jmeter-results-index/runs/engine=${engine}/cluster_size=${cluster_size_partition}/benchmark=${benchmark_partition}/run_type=${run_type}'
