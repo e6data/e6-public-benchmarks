@@ -53,7 +53,7 @@ test_properties/*.csv
 # JDBC driver JARs
 jdbc_drivers/*.jar
 
-# Kantar test data
+# Customer-specific test data
 kantar/
 kantar.tar
 

@@ -21,9 +21,9 @@
             <stringProp name="Argument.value">${scheme}</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
-          <elementProp name="kantarLoginURL" elementType="Argument">
-            <stringProp name="Argument.name">kantarLoginURL</stringProp>
-            <stringProp name="Argument.value">https://kantar.e6.run/</stringProp>
+          <elementProp name="loginURL" elementType="Argument">
+            <stringProp name="Argument.name">loginURL</stringProp>
+            <stringProp name="Argument.value">https://your-app.example.com/</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
@@ -53,7 +53,7 @@
       <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="CSV Data Set Config login">
         <stringProp name="delimiter">,</stringProp>
         <stringProp name="fileEncoding"></stringProp>
-        <stringProp name="filename">kantar/Products/OCC_Login_postman.csv</stringProp>
+        <stringProp name="filename">data_files/login_credentials.csv</stringProp>
         <boolProp name="ignoreFirstLine">true</boolProp>
         <boolProp name="quotedData">false</boolProp>
         <boolProp name="recycle">true</boolProp>
@@ -63,7 +63,7 @@
       </CSVDataSet>
       <hashTree/>
       <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="CSV Data Set Config Selections">
-        <stringProp name="filename">kantar/Products/CSV_Files/Products_25Users.csv</stringProp>
+        <stringProp name="filename">data_files/products.csv</stringProp>
         <stringProp name="fileEncoding"></stringProp>
         <stringProp name="variableNames"></stringProp>
         <boolProp name="ignoreFirstLine">true</boolProp>
@@ -111,7 +111,7 @@
           <boolProp name="WebDriverConfig.use_socks_proxy">true</boolProp>
         </com.googlecode.jmeter.plugins.webdriver.config.ChromeDriverConfig>
         <hashTree/>
-        <com.googlecode.jmeter.plugins.webdriver.sampler.WebDriverSampler guiclass="com.googlecode.jmeter.plugins.webdriver.sampler.gui.WebDriverSamplerGui" testclass="com.googlecode.jmeter.plugins.webdriver.sampler.WebDriverSampler" testname="KantarSSOLogin">
+        <com.googlecode.jmeter.plugins.webdriver.sampler.WebDriverSampler guiclass="com.googlecode.jmeter.plugins.webdriver.sampler.gui.WebDriverSamplerGui" testclass="com.googlecode.jmeter.plugins.webdriver.sampler.WebDriverSampler" testname="SSOLogin">
           <stringProp name="WebDriverSampler.script">import org.openqa.selenium.By
 import org.openqa.selenium.WebDriver
 import org.openqa.selenium.WebElement
@@ -124,13 +124,13 @@ WebDriver driver = WDS.browser
 
 String username = WDS.vars.get(&quot;username&quot;)
 String password = WDS.vars.get(&quot;password&quot;)
-String kantarLoginURL = WDS.vars.get(&quot;kantarLoginURL&quot;)
+String loginURL = WDS.vars.get(&quot;loginURL&quot;)
 
 WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30))
 
 try {
     // Navigate to login page
-    driver.get(kantarLoginURL)
+    driver.get(loginURL)
     WDS.log.info(&quot;Navigated to: &quot; + driver.getCurrentUrl())
 
     // Email field
@@ -278,7 +278,7 @@ ${__setProperty(session, ${session})};
               </elementProp>
               <elementProp name="Referer" elementType="Header">
                 <stringProp name="Header.name">Referer</stringProp>
-                <stringProp name="Header.value">https://espresso-dev.kantar.com/</stringProp>
+                <stringProp name="Header.value">https://your-app.example.com/</stringProp>
               </elementProp>
               <elementProp name="Sec-Fetch-Site" elementType="Header">
                 <stringProp name="Header.name">Sec-Fetch-Site</stringProp>
@@ -294,7 +294,7 @@ ${__setProperty(session, ${session})};
               </elementProp>
               <elementProp name="Origin" elementType="Header">
                 <stringProp name="Header.name">Origin</stringProp>
-                <stringProp name="Header.value">https://espresso-dev.kantar.com</stringProp>
+                <stringProp name="Header.value">https://your-app.example.com</stringProp>
               </elementProp>
               <elementProp name="Access-Control-Allow-Methods" elementType="Header">
                 <stringProp name="Header.name">Access-Control-Allow-Methods</stringProp>
@@ -488,7 +488,7 @@ ${__setProperty(session, ${session})};
               </elementProp>
               <elementProp name="Referer" elementType="Header">
                 <stringProp name="Header.name">Referer</stringProp>
-                <stringProp name="Header.value">https://espresso-dev.kantar.com/</stringProp>
+                <stringProp name="Header.value">https://your-app.example.com/</stringProp>
               </elementProp>
               <elementProp name="Sec-Fetch-Site" elementType="Header">
                 <stringProp name="Header.name">Sec-Fetch-Site</stringProp>
@@ -504,7 +504,7 @@ ${__setProperty(session, ${session})};
               </elementProp>
               <elementProp name="Origin" elementType="Header">
                 <stringProp name="Header.name">Origin</stringProp>
-                <stringProp name="Header.value">https://espresso-dev.kantar.com</stringProp>
+                <stringProp name="Header.value">https://your-app.example.com</stringProp>
               </elementProp>
               <elementProp name="Access-Control-Allow-Methods" elementType="Header">
                 <stringProp name="Header.name">Access-Control-Allow-Methods</stringProp>

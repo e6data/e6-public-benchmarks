@@ -94,10 +94,10 @@ def main():
         )
         print("\nExample:")
         print(
-            "  python convert_queries_for_json_api.py Kantar-queries.csv Kantar-queries-clean.csv"
+            "  python convert_queries_for_json_api.py raw_queries.csv clean_queries.csv"
         )
         print(
-            "  python convert_queries_for_json_api.py Kantar-queries.csv Kantar-queries-clean.csv --remove-hints"
+            "  python convert_queries_for_json_api.py raw_queries.csv clean_queries.csv --remove-hints"
         )
         sys.exit(1)
 
