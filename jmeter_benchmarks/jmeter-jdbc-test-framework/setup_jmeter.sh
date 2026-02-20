@@ -247,7 +247,46 @@ else
 fi
 
 echo ""
-echo "Step 4: Installing JMeter plugins..."
+echo "Step 4: Upgrading Groovy to 4.0.x (fixes Java 23 compatibility)..."
+
+# JMeter 5.6.3 ships with Groovy 3.0.20 which can't handle class files compiled
+# with Java 23+ (major version 67). JDBC drivers with Java 23 dependencies cause
+# "Unsupported class file major version 67" errors in JSR223/Groovy scripts.
+# Groovy 4.0.x supports Java 23. Maven groupId changed: org.codehaus.groovy -> org.apache.groovy
+
+GROOVY_OLD_VERSION="3.0.20"
+GROOVY_NEW_VERSION="4.0.29"
+GROOVY_MAVEN_BASE="https://repo1.maven.org/maven2/org/apache/groovy"
+GROOVY_MODULES="groovy groovy-datetime groovy-dateutil groovy-jmx groovy-json groovy-jsr223 groovy-sql groovy-templates groovy-xml"
+
+# Check if already upgraded
+if [ -f "${JMETER_DIR}/lib/groovy-${GROOVY_NEW_VERSION}.jar" ]; then
+    echo "  ✓ Groovy already upgraded to ${GROOVY_NEW_VERSION}"
+else
+    echo "  Removing Groovy ${GROOVY_OLD_VERSION} JARs..."
+    rm -f "${JMETER_DIR}"/lib/groovy-*-${GROOVY_OLD_VERSION}.jar "${JMETER_DIR}"/lib/groovy-${GROOVY_OLD_VERSION}.jar
+
+    echo "  Downloading Groovy ${GROOVY_NEW_VERSION} JARs..."
+    GROOVY_DOWNLOAD_OK=true
+    for module in $GROOVY_MODULES; do
+        JAR_URL="${GROOVY_MAVEN_BASE}/${module}/${GROOVY_NEW_VERSION}/${module}-${GROOVY_NEW_VERSION}.jar"
+        JAR_FILE="${JMETER_DIR}/lib/${module}-${GROOVY_NEW_VERSION}.jar"
+        if command_exists wget; then
+            wget -q -O "${JAR_FILE}" "${JAR_URL}" || { echo "  WARNING: Failed to download ${module}"; GROOVY_DOWNLOAD_OK=false; }
+        elif command_exists curl; then
+            curl -sL -o "${JAR_FILE}" "${JAR_URL}" || { echo "  WARNING: Failed to download ${module}"; GROOVY_DOWNLOAD_OK=false; }
+        fi
+    done
+
+    if [ "$GROOVY_DOWNLOAD_OK" = true ]; then
+        echo "  ✓ Groovy upgraded from ${GROOVY_OLD_VERSION} to ${GROOVY_NEW_VERSION}"
+    else
+        echo "  WARNING: Some Groovy JARs failed to download. JSR223 scripts may not work."
+    fi
+fi
+
+echo ""
+echo "Step 5: Installing JMeter plugins..."
 
 # Download JMeter Plugins Manager
 PLUGINS_MANAGER_URL="https://jmeter-plugins.org/get/"
@@ -309,7 +348,7 @@ fi
 echo "  ✓ JMeter plugins check complete"
 
 echo ""
-echo "Step 5: Installing custom JDBC drivers..."
+echo "Step 6: Installing custom JDBC drivers..."
 
 # Download Databricks JDBC driver from Maven Central
 DBR_JDBC_VERSION="3.0.3"
@@ -348,7 +387,7 @@ else
 fi
 
 echo ""
-echo "Step 6: Configuring minimal logging..."
+echo "Step 7: Configuring minimal logging..."
 
 # Configure log4j2 to reduce logging verbosity
 LOG4J_CONFIG="${JMETER_DIR}/bin/log4j2.xml"
@@ -383,7 +422,7 @@ if [ -f "$JMETER_PROPS" ]; then
 fi
 
 echo ""
-echo "Step 7: Creating reports directory..."
+echo "Step 8: Creating reports directory..."
 mkdir -p "${SCRIPT_DIR}/reports"
 
 echo ""
