@@ -306,8 +306,6 @@ utilities/athena/
 ├── query_athena_runs.py               # Query with flexible filters
 ├── compare_runs_athena.py             # Compare runs via Athena
 ├── sync_s3_to_athena.py               # Sync S3 results to Athena
-├── regenerate_all_reports.sh          # Regenerate statistics.json for all S3 runs
-├── jmeter_s3_utils.py                 # S3 utility functions
 ├── ddl/                               # DDL scripts for table creation
 └── setup/                             # Setup and migration scripts
 ```

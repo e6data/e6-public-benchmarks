@@ -218,6 +218,44 @@ def load_statistics_from_s3(s3_file_path: str) -> Optional[Dict]:
         return None
 
 
+def load_json_from_s3(s3_file_path: str) -> Optional[Dict]:
+    """
+    Load any JSON file directly from S3 without downloading to disk.
+
+    Args:
+        s3_file_path: Full S3 path to JSON file
+
+    Returns:
+        Dictionary with data, or None if error
+    """
+    # Ensure s3:// prefix
+    if not s3_file_path.startswith("s3://"):
+        s3_file_path = "s3://" + s3_file_path
+
+    cmd = ["aws", "s3", "cp", s3_file_path, "-"]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return json.loads(result.stdout)
+    except subprocess.CalledProcessError:
+        return None
+    except json.JSONDecodeError:
+        return None
+
+
+def load_test_result_from_s3(s3_file_path: str) -> Optional[Dict]:
+    """
+    Load test_result.json directly from S3 without downloading to disk.
+
+    Args:
+        s3_file_path: Full S3 path to test_result file
+
+    Returns:
+        Dictionary with test result data, or None if error
+    """
+    return load_json_from_s3(s3_file_path)
+
+
 def extract_query_metrics(stats: Dict, query_name: str) -> Optional[Dict]:
     """
     Extract metrics for a specific query from statistics.json.
