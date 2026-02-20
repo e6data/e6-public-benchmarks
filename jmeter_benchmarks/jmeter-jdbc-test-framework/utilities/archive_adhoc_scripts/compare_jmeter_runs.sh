@@ -25,7 +25,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_SCRIPT="$SCRIPT_DIR/compare_jmeter_runs.py"
-S3_BASE_PATH="s3://e6-jmeter/jmeter-results"
+S3_BASE_PATH="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}"
 
 # Colors for output
 RED='\033[0;31m'

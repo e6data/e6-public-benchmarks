@@ -7,20 +7,17 @@ echo "=========================================="
 echo ""
 
 # Define all the paths to process
-PATHS=(
-    # E6Data runs
-    "s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/"
-    "s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/"
-    "s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_8/"
-    "s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_12/"
-    "s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_16/"
+S3_BASE="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}"
 
-    # Databricks runs
-    "s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/"
-    "s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/"
-    "s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_8/"
-    "s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_12/"
-    "s3://e6-jmeter/jmeter-results/engine=databricks/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_16/"
+# UPDATE: Add your S3 paths below
+# Example format: "${S3_BASE}/engine=<engine>/cluster_size=<size>/benchmark=<benchmark>/run_type=<type>/"
+PATHS=(
+    # E6Data example runs (update with your actual paths)
+    "${S3_BASE}/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/"
+    "${S3_BASE}/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/"
+    "${S3_BASE}/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_8/"
+    "${S3_BASE}/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_12/"
+    "${S3_BASE}/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_16/"
 )
 
 SUCCESS=0

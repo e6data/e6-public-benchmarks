@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a JMeter-based JDBC performance testing framework for comparing database query execution across different database engines (primarily E6Data and DBR). The framework uses a property-file-driven architecture to enable reusable, automation-friendly load testing.
+This is a JMeter-based JDBC performance testing framework for benchmarking database query execution across different database engines. The framework uses a property-file-driven architecture to enable reusable, automation-friendly load testing.
 
 ## Core Architecture
 
@@ -15,7 +15,7 @@ The framework separates concerns into three distinct configuration layers:
 1. **Connection Properties** (`connection_properties/*.properties`)
    - JDBC connection settings (hostname, port, driver class, connection string)
    - Database credentials and catalog configuration
-   - Driver-specific parameters for E6Data, DBR, Trino, etc.
+   - Driver-specific parameters for E6Data, Trino, etc.
 
 2. **Test Properties** (`test_properties/*.properties`)
    - Load characteristics (concurrency levels, QPS, QPM)
@@ -42,7 +42,10 @@ Pre-configured JMeter test plans support different load patterns:
 - **`Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx`**: Variable concurrency using load profile
 
 **HTTP Endpoint Test Plans:**
-- For testing REST API query endpoints instead of JDBC connections
+- **`Test-Plan-Run-Once-http-endpoint.jmx`**: Run all queries once against HTTP/REST API endpoint
+- **`Test-Plan-Maintain-static-concurrency-http-endpoint.jmx`**: Maintain fixed concurrency against HTTP endpoint
+- **`Test-Plan-Maintain-static-concurrency-http-endpoint-v2.jmx`**: Updated version with enhanced HTTP endpoint support
+- **`Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx`**: Variable QPS against HTTP endpoint
 - Use `utilities/test_queries_http.py` to test HTTP endpoints directly
 - Use `utilities/convert_queries_for_jmeter_http.py` to format queries for HTTP test plans
 
@@ -50,33 +53,53 @@ Pre-configured JMeter test plans support different load patterns:
 
 Contain cluster-specific metadata for organizing test results:
 
-- Engine type (e6data, dbr)
+- Engine type (e.g., e6data)
 - Cluster configuration (size, cores, instance types)
 - S3 storage settings for results
 - Used by batch testing scripts and S3 upload functionality
 
-### Test Input Files (`test_inputs/*.txt`)
+### Test Config Files (`test_configs/`)
 
-Pre-configured test input files for automated batch testing. Each file contains 5 lines specifying all inputs needed to run a test:
+The `test_configs/` directory contains two types of files:
 
-```
-<metadata_file>
-<test_plan>
-<test_properties>
-<connection_properties>
-<query_csv_file>
-```
+1. **`.env` config files** — complete test configurations for `run_test.sh` (connection + plan + queries + params)
+2. **`*_template.txt` files** — template files for batch testing with `run_all_concurrency.sh`
 
-**Example:** `test_inputs/e6data_m-4x4_tpcds_29_1tb_concurrency_4.txt`
+#### Template Files
+
+Template files use a **template system** to eliminate redundancy and enable batch testing. Each template contains 5 lines with placeholders that are substituted at runtime:
+
+**Template Structure:**
 ```
-e6data_m-4x4_metadata.txt
+{ENGINE}_{CLUSTER_SIZE}_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
-concurrency_4_test.properties
-demo-graviton_connection.properties
+concurrency_{CONCURRENCY}_test.properties
+{ENGINE}_{CLUSTER}_connection.properties
 E6Data_TPCDS_queries_29_1TB.csv
 ```
 
-These files enable the `run_all_concurrency.sh` script to automatically run tests without interactive prompts. File naming convention: `{engine}_{cluster_size}_{benchmark}_concurrency_{level}.txt`
+**Supported Placeholders:**
+- `{ENGINE}` - Engine name (e.g., e6data)
+- `{CLUSTER_SIZE}` - Normalized cluster size (xs-1x1, s-2x2, m-4x4, s-4x4, s-1x1)
+- `{CLUSTER}` - Cluster identifier for connection file (default, demo-graviton, etc.)
+- `{CONCURRENCY}` - Concurrency level (1, 2, 4, 8, 12, 16)
+- `{BENCHMARK}` - Benchmark identifier (tpcds_29_1tb, tpcds_51_1tb)
+
+**Template File Naming Convention:**
+```
+test_configs/{engine}_{cluster_size}_{benchmark}_template.txt
+```
+
+**Examples:**
+- `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
+
+**Non-Template Files (Sequential Tests):**
+
+For tests that don't loop through concurrency levels (e.g., run-once sequential tests), use non-template files:
+- `test_configs/e6data_xs_tpcds_29_1tb_sequential.txt`
+
+These files enable automated batch testing without needing separate input files for each concurrency level.
 
 ## Running Tests
 
@@ -89,6 +112,14 @@ These files enable the `run_all_concurrency.sh` script to automatically run test
 
 **Critical**: Java 17 is required. The interactive script validates this before running.
 
+### Create Connection Properties (First Time Setup)
+
+```bash
+./create_connection.sh
+```
+
+Interactive utility that creates connection properties files for JDBC (e6data, Databricks, Trino) or HTTP endpoints. Run once per cluster/engine — files are saved in `connection_properties/` for reuse.
+
 ### Interactive Mode (Recommended)
 
 ```bash
@@ -96,17 +127,66 @@ These files enable the `run_all_concurrency.sh` script to automatically run test
 ```
 
 This script:
-1. Prompts for metadata file selection (determines engine/cluster config)
-2. Prompts for test plan selection
-3. Prompts for test properties file
-4. Prompts for connection properties file
-5. Prompts for query CSV file
-6. Generates timestamped reports in `reports/` directory
-7. Optionally uploads results to S3 (if `COPY_TO_S3=true` in test properties)
+1. Lists existing connection properties files for selection (if none exist, directs to `create_connection.sh`)
+2. Prompts for test plan type (concurrency, QPS, QPM, load profile, variable concurrency; JDBC or HTTP variants)
+3. Offers to select existing test properties or create new ones with relevant runtime parameters
+4. Prompts for query CSV data file
+5. Optionally selects metadata file (for S3 upload)
+6. Shows configuration summary and runs the JMeter test
+7. Test properties created during the flow are saved as files for reuse in future runs
 
-### Manual JMeter Command
+### Create Test Config
 
 ```bash
+./create_test_config.sh
+```
+
+Interactive utility that creates a `.env` config file in `test_configs/`. Walks through selecting connection, test plan, query file, and parameters. Config files are reusable and can be overridden at runtime.
+
+### Non-Interactive Mode (Recommended for Repeat Runs)
+
+```bash
+# Using a config file
+./run_test.sh test_configs/my_test.env
+
+# Override specific values for re-runs
+CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_configs/my_test.env
+
+# Using env vars directly
+export CONNECTION_FILE=connection_properties/e6data_default_connection.properties
+export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
+export QUERY_FILE=data_files/E6Data_TPCDS_queries_29_1TB.csv
+export CONCURRENT_QUERY_COUNT=4
+./run_test.sh
+```
+
+Reads all configuration from a `.env` config file or env vars. No prompts. Change one variable and re-run. Sample config files in `test_configs/`.
+
+### Verifying Test Configuration (GUI Mode)
+
+**⚠️ IMPORTANT**: Before running load tests, verify your configuration in JMeter GUI mode:
+
+```bash
+# Open JMeter GUI with your configuration
+./apache-jmeter-5.6.3/bin/jmeter \
+  -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
+  -q connection_properties/sample_connection.properties \
+  -q test_properties/sample_test.properties \
+  -JQUERY_PATH=data_files/sample_queries.csv
+```
+
+**In GUI mode, verify:**
+- JDBC connection works (test with 1 thread first)
+- Queries load from CSV correctly
+- Test plan parameters are correct
+- View Results Tree shows successful query execution
+
+**Note:** GUI mode is ONLY for verification. Always use non-GUI mode (CLI) for actual load testing.
+
+### Manual JMeter Command (Non-GUI Mode)
+
+```bash
+# Non-GUI mode for actual performance testing
 ./apache-jmeter-5.6.3/bin/jmeter -n \
   -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
   -q connection_properties/sample_connection.properties \
@@ -115,24 +195,37 @@ This script:
   -l reports/results.jtl
 ```
 
+**Key flags:** `-n` (non-GUI mode), `-t` (test plan), `-q` (properties file), `-l` (log file)
+
 ### Batch Testing (Automated Concurrency Sweeps)
 
 Run all concurrency levels (1, 2, 4, 8, 12, 16) sequentially using the unified script:
 
 ```bash
-# Usage: ./utilities/run_all_concurrency.sh <engine> <cluster_size> <benchmark>
+# Usage: ./utilities/run_all_concurrency.sh <engine> <cluster_size> <benchmark> [cluster] [test_plan_file]
 
-# E6Data cluster testing
+# E6Data cluster testing (uses default connection)
 ./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb
 ./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_51_1tb
 
-# DBR cluster testing
-./utilities/run_all_concurrency.sh dbr S-2x2 tpcds_29_1tb
-./utilities/run_all_concurrency.sh dbr S-4x4 tpcds_51_1tb
+# With custom cluster connection
+./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb demo-graviton
+
+# With custom test plan
+./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_29_1tb default Test-Plan-Sequential.jmx
 ```
 
+**Parameters:**
+- `engine` (required): Database engine (e.g., e6data)
+- `cluster_size` (required): Cluster size (e.g., S-2x2, M-4x4, XS-1x1)
+- `benchmark` (required): Benchmark name (tpcds_29_1tb, tpcds_51_1tb)
+- `cluster` (optional): Cluster identifier for connection properties (default: "default")
+  - Connection file: `connection_properties/{engine}_{cluster}_connection.properties`
+- `test_plan_file` (optional): Override test plan file (default: uses template's test plan)
+
 This script:
-- Automatically looks up test input files from `test_inputs/` directory
+- Uses template system with runtime placeholder substitution
+- Automatically looks up test input templates from `test_configs/` directory
 - Validates all required files exist before starting
 - Runs all concurrency levels sequentially with 30-second pauses between tests
 - Logs each test to `/tmp/jmeter_test_logs/` with descriptive filenames
@@ -159,7 +252,7 @@ Key points:
 - `run_id` folders contain all files for a single test execution
 - `latest.json` at the `run_type` level points to most recent run
 - Structure enables Athena partitioning for querying results
-- See `S3_STRUCTURE_UPDATE.md` for migration details
+- See `utilities/README.md` for S3 path structure details
 
 ## Analysis and Comparison Scripts
 
@@ -170,7 +263,7 @@ All Python scripts are in `utilities/` directory:
 ```bash
 # Analyze latest run for a benchmark
 python utilities/analyze_single_run_from_s3.py \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 
 # Analyze specific run
 python utilities/analyze_single_run_from_s3.py \
@@ -180,22 +273,35 @@ python utilities/analyze_single_run_from_s3.py \
 ### Comparison Between Engines
 
 ```bash
-# Compare all matching concurrency levels (recommended)
-python utilities/compare_multi_concurrency.py \
-  s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
-  s3://e6-jmeter/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+# Compare all matching concurrency levels (RECOMMENDED - most comprehensive)
+python utilities/compare_multi_concurrency_from_s3.py \
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
+  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 
 # Compare single concurrency level
-python utilities/compare_jmeter_runs.py \
+python utilities/compare_jmeter_runs_from_s3.py \
   s3://path/to/engine1/.../run_type=concurrency_4/ \
   s3://path/to/engine2/.../run_type=concurrency_4/
 ```
 
-See `utilities/QUICK_REFERENCE.md` for more comparison examples and `utilities/COMPARISON_TOOL_README.md` for detailed documentation.
+**Understanding Results:**
+- **Positive % (e.g., +50.5%)**: First engine is FASTER
+- **Negative % (e.g., -35.2%)**: Second engine is FASTER
+- **~0%**: Both engines perform comparably
+
+**Output Files:** Generated in `reports/` directory:
+- `{engine1}_{cluster1}_vs_{engine2}_{cluster2}_MultiConcurrency_{timestamp}.csv` - Detailed comparison data
+- `{engine1}_{cluster1}_vs_{engine2}_{cluster2}_MultiConcurrency_{timestamp}_SUMMARY.md` - Human-readable summary
+
+See `utilities/README.md` for more comparison examples and detailed documentation.
 
 ### Utility Scripts
 
 **Test Setup & Configuration:**
+- `create_connection.sh`: Interactive connection properties creator (JDBC and HTTP endpoint)
+- `run_jmeter_tests_interactive.sh`: Interactive test runner (select connection, plan, properties, data file)
+- `create_test_config.sh`: Interactive test config creator — saves `.env` files to `test_configs/`
+- `run_test.sh`: Non-interactive runner — reads from config file (`test_configs/*.env`) or env vars
 - `utilities/test_jdbc_connection.sh`: Test JDBC connectivity before running full test
 - `utilities/generate_concurrency_test_configs.sh`: Auto-generate test property files for different concurrency levels
 - `utilities/cleanup_logs.sh`: Clean up old test logs from `/tmp/jmeter_test_logs/`
@@ -215,12 +321,57 @@ See `utilities/QUICK_REFERENCE.md` for more comparison examples and `utilities/C
 - `utilities/analyze_single_run_from_s3.py`: Analyze individual test runs from S3
 - `utilities/analyze_concurrency_scaling_from_s3.py`: Analyze how performance scales with concurrency
 - `utilities/compare_consecutive_runs_from_s3.py`: Compare two consecutive runs to detect regressions
-- `utilities/compare_jmeter_runs.py`: Compare two specific test runs
-- `utilities/compare_multi_concurrency.py`: Compare all concurrency levels between two engines (most comprehensive)
+- `utilities/compare_jmeter_runs_from_s3.py`: Compare two specific test runs
+- `utilities/compare_multi_concurrency_from_s3.py`: Compare all concurrency levels between two engines (most comprehensive)
 
-**DBR-Specific:**
-- `utilities/get_dbr_query_history.py`: Retrieve query execution history from Databricks
-- `utilities/test_dbr_connectivity.sh`: Test Databricks connection before running tests
+**Athena Integration:**
+- `utilities/athena/upload_all_runs_to_athena.sh`: Upload all test results to Athena for querying
+- `utilities/athena/upload_runs_index_to_athena.py`: Upload runs index with baseline tracking to Athena
+- `utilities/athena/upload_metadata.py`: Upload cluster metadata to Athena
+- `utilities/athena/run_athena_reports.sh`: Run all standard Athena reports
+- `utilities/athena/generate_comprehensive_reports.sh`: Generate comprehensive analysis reports
+- `utilities/athena/export_all_fields.sh`: Export all 62 fields to CSV for spreadsheet analysis
+- `utilities/athena/regenerate_all_reports.sh`: Regenerate statistics.json for all runs in S3
+- `utilities/athena/setup_all_athena_tables.sh`: Setup all Athena tables at once
+- `utilities/athena/recreate_athena_table.sh`: Recreate Athena table with updated schema
+
+**Baseline Management (Dual-Sync System):**
+
+The framework provides automated baseline tracking using a dual-sync approach (S3 metadata + Athena columns):
+
+- **Best Run (`is_best`)**: Automatically identified as the run with lowest `avg_latency_sec` for each configuration
+- **Baseline Run (`is_baseline`)**: Manually set reference point for comparing new runs (user-controlled)
+
+**Key Scripts:**
+- `utilities/post_test_analysis.sh`: **RECOMMENDED** - Automated post-test workflow that syncs to Athena, compares against baselines, and generates comprehensive reports
+- `utilities/athena/manage_baseline.py`: Mark/unmark baselines and compare runs against baseline
+- `utilities/athena/verify_baseline_sync.py`: Verify S3 and Athena baseline data are synchronized
+- `utilities/athena/query_athena_runs.py`: Query Athena for runs with flexible filtering options
+
+**Quick Usage:**
+```bash
+# Automated analysis (recommended)
+./utilities/post_test_analysis.sh e6data S-2x2 tpcds_29_1tb george
+
+# Manual workflow
+# 1. Sync to Athena (auto-detects best run)
+python3 utilities/athena/upload_runs_index_to_athena.py --from-s3 <s3_path>
+
+# 2. Compare new run against baseline
+python3 utilities/athena/manage_baseline.py compare --run-id <new_run_id> ...
+
+# 3. Mark new baseline (if improved)
+python3 utilities/athena/manage_baseline.py mark --run-id <new_run_id> --user <name> ...
+
+# 4. Verify sync
+python3 utilities/athena/verify_baseline_sync.py --engine e6data --verify-all
+```
+
+**See:** `utilities/README.md` (Athena Integration section) for complete documentation including setup, report generation, and baseline workflow.
+
+**Data Management:**
+- `utilities/manage_invalid_runs.sh`: Mark invalid test runs with metadata flag for filtering in analysis
+- `utilities/mark_best_run.sh`: Mark the best run for a given run_type for quick identification (legacy - use baseline system instead)
 
 ## Key Test Properties
 
@@ -272,7 +423,6 @@ RECYCLE_ON_EOF=false
 JDBC drivers are stored in `jdbc_drivers/` directory:
 
 - E6Data driver: `e6data-jdbc-<version>.jar`
-- DBR driver: `DBRJDBC42-<version>.jar`
 - Drivers must be copied to `apache-jmeter-5.6.3/lib/` for JMeter to load
 
 The `setup_jmeter.sh` script handles this automatically.
@@ -294,13 +444,64 @@ Set `GENERATE_DASHBOARD=false` in test properties to skip HTML generation (saves
 
 ## Common Development Tasks
 
-### Creating New Test Configuration
+### Creating New Test Template for Batch Testing
 
-1. Copy metadata template: `cp metadata_files/e6data_s-2x2_metadata.txt metadata_files/my_config.txt`
-2. Edit cluster configuration JSON and S3 settings
-3. Create/modify test properties: `cp test_properties/sample_test.properties test_properties/my_test.properties`
-4. Edit concurrency level, hold period, query file path
-5. Run via interactive script
+To enable batch testing for a new engine/cluster/benchmark combination:
+
+1. **Create metadata file** (if not exists):
+   ```bash
+   cp metadata_files/e6data_s-2x2_metadata.txt metadata_files/my_engine_my-cluster_metadata.txt
+   ```
+   Edit cluster configuration JSON, S3 settings, and `S3_BASE_PATH`
+
+2. **Create connection properties** (if not exists):
+   ```bash
+   cp connection_properties/sample_connection.properties connection_properties/my_engine_my-cluster_connection.properties
+   ```
+   Edit JDBC connection string, credentials, driver class
+
+3. **Create test properties for each concurrency level** (if not exists):
+   ```bash
+   # Already exists: concurrency_1_test.properties through concurrency_16_test.properties
+   # Only needed if using different concurrency levels
+   cp test_properties/concurrency_4_test.properties test_properties/concurrency_24_test.properties
+   ```
+
+4. **Add query CSV file** (if not exists):
+   ```bash
+   cp data_files/sample_queries.csv data_files/My_Benchmark_queries.csv
+   ```
+
+5. **Create template file**:
+   ```bash
+   cat > test_configs/my_engine_my-cluster_my_benchmark_template.txt << 'EOF'
+   {ENGINE}_{CLUSTER_SIZE}_metadata.txt
+   Test-Plan-Maintain-static-concurrency.jmx
+   concurrency_{CONCURRENCY}_test.properties
+   {ENGINE}_{CLUSTER}_connection.properties
+   My_Benchmark_queries.csv
+   EOF
+   ```
+
+6. **Run batch tests**:
+   ```bash
+   ./utilities/run_all_concurrency.sh my_engine my-cluster my_benchmark
+   ```
+
+### Creating New Test Configuration (Single Run)
+
+For single test runs:
+
+1. Create connection (if not exists): `./create_connection.sh`
+2. Add query CSV file to `data_files/`
+3. Create test config: `./create_test_config.sh`
+   - Select your connection file
+   - Choose test plan type
+   - Select query file
+   - Set parameters (concurrency, QPS, hold period, etc.)
+   - Saves `.env` config to `test_configs/`
+4. Run test: `./run_test.sh test_configs/<your_config>.env`
+   - Override params inline: `CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_configs/<your_config>.env`
 
 ### Adding New Query Set
 

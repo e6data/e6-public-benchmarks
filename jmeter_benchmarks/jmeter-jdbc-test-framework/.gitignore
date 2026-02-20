@@ -3,6 +3,8 @@
 
 # Log file
 *.log
+databricks_jdbc.log.*
+logs/
 
 #ignore entire jmeter installation (downloaded via setup script)
 apache-jmeter-5.6.3/
@@ -36,12 +38,20 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Test input files (environment-specific)
-*_test_input.txt
-*_test_http_input.txt
+# Test config files (user-created, may reference real connections)
+test_configs/*.env
+!test_configs/sample_*.env
+
+# Test config template files (environment-specific)
+test_configs/*.txt
+!test_configs/*_template.txt
+!test_configs/*_sequential.txt
 
 # Test properties CSV files (environment-specific data)
 test_properties/*.csv
+
+# JDBC driver JARs
+jdbc_drivers/*.jar
 
 # Kantar test data
 kantar/

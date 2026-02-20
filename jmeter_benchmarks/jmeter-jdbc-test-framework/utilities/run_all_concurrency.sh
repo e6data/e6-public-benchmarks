@@ -43,7 +43,7 @@ if [ $# -lt 3 ]; then
     echo "  $0 e6data S-2x2 tpcds_29_1tb prod-cluster Test-Plan-Stress-Test.jmx"
     echo ""
     echo "Arguments match S3 structure:"
-    echo "  s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/"
+    echo "  s3://\$S3_BUCKET/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/"
     echo ""
     echo "Note: Test input files use template placeholders substituted at runtime:"
     echo "      {ENGINE}, {CLUSTER_SIZE}, {CONCURRENCY}, {CLUSTER}, {BENCHMARK}"
@@ -57,7 +57,7 @@ BENCHMARK="$3"
 CLUSTER="${4:-default}"  # Default: "default"
 TEST_PLAN_OVERRIDE="${5:-}"  # Empty means use test input file's test plan
 CONCURRENCY_LEVELS=(1 2 4 8 12 16)
-S3_BASE_PATH="s3://e6-jmeter/jmeter-results"
+S3_BASE_PATH="${S3_RESULTS_PATH:-s3://your-s3-bucket/jmeter-results}"
 
 # Validate engine
 if [[ ! "$ENGINE" =~ ^(e6data|dbr)$ ]]; then
@@ -135,7 +135,7 @@ fi
 
 # Check if test input template file exists
 echo "Checking for test input template file..."
-TEST_INPUT_TEMPLATE="test_inputs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_template.txt"
+TEST_INPUT_TEMPLATE="test_configs/${ENGINE}_${CLUSTER_SIZE_NORMALIZED}_${BENCHMARK}_template.txt"
 if [ ! -f "$TEST_INPUT_TEMPLATE" ]; then
     echo ""
     echo -e "${YELLOW}==========================================="
@@ -145,7 +145,7 @@ if [ ! -f "$TEST_INPUT_TEMPLATE" ]; then
     echo "Expected: $TEST_INPUT_TEMPLATE"
     echo ""
     echo "Available template files:"
-    ls -1 test_inputs/*_template.txt 2>/dev/null || echo "  (none found)"
+    ls -1 test_configs/*_template.txt 2>/dev/null || echo "  (none found)"
     echo ""
     exit 1
 else
@@ -240,11 +240,11 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
         TEST_PLAN="$TEST_PLAN_TEMPLATE"
     fi
 
-    # Extract metadata for logging
-    METADATA_PATH="$METADATA_FILE"
+    # Extract metadata for logging (prepend directory path since METADATA_FILE is just filename)
+    METADATA_FULL_PATH="metadata_files/$METADATA_FILE"
     INSTANCE_TYPE="unknown"
-    if [ -f "$METADATA_PATH" ]; then
-        INSTANCE_TYPE=$(grep -o '"instance_type"[[:space:]]*:[[:space:]]*"[^"]*"' "$METADATA_PATH" | cut -d'"' -f4)
+    if [ -f "$METADATA_FULL_PATH" ]; then
+        INSTANCE_TYPE=$(grep -o '"instance_type"[[:space:]]*:[[:space:]]*"[^"]*"' "$METADATA_FULL_PATH" | cut -d'"' -f4)
     fi
 
     QUERY_BASENAME=$(basename "$QUERY_FILE" .csv)

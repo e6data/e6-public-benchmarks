@@ -9,118 +9,164 @@ Usage:
     python utilities/upload_runs_index_to_athena.py reports/runs_index.json
 
     # Generate index and upload directly from S3
-    python utilities/upload_runs_index_to_athena.py --from-s3 s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/
+    python utilities/upload_runs_index_to_athena.py --from-s3 s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_2/
 
     # Dry run (don't upload, just show what would be uploaded)
     python utilities/upload_runs_index_to_athena.py reports/runs_index.json --dry-run
 """
 
-import json
-import sys
 import argparse
+import json
 import subprocess
+import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
-from datetime import datetime
 
 
-def flatten_run_for_athena(run: Dict, metadata: Dict) -> Dict:
+def flatten_run_for_athena(
+    run: Dict, metadata: Dict, baseline_info: Dict = None
+) -> Dict:
     """
     Flatten run data to single-level JSON for Athena.
     Add partition columns from metadata.
+    Add baseline tracking columns.
     """
     flat = {
         # Run identification
-        'run_id': run['run_id'],
-        'run_date': run['run_date'],
-        's3_path': run['s3_path'],
-        'status': run['status'],
-
+        "run_id": run["run_id"],
+        "run_date": run["run_date"],
+        "s3_path": run["s3_path"],
+        "status": run["status"],
         # Cluster info
-        'cluster_size': run['cluster_info']['cluster_size'],
-        'estimated_cores': run['cluster_info']['estimated_cores'],
-        'instance_type': run['cluster_info']['instance_type'],
-        'executors': run['cluster_info']['executors'],
-        'cores_per_executor': run['cluster_info']['cores_per_executor'],
-        'serverless': run['cluster_info']['serverless'],
-        'cluster_hostname': run['cluster_info']['cluster_hostname'],
-
+        "cluster_size": run["cluster_info"]["cluster_size"],
+        "estimated_cores": run["cluster_info"]["estimated_cores"],
+        "instance_type": run["cluster_info"]["instance_type"],
+        "executors": run["cluster_info"]["executors"],
+        "cores_per_executor": run["cluster_info"]["cores_per_executor"],
+        "serverless": run["cluster_info"]["serverless"],
+        "cluster_hostname": run["cluster_info"]["cluster_hostname"],
         # Test config
-        'test_plan_file': run['test_config']['test_plan_file'],
-        'concurrent_threads': run['test_config']['concurrent_threads'],
-        'benchmark': run['test_config']['benchmark'],
-        'total_query_count': run['test_config']['total_query_count'],
-        'hold_period_min': run['test_config']['hold_period_min'],
-        'ramp_up_time_sec': run['test_config']['ramp_up_time_sec'],
-        'query_timeout_sec': run['test_config']['query_timeout_sec'],
-        'random_order': run['test_config']['random_order'],
-
+        "test_plan_file": run["test_config"]["test_plan_file"],
+        "concurrent_threads": run["test_config"]["concurrent_threads"],
+        "benchmark": run["test_config"]["benchmark"],
+        "total_query_count": run["test_config"]["total_query_count"],
+        "hold_period_min": run["test_config"]["hold_period_min"],
+        "ramp_up_time_sec": run["test_config"]["ramp_up_time_sec"],
+        "query_timeout_sec": run["test_config"]["query_timeout_sec"],
+        "random_order": run["test_config"]["random_order"],
         # Results summary
-        'total_samples': run['results_summary']['total_samples'],
-        'actual_considered_queries': run['results_summary']['actual_considered_queries'],
-        'excluded_queries': run['results_summary']['excluded_queries'],
-        'total_success': run['results_summary']['total_success'],
-        'total_failed': run['results_summary']['total_failed'],
-        'error_rate_pct': run['results_summary']['error_rate_pct'],
-        'total_time_taken_sec': run['results_summary']['total_time_taken_sec'],
-
+        "total_samples": run["results_summary"]["total_samples"],
+        "actual_considered_queries": run["results_summary"][
+            "actual_considered_queries"
+        ],
+        "excluded_queries": run["results_summary"]["excluded_queries"],
+        "total_success": run["results_summary"]["total_success"],
+        "total_failed": run["results_summary"]["total_failed"],
+        "error_rate_pct": run["results_summary"]["error_rate_pct"],
+        "total_time_taken_sec": run["results_summary"]["total_time_taken_sec"],
         # Latency stats
-        'avg_latency_sec': run['results_summary']['latency_stats']['avg_latency_sec'],
-        'median_latency_sec': run['results_summary']['latency_stats']['median_latency_sec'],
-        'min_latency_sec': run['results_summary']['latency_stats']['min_latency_sec'],
-        'max_latency_sec': run['results_summary']['latency_stats']['max_latency_sec'],
-        'p50_latency_sec': run['results_summary']['latency_stats']['p50_latency_sec'],
-        'p90_latency_sec': run['results_summary']['latency_stats']['p90_latency_sec'],
-        'p95_latency_sec': run['results_summary']['latency_stats']['p95_latency_sec'],
-        'p99_latency_sec': run['results_summary']['latency_stats']['p99_latency_sec'],
-
+        "avg_latency_sec": run["results_summary"]["latency_stats"]["avg_latency_sec"],
+        "median_latency_sec": run["results_summary"]["latency_stats"][
+            "median_latency_sec"
+        ],
+        "min_latency_sec": run["results_summary"]["latency_stats"]["min_latency_sec"],
+        "max_latency_sec": run["results_summary"]["latency_stats"]["max_latency_sec"],
+        "p50_latency_sec": run["results_summary"]["latency_stats"]["p50_latency_sec"],
+        "p90_latency_sec": run["results_summary"]["latency_stats"]["p90_latency_sec"],
+        "p95_latency_sec": run["results_summary"]["latency_stats"]["p95_latency_sec"],
+        "p99_latency_sec": run["results_summary"]["latency_stats"]["p99_latency_sec"],
         # Throughput
-        'queries_per_minute': run['results_summary']['throughput']['queries_per_minute'],
-        'queries_per_second': run['results_summary']['throughput']['queries_per_second'],
-        'avg_throughput_qpm': run['results_summary']['throughput']['avg_throughput_qpm'],
-
+        "queries_per_minute": run["results_summary"]["throughput"][
+            "queries_per_minute"
+        ],
+        "queries_per_second": run["results_summary"]["throughput"][
+            "queries_per_second"
+        ],
+        "avg_throughput_qpm": run["results_summary"]["throughput"][
+            "avg_throughput_qpm"
+        ],
         # Performance ratings
-        'performance_rating': run['results_summary']['performance_rating'],
-        'consistency_rating': run['results_summary']['consistency_rating'],
-
+        "performance_rating": run["results_summary"]["performance_rating"],
+        "consistency_rating": run["results_summary"]["consistency_rating"],
         # Data transfer
-        'bytes_received_total': run['data_transfer']['bytes_received_total'],
-        'bytes_sent_total': run['data_transfer']['bytes_sent_total'],
-        'avg_bytes_per_query': run['data_transfer']['avg_bytes_per_query'],
-
+        "bytes_received_total": run["data_transfer"]["bytes_received_total"],
+        "bytes_sent_total": run["data_transfer"]["bytes_sent_total"],
+        "avg_bytes_per_query": run["data_transfer"]["avg_bytes_per_query"],
         # Top slowest queries (keep as array for Athena UNNEST)
-        'top_slowest_queries': run['top_slowest_queries'],
-
+        "top_slowest_queries": run["top_slowest_queries"],
         # Run metadata (classification fields)
-        'run_mode': run.get('run_metadata', {}).get('run_mode', 'test'),
-        'customer': run.get('run_metadata', {}).get('customer', 'default'),
-        'config': run.get('run_metadata', {}).get('config', 'default'),
-        'tags': run.get('run_metadata', {}).get('tags', ''),
-        'comments': run.get('run_metadata', {}).get('comments', ''),
-
+        "run_mode": run.get("run_metadata", {}).get("run_mode", "test"),
+        "customer": run.get("run_metadata", {}).get("customer", "default"),
+        "config": run.get("run_metadata", {}).get("config", "default"),
+        "tags": run.get("run_metadata", {}).get("tags", ""),
+        "comments": run.get("run_metadata", {}).get("comments", ""),
         # Outlier detection info
-        'outlier_severity': run.get('outlier_info', {}).get('outlier_severity'),
-        'p90_z_score': run.get('outlier_info', {}).get('p90_z_score'),
-        'p90_deviation_pct': run.get('outlier_info', {}).get('p90_deviation_pct'),
-        'p95_z_score': run.get('outlier_info', {}).get('p95_z_score'),
-        'p95_deviation_pct': run.get('outlier_info', {}).get('p95_deviation_pct'),
-        'p99_z_score': run.get('outlier_info', {}).get('p99_z_score'),
-        'p99_deviation_pct': run.get('outlier_info', {}).get('p99_deviation_pct'),
-
+        "is_outlier": run.get("status_info", {}).get(
+            "is_outlier", "no"
+        ),  # Manual outlier flag
+        "outlier_severity": run.get("outlier_info", {}).get("outlier_severity"),
+        "p90_z_score": run.get("outlier_info", {}).get("p90_z_score"),
+        "p90_deviation_pct": run.get("outlier_info", {}).get("p90_deviation_pct"),
+        "p95_z_score": run.get("outlier_info", {}).get("p95_z_score"),
+        "p95_deviation_pct": run.get("outlier_info", {}).get("p95_deviation_pct"),
+        "p99_z_score": run.get("outlier_info", {}).get("p99_z_score"),
+        "p99_deviation_pct": run.get("outlier_info", {}).get("p99_deviation_pct"),
+        # Baseline tracking columns (NEW)
+        "is_best": False,  # Will be computed below
+        "is_baseline": False,  # Will be loaded from S3 baseline metadata
+        "baseline_marked_by": None,
+        "baseline_marked_date": None,
+        "baseline_notes": None,
         # Partition columns (NOT part of table schema, used for S3 path)
-        'engine': metadata['engine'],
-        'cluster_size_partition': metadata['cluster_size'],
-        'benchmark_partition': metadata['benchmark'],
-        'run_type': metadata['run_type']
+        "engine": metadata["engine"],
+        "cluster_size_partition": metadata["cluster_size"],
+        "benchmark_partition": metadata["benchmark"],
+        "run_type": metadata["run_type"],
     }
+
+    # Load baseline info if provided
+    if baseline_info and run["run_id"] == baseline_info.get("run_id"):
+        flat["is_baseline"] = True
+        flat["baseline_marked_by"] = baseline_info.get("marked_by")
+        flat["baseline_marked_date"] = baseline_info.get("marked_date")
+        flat["baseline_notes"] = baseline_info.get("notes")
 
     return flat
 
 
-def upload_to_s3(index_file: str, s3_base: str = 's3://e6-jmeter/jmeter-results-index', dry_run: bool = False):
+def load_baseline_metadata(
+    engine: str, cluster_size: str, benchmark: str, run_type: str
+) -> Dict:
+    """Load baseline metadata from S3 if it exists."""
+    import boto3
+
+    s3 = boto3.client("s3")
+    bucket = "e6-jmeter"
+    key = (
+        f"jmeter-results-index/baselines/"
+        f"engine={engine}/"
+        f"cluster_size={cluster_size}/"
+        f"benchmark={benchmark}/"
+        f"run_type={run_type}/"
+        f"baseline_metadata.json"
+    )
+
+    try:
+        response = s3.get_object(Bucket=bucket, Key=key)
+        return json.loads(response["Body"].read())
+    except:
+        return None
+
+
+def upload_to_s3(index_file: str, s3_base: str = None, dry_run: bool = False):
     """
     Upload runs index data to S3 in partitioned structure for Athena.
+
+    Automatically marks:
+    - is_best = true for the run with lowest avg_latency_sec
+    - is_baseline = true for the run marked as baseline in S3 metadata
 
     Target structure:
     s3://bucket/jmeter-results-index/runs/
@@ -130,12 +176,19 @@ def upload_to_s3(index_file: str, s3_base: str = 's3://e6-jmeter/jmeter-results-
                     run_type=concurrency_2/
                         data.jsonl  (one JSON object per line)
     """
+    import os
+
+    if s3_base is None:
+        s3_base = os.environ.get(
+            "S3_INDEX_PATH", "s3://your-s3-bucket/jmeter-results-index"
+        )
+
     # Load index
-    with open(index_file, 'r') as f:
+    with open(index_file, "r") as f:
         index = json.load(f)
 
-    metadata = index['metadata']
-    runs = index['runs']
+    metadata = index["metadata"]
+    runs = index["runs"]
 
     if not runs:
         print("⚠️  No runs found in index file")
@@ -147,20 +200,51 @@ def upload_to_s3(index_file: str, s3_base: str = 's3://e6-jmeter/jmeter-results-
     print(f"   Benchmark: {metadata['benchmark']}")
     print(f"   Run Type: {metadata['run_type']}")
 
-    # Flatten all runs
-    flat_runs = [flatten_run_for_athena(run, metadata) for run in runs]
+    # Load baseline metadata from S3
+    baseline_info = load_baseline_metadata(
+        metadata["engine"],
+        metadata["cluster_size"],
+        metadata["benchmark"],
+        metadata["run_type"],
+    )
+
+    if baseline_info:
+        print(
+            f"   Baseline: {baseline_info['run_id']} (marked by {baseline_info.get('marked_by', 'unknown')})"
+        )
+
+    # Find best run (lowest avg_latency_sec)
+    best_run = min(
+        runs, key=lambda r: r["results_summary"]["latency_stats"]["avg_latency_sec"]
+    )
+    best_run_id = best_run["run_id"]
+    print(
+        f"   Best Run: {best_run_id} (avg={best_run['results_summary']['latency_stats']['avg_latency_sec']:.2f}s)"
+    )
+
+    # Flatten all runs with baseline info
+    flat_runs = []
+    for run in runs:
+        flat = flatten_run_for_athena(run, metadata, baseline_info)
+        # Mark best run
+        if run["run_id"] == best_run_id:
+            flat["is_best"] = True
+        flat_runs.append(flat)
 
     # Create JSONL content (one JSON per line)
-    jsonl_content = '\n'.join([json.dumps(run) for run in flat_runs])
+    jsonl_content = "\n".join([json.dumps(run) for run in flat_runs])
 
     # Build S3 path with partitions
+    # Use timestamped filename to enable append behavior
+    # Athena will read all .jsonl files in the partition directory
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     s3_path = (
         f"{s3_base.rstrip('/')}/runs/"
         f"engine={metadata['engine']}/"
         f"cluster_size={metadata['cluster_size']}/"
         f"benchmark={metadata['benchmark']}/"
         f"run_type={metadata['run_type']}/"
-        f"data.jsonl"
+        f"data_{timestamp}.jsonl"
     )
 
     print(f"\n📍 Target S3 path:")
@@ -169,18 +253,20 @@ def upload_to_s3(index_file: str, s3_base: str = 's3://e6-jmeter/jmeter-results-
     if dry_run:
         print("\n🔍 DRY RUN - Would upload this content:")
         print("-" * 80)
-        print(jsonl_content[:500] + "..." if len(jsonl_content) > 500 else jsonl_content)
+        print(
+            jsonl_content[:500] + "..." if len(jsonl_content) > 500 else jsonl_content
+        )
         print("-" * 80)
         print(f"\n✓ {len(flat_runs)} runs ready to upload")
         return
 
     # Write to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as tmp:
         tmp.write(jsonl_content)
         tmp_path = tmp.name
 
     # Upload to S3
-    cmd = ['aws', 's3', 'cp', tmp_path, s3_path]
+    cmd = ["aws", "s3", "cp", tmp_path, s3_path]
 
     try:
         print("\n☁️  Uploading to S3...")
@@ -218,7 +304,7 @@ def generate_and_upload_from_s3(s3_path: str, s3_base: str, dry_run: bool = Fals
         sys.exit(1)
 
     # Save to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
         json.dump(index, tmp, indent=2)
         tmp_path = tmp.name
 
@@ -231,33 +317,33 @@ def generate_and_upload_from_s3(s3_path: str, s3_base: str, dry_run: bool = Fals
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Upload runs index to S3 for Athena querying',
+        description="Upload runs index to S3 for Athena querying",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
 
     parser.add_argument(
-        'index_file',
-        nargs='?',
-        help='Path to runs_index.json file (not needed with --from-s3)'
+        "index_file",
+        nargs="?",
+        help="Path to runs_index.json file (not needed with --from-s3)",
     )
 
     parser.add_argument(
-        '--from-s3',
-        help='Generate index from S3 path and upload directly',
-        metavar='S3_PATH'
+        "--from-s3",
+        help="Generate index from S3 path and upload directly",
+        metavar="S3_PATH",
     )
 
     parser.add_argument(
-        '--s3-base',
-        help='Base S3 path for Athena data (default: s3://e6-jmeter/jmeter-results-index)',
-        default='s3://e6-jmeter/jmeter-results-index'
+        "--s3-base",
+        help="Base S3 path for Athena data (default: $S3_INDEX_PATH or s3://your-s3-bucket/jmeter-results-index)",
+        default=None,
     )
 
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be uploaded without actually uploading'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be uploaded without actually uploading",
     )
 
     args = parser.parse_args()
@@ -275,5 +361,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

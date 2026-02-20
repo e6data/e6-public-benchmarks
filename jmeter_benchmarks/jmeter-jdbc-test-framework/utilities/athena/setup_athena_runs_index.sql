@@ -74,13 +74,21 @@ CREATE EXTERNAL TABLE IF NOT EXISTS jmeter_runs_index (
     comments STRING,
 
     -- Outlier detection info (for anomaly filtering)
+    is_outlier STRING,
     outlier_severity STRING,
     p90_z_score DOUBLE,
     p90_deviation_pct DOUBLE,
     p95_z_score DOUBLE,
     p95_deviation_pct DOUBLE,
     p99_z_score DOUBLE,
-    p99_deviation_pct DOUBLE
+    p99_deviation_pct DOUBLE,
+
+    -- Baseline tracking columns
+    is_best BOOLEAN,
+    is_baseline BOOLEAN,
+    baseline_marked_by STRING,
+    baseline_marked_date STRING,
+    baseline_notes STRING
 )
 PARTITIONED BY (
     engine STRING,
@@ -92,7 +100,8 @@ ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
 WITH SERDEPROPERTIES (
     'ignore.malformed.json' = 'true'
 )
-LOCATION 's3://e6-jmeter/jmeter-results-index/runs/'
+-- UPDATE: Replace with your S3 bucket
+LOCATION 's3://your-s3-bucket/jmeter-results-index/runs/'
 TBLPROPERTIES (
     'projection.enabled' = 'true',
     'projection.engine.type' = 'enum',
@@ -103,7 +112,7 @@ TBLPROPERTIES (
     'projection.benchmark_partition.values' = 'tpcds_29_1tb,tpcds_51_1tb,kantar',
     'projection.run_type.type' = 'enum',
     'projection.run_type.values' = 'concurrency_1,concurrency_2,concurrency_4,concurrency_8,concurrency_12,concurrency_16,sequential',
-    'storage.location.template' = 's3://e6-jmeter/jmeter-results-index/runs/engine=${engine}/cluster_size=${cluster_size_partition}/benchmark=${benchmark_partition}/run_type=${run_type}'
+    'storage.location.template' = 's3://your-s3-bucket/jmeter-results-index/runs/engine=${engine}/cluster_size=${cluster_size_partition}/benchmark=${benchmark_partition}/run_type=${run_type}'
 );
 
 -- Sample queries for common analysis patterns:

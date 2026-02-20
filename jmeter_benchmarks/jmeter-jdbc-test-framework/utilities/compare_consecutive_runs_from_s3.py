@@ -5,7 +5,7 @@ Useful for regression testing and performance tracking over time.
 
 Usage:
     python compare_consecutive_runs_from_s3.py \\
-        --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+        --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 
 This will:
 1. Find all concurrency levels under the base path
@@ -14,19 +14,29 @@ This will:
 """
 
 import argparse
-import sys
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Add utilities to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
-from jmeter_s3_utils import list_s3_files, load_statistics_from_s3, normalize_query_name, extract_query_metrics
+from jmeter_s3_utils import (
+    extract_query_metrics,
+    list_s3_files,
+    load_statistics_from_s3,
+    normalize_query_name,
+)
 
 
-def find_two_latest_runs(s3_path: str, base_s3_bucket: str, concurrency: int,
-                          run_id1: Optional[str] = None, run_id2: Optional[str] = None) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+def find_two_latest_runs(
+    s3_path: str,
+    base_s3_bucket: str,
+    concurrency: int,
+    run_id1: Optional[str] = None,
+    run_id2: Optional[str] = None,
+) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
     Find statistics.json files for comparison.
 
@@ -45,7 +55,7 @@ def find_two_latest_runs(s3_path: str, base_s3_bucket: str, concurrency: int,
     """
     # List all run_id folders in this concurrency path
     # New structure: .../run_type=concurrency_X/run_id=YYYYMMDD-HHMMSS/statistics.json
-    files = list_s3_files(s3_path, 'run_id=')
+    files = list_s3_files(s3_path, "run_id=")
 
     if not files:
         print(f"⚠️  No run_id folders found in {s3_path}")
@@ -54,7 +64,7 @@ def find_two_latest_runs(s3_path: str, base_s3_bucket: str, concurrency: int,
     # Extract unique run_ids from folder paths
     run_ids = set()
     for f in files:
-        match = re.search(r'run_id=(\d{8}-\d{6})/', f)
+        match = re.search(r"run_id=(\d{8}-\d{6})/", f)
         if match:
             run_ids.add(match.group(1))
 
@@ -81,14 +91,18 @@ def find_two_latest_runs(s3_path: str, base_s3_bucket: str, concurrency: int,
         previous_ts = format_run_id(run_id1)
         latest_ts = format_run_id(run_id2)
 
-        print(f"✓ C={concurrency}: Comparing {previous_ts} ({run_id1}) → {latest_ts} ({run_id2})")
+        print(
+            f"✓ C={concurrency}: Comparing {previous_ts} ({run_id1}) → {latest_ts} ({run_id2})"
+        )
 
         return previous, latest, run_id1, run_id2
 
     else:
         # Find two most recent runs
         if len(run_ids) < 2:
-            print(f"⚠️  Only found {len(run_ids)} run(s) for C={concurrency}, need at least 2 to compare")
+            print(
+                f"⚠️  Only found {len(run_ids)} run(s) for C={concurrency}, need at least 2 to compare"
+            )
             return None, None, None, None
 
         latest_run_id = run_ids[0]
@@ -96,8 +110,12 @@ def find_two_latest_runs(s3_path: str, base_s3_bucket: str, concurrency: int,
 
         # Build S3 paths to statistics.json files
         path_base = s3_path.replace(f"s3://{base_s3_bucket}/", "")
-        latest = f"s3://{base_s3_bucket}/{path_base}run_id={latest_run_id}/statistics.json"
-        previous = f"s3://{base_s3_bucket}/{path_base}run_id={previous_run_id}/statistics.json"
+        latest = (
+            f"s3://{base_s3_bucket}/{path_base}run_id={latest_run_id}/statistics.json"
+        )
+        previous = (
+            f"s3://{base_s3_bucket}/{path_base}run_id={previous_run_id}/statistics.json"
+        )
 
         # Format timestamps for display
         latest_ts = format_run_id(latest_run_id)
@@ -119,8 +137,8 @@ def format_run_id(run_id: str) -> str:
         Formatted timestamp string like "2025-10-31 07:06:14"
     """
     try:
-        dt = datetime.strptime(run_id, '%Y%m%d-%H%M%S')
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
+        dt = datetime.strptime(run_id, "%Y%m%d-%H%M%S")
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
     except ValueError:
         return run_id
 
@@ -135,7 +153,7 @@ def extract_run_id_from_path(path: str) -> str:
     Returns:
         Run ID string like "20251031-070614" or "unknown"
     """
-    match = re.search(r'run_id=(\d{8}-\d{6})', path)
+    match = re.search(r"run_id=(\d{8}-\d{6})", path)
     if match:
         return match.group(1)
     return "unknown"
@@ -148,7 +166,7 @@ def find_concurrency_runs(base_s3_path: str) -> List[Tuple[int, str]]:
     Returns:
         List of (concurrency_level, full_s3_path) tuples, sorted by concurrency
     """
-    base_path = base_s3_path.rstrip('/') + '/'
+    base_path = base_s3_path.rstrip("/") + "/"
     files = list_s3_files(base_path)
 
     concurrency_runs = set()
@@ -156,19 +174,19 @@ def find_concurrency_runs(base_s3_path: str) -> List[Tuple[int, str]]:
         # Try both formats:
         # 1. run_type=concurrency_X/
         # 2. concurrency_X/ (direct)
-        match = re.search(r'run_type=(concurrency_\d+)/', file)
+        match = re.search(r"run_type=(concurrency_\d+)/", file)
         if match:
             run_type = match.group(1)
-            concurrency = int(run_type.split('_')[1])
-            full_path = base_path + 'run_type=' + run_type + '/'
+            concurrency = int(run_type.split("_")[1])
+            full_path = base_path + "run_type=" + run_type + "/"
             concurrency_runs.add((concurrency, full_path))
         else:
             # Try direct format
-            match = re.search(r'/(concurrency_\d+)/', file)
+            match = re.search(r"/(concurrency_\d+)/", file)
             if match:
                 run_type = match.group(1)
-                concurrency = int(run_type.split('_')[1])
-                full_path = base_path + run_type + '/'
+                concurrency = int(run_type.split("_")[1])
+                full_path = base_path + run_type + "/"
                 concurrency_runs.add((concurrency, full_path))
 
     return sorted(list(concurrency_runs))
@@ -205,47 +223,44 @@ def compare_runs(previous_stats: Dict, latest_stats: Dict, concurrency: int) -> 
         Dictionary with comparison metrics including query-by-query analysis
     """
     result = {
-        'concurrency': concurrency,
-        'previous': {},
-        'latest': {},
-        'changes': {},
-        'queries': []
+        "concurrency": concurrency,
+        "previous": {},
+        "latest": {},
+        "changes": {},
+        "queries": [],
     }
 
     # Get overall metrics using 'Total' key
-    prev_metrics = extract_query_metrics(previous_stats, 'Total')
-    latest_metrics = extract_query_metrics(latest_stats, 'Total')
+    prev_metrics = extract_query_metrics(previous_stats, "Total")
+    latest_metrics = extract_query_metrics(latest_stats, "Total")
 
     if not prev_metrics or not latest_metrics:
         print(f"⚠️  Warning: Could not extract Total metrics for C={concurrency}")
         return result
 
-    metrics = ['avg', 'median', 'p90', 'p95', 'p99']
+    metrics = ["avg", "median", "p90", "p95", "p99"]
 
     for metric in metrics:
         prev_val = prev_metrics.get(metric, 0)
         latest_val = latest_metrics.get(metric, 0)
 
-        result['previous'][metric] = prev_val
-        result['latest'][metric] = latest_val
+        result["previous"][metric] = prev_val
+        result["latest"][metric] = latest_val
 
         pct_change, trend = calculate_change(prev_val, latest_val)
-        result['changes'][metric] = {
-            'percent': pct_change,
-            'trend': trend
-        }
+        result["changes"][metric] = {"percent": pct_change, "trend": trend}
 
     # Calculate sample counts
-    result['previous']['samples'] = prev_metrics.get('samples', 0)
-    result['latest']['samples'] = latest_metrics.get('samples', 0)
+    result["previous"]["samples"] = prev_metrics.get("samples", 0)
+    result["latest"]["samples"] = latest_metrics.get("samples", 0)
 
     # Query-by-query comparison
     query_names = set()
     for key in previous_stats.keys():
-        if key != 'Total':
+        if key != "Total":
             query_names.add(key)
     for key in latest_stats.keys():
-        if key != 'Total':
+        if key != "Total":
             query_names.add(key)
 
     for query_name in sorted(query_names):
@@ -253,26 +268,29 @@ def compare_runs(previous_stats: Dict, latest_stats: Dict, concurrency: int) -> 
         latest_query = extract_query_metrics(latest_stats, query_name)
 
         if prev_query and latest_query:
-            prev_avg = prev_query['avg']
-            latest_avg = latest_query['avg']
+            prev_avg = prev_query["avg"]
+            latest_avg = latest_query["avg"]
             pct_change, trend = calculate_change(prev_avg, latest_avg)
 
-            result['queries'].append({
-                'name': query_name,
-                'previous_avg': prev_avg,
-                'latest_avg': latest_avg,
-                'change_pct': pct_change,
-                'trend': trend
-            })
+            result["queries"].append(
+                {
+                    "name": query_name,
+                    "previous_avg": prev_avg,
+                    "latest_avg": latest_avg,
+                    "change_pct": pct_change,
+                    "trend": trend,
+                }
+            )
 
     return result
 
 
-def generate_markdown_report(comparisons: List[Dict], engine: str, cluster: str,
-                            benchmark: str, output_path: str):
+def generate_markdown_report(
+    comparisons: List[Dict], engine: str, cluster: str, benchmark: str, output_path: str
+):
     """Generate markdown comparison report."""
 
-    timestamp = datetime.now().strftime('%Y%m%d')
+    timestamp = datetime.now().strftime("%Y%m%d")
 
     lines = [
         f"# Consecutive Run Comparison: {engine.upper()}",
@@ -285,62 +303,68 @@ def generate_markdown_report(comparisons: List[Dict], engine: str, cluster: str,
         "---",
         "",
         "## Performance Changes by Concurrency Level",
-        ""
+        "",
     ]
 
     # Overall summary table
-    lines.extend([
-        "| Concurrency | Previous Avg | Latest Avg | Change | Trend |",
-        "|-------------|--------------|------------|--------|-------|"
-    ])
+    lines.extend(
+        [
+            "| Concurrency | Previous Avg | Latest Avg | Change | Trend |",
+            "|-------------|--------------|------------|--------|-------|",
+        ]
+    )
 
     for comp in comparisons:
-        c = comp['concurrency']
-        prev_avg = comp['previous']['avg']
-        latest_avg = comp['latest']['avg']
-        change_pct = comp['changes']['avg']['percent']
-        trend = comp['changes']['avg']['trend']
+        c = comp["concurrency"]
+        prev_avg = comp["previous"]["avg"]
+        latest_avg = comp["latest"]["avg"]
+        change_pct = comp["changes"]["avg"]["percent"]
+        trend = comp["changes"]["avg"]["trend"]
 
         lines.append(
             f"| **C={c}** | {prev_avg:.2f} sec | {latest_avg:.2f} sec | "
             f"{change_pct:+.1f}% | {trend} |"
         )
 
-    lines.extend([
-        "",
-        "**Legend**:",
-        "- ⬇️ 🎉 = Improved (>2% faster)",
-        "- ⬆️ 🚨 = Degraded (>2% slower)",
-        "- ➖ = Stable (within ±2%)",
-        "",
-        "---",
-        ""
-    ])
+    lines.extend(
+        [
+            "",
+            "**Legend**:",
+            "- ⬇️ 🎉 = Improved (>2% faster)",
+            "- ⬆️ 🚨 = Degraded (>2% slower)",
+            "- ➖ = Stable (within ±2%)",
+            "",
+            "---",
+            "",
+        ]
+    )
 
     # Detailed breakdown by concurrency
     for comp in comparisons:
-        c = comp['concurrency']
-        lines.extend([
-            f"## Concurrency Level: C={c}",
-            "",
-            "| Metric | Previous Run | Latest Run | Change | Trend |",
-            "|--------|--------------|------------|--------|-------|"
-        ])
+        c = comp["concurrency"]
+        lines.extend(
+            [
+                f"## Concurrency Level: C={c}",
+                "",
+                "| Metric | Previous Run | Latest Run | Change | Trend |",
+                "|--------|--------------|------------|--------|-------|",
+            ]
+        )
 
-        metrics = ['avg', 'median', 'p90', 'p95', 'p99']
+        metrics = ["avg", "median", "p90", "p95", "p99"]
         metric_labels = {
-            'avg': 'Average',
-            'median': 'Median (p50)',
-            'p90': 'p90',
-            'p95': 'p95',
-            'p99': 'p99'
+            "avg": "Average",
+            "median": "Median (p50)",
+            "p90": "p90",
+            "p95": "p95",
+            "p99": "p99",
         }
 
         for metric in metrics:
-            prev_val = comp['previous'][metric]
-            latest_val = comp['latest'][metric]
-            change_pct = comp['changes'][metric]['percent']
-            trend = comp['changes'][metric]['trend']
+            prev_val = comp["previous"][metric]
+            latest_val = comp["latest"][metric]
+            change_pct = comp["changes"][metric]["percent"]
+            trend = comp["changes"][metric]["trend"]
 
             lines.append(
                 f"| **{metric_labels[metric]}** | {prev_val:.2f} sec | "
@@ -348,46 +372,43 @@ def generate_markdown_report(comparisons: List[Dict], engine: str, cluster: str,
             )
 
         # Sample counts
-        prev_samples = comp['previous']['samples']
-        latest_samples = comp['latest']['samples']
-        lines.extend([
-            "",
-            f"**Sample Counts**: Previous={prev_samples}, Latest={latest_samples}",
-            ""
-        ])
+        prev_samples = comp["previous"]["samples"]
+        latest_samples = comp["latest"]["samples"]
+        lines.extend(
+            [
+                "",
+                f"**Sample Counts**: Previous={prev_samples}, Latest={latest_samples}",
+                "",
+            ]
+        )
 
         # Query-by-query comparison
-        if comp.get('queries'):
-            lines.extend([
-                "### Query-by-Query Comparison",
-                "",
-                "| Query | Previous Avg | Latest Avg | Change | Trend |",
-                "|-------|--------------|------------|--------|-------|"
-            ])
+        if comp.get("queries"):
+            lines.extend(
+                [
+                    "### Query-by-Query Comparison",
+                    "",
+                    "| Query | Previous Avg | Latest Avg | Change | Trend |",
+                    "|-------|--------------|------------|--------|-------|",
+                ]
+            )
 
-            for query in comp['queries']:
-                q_name = query['name']
-                prev_avg = query['previous_avg']
-                latest_avg = query['latest_avg']
-                change_pct = query['change_pct']
-                trend = query['trend']
+            for query in comp["queries"]:
+                q_name = query["name"]
+                prev_avg = query["previous_avg"]
+                latest_avg = query["latest_avg"]
+                change_pct = query["change_pct"]
+                trend = query["trend"]
 
                 lines.append(
                     f"| {q_name} | {prev_avg:.2f}s | {latest_avg:.2f}s | "
                     f"{change_pct:+.1f}% | {trend} |"
                 )
 
-        lines.extend([
-            "",
-            "---",
-            ""
-        ])
+        lines.extend(["", "---", ""])
 
     # Summary findings
-    lines.extend([
-        "## Summary",
-        ""
-    ])
+    lines.extend(["## Summary", ""])
 
     # Count improvements, degradations, stable
     improvements = 0
@@ -395,7 +416,7 @@ def generate_markdown_report(comparisons: List[Dict], engine: str, cluster: str,
     stable = 0
 
     for comp in comparisons:
-        change = comp['changes']['avg']['percent']
+        change = comp["changes"]["avg"]["percent"]
         if change < -2:
             improvements += 1
         elif change > 2:
@@ -405,13 +426,15 @@ def generate_markdown_report(comparisons: List[Dict], engine: str, cluster: str,
 
     total = len(comparisons)
 
-    lines.extend([
-        f"- **Total Concurrency Levels Compared**: {total}",
-        f"- **Improvements** (>2% faster): {improvements} ({improvements/total*100:.0f}%)",
-        f"- **Degradations** (>2% slower): {degradations} ({degradations/total*100:.0f}%)",
-        f"- **Stable** (within ±2%): {stable} ({stable/total*100:.0f}%)",
-        ""
-    ])
+    lines.extend(
+        [
+            f"- **Total Concurrency Levels Compared**: {total}",
+            f"- **Improvements** (>2% faster): {improvements} ({improvements / total * 100:.0f}%)",
+            f"- **Degradations** (>2% slower): {degradations} ({degradations / total * 100:.0f}%)",
+            f"- **Stable** (within ±2%): {stable} ({stable / total * 100:.0f}%)",
+            "",
+        ]
+    )
 
     # Overall verdict
     if improvements > degradations:
@@ -421,61 +444,53 @@ def generate_markdown_report(comparisons: List[Dict], engine: str, cluster: str,
     else:
         lines.append("### ➖ Overall Verdict: **Performance Stable**")
 
-    lines.extend([
-        "",
-        "---",
-        "",
-        f"**Generated from**: {output_path}",
-        ""
-    ])
+    lines.extend(["", "---", "", f"**Generated from**: {output_path}", ""])
 
     # Write to file
-    with open(output_path, 'w') as f:
-        f.write('\n'.join(lines))
+    with open(output_path, "w") as f:
+        f.write("\n".join(lines))
 
     print(f"\n✅ Markdown report written to: {output_path}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Compare consecutive runs of the same engine/cluster/benchmark',
+        description="Compare consecutive runs of the same engine/cluster/benchmark",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     # Compare two most recent runs automatically
     python compare_consecutive_runs_from_s3.py \\
-        --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+        --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 
     # Compare specific run IDs
     python compare_consecutive_runs_from_s3.py \\
-        --base-path s3://e6-jmeter/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \\
+        --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \\
         --run-id1 20251030-171659 \\
         --run-id2 20251031-070614
 
 This will find all concurrency levels and compare the specified runs (or two most recent if not specified).
-        """
+        """,
     )
 
     parser.add_argument(
-        '--base-path',
-        required=True,
-        help='Base S3 path containing concurrency runs'
+        "--base-path", required=True, help="Base S3 path containing concurrency runs"
     )
 
     parser.add_argument(
-        '--output-dir',
-        default='reports',
-        help='Output directory for reports (default: reports/)'
+        "--output-dir",
+        default="reports",
+        help="Output directory for reports (default: reports/)",
     )
 
     parser.add_argument(
-        '--run-id1',
-        help='First/previous run ID to compare (format: YYYYMMDD-HHMMSS). If not provided, uses 2nd most recent run.'
+        "--run-id1",
+        help="First/previous run ID to compare (format: YYYYMMDD-HHMMSS). If not provided, uses 2nd most recent run.",
     )
 
     parser.add_argument(
-        '--run-id2',
-        help='Second/latest run ID to compare (format: YYYYMMDD-HHMMSS). If not provided, uses most recent run.'
+        "--run-id2",
+        help="Second/latest run ID to compare (format: YYYYMMDD-HHMMSS). If not provided, uses most recent run.",
     )
 
     args = parser.parse_args()
@@ -486,7 +501,7 @@ This will find all concurrency levels and compare the specified runs (or two mos
         sys.exit(1)
 
     # Parse bucket and metadata from path
-    bucket_match = re.search(r's3://([^/]+)/', args.base_path)
+    bucket_match = re.search(r"s3://([^/]+)/", args.base_path)
     if not bucket_match:
         print("❌ ERROR: Cannot parse S3 bucket from path")
         sys.exit(1)
@@ -495,8 +510,7 @@ This will find all concurrency levels and compare the specified runs (or two mos
 
     # Parse engine/cluster/benchmark from path
     match = re.search(
-        r'engine=([^/]+)/cluster_size=([^/]+)/benchmark=([^/]+)',
-        args.base_path
+        r"engine=([^/]+)/cluster_size=([^/]+)/benchmark=([^/]+)", args.base_path
     )
     if not match:
         print("❌ ERROR: Cannot parse engine/cluster/benchmark from path")
@@ -507,9 +521,9 @@ This will find all concurrency levels and compare the specified runs (or two mos
     cluster = match.group(2)
     benchmark = match.group(3)
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Comparing Consecutive Runs")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Engine: {engine}")
     print(f"Cluster: {cluster}")
     print(f"Benchmark: {benchmark}")
@@ -518,7 +532,7 @@ This will find all concurrency levels and compare the specified runs (or two mos
         print(f"Run ID 2: {args.run_id2}")
     else:
         print("Mode: Automatic (comparing 2 most recent runs)")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     # Find all concurrency runs
     print("🔍 Finding concurrency levels...")
@@ -537,16 +551,14 @@ This will find all concurrency levels and compare the specified runs (or two mos
     run_id2_actual = None
 
     for concurrency, s3_path in concurrency_runs:
-        print(f"\n{'─'*70}")
+        print(f"\n{'─' * 70}")
         print(f"Concurrency Level: C={concurrency}")
-        print(f"{'─'*70}")
+        print(f"{'─' * 70}")
 
         # Find two runs to compare (specific run IDs or latest two)
         # Returns: (previous_file, latest_file, previous_run_id, latest_run_id)
         previous_file, latest_file, prev_run_id, latest_run_id = find_two_latest_runs(
-            s3_path, bucket, concurrency,
-            run_id1=args.run_id1,
-            run_id2=args.run_id2
+            s3_path, bucket, concurrency, run_id1=args.run_id1, run_id2=args.run_id2
         )
 
         if not latest_file or not previous_file:
@@ -571,28 +583,30 @@ This will find all concurrency levels and compare the specified runs (or two mos
         comparisons.append(comparison)
 
         # Show quick summary
-        prev_avg = comparison['previous']['avg']
-        latest_avg = comparison['latest']['avg']
-        change = comparison['changes']['avg']['percent']
-        trend = comparison['changes']['avg']['trend']
+        prev_avg = comparison["previous"]["avg"]
+        latest_avg = comparison["latest"]["avg"]
+        change = comparison["changes"]["avg"]["percent"]
+        trend = comparison["changes"]["avg"]["trend"]
 
-        print(f"📊 Average Latency: {prev_avg:.2f}s → {latest_avg:.2f}s ({change:+.1f}%) {trend}")
+        print(
+            f"📊 Average Latency: {prev_avg:.2f}s → {latest_avg:.2f}s ({change:+.1f}%) {trend}"
+        )
 
     if not comparisons:
         print("\n❌ No comparisons could be performed")
         sys.exit(1)
 
     # Generate report
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("Generating Reports")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     # Create filename with run IDs
     if run_id1_actual and run_id2_actual:
         md_filename = f"{engine}_{cluster}_ConsecutiveRuns_{run_id1_actual}_vs_{run_id2_actual}.md"
     else:
         # Fallback to timestamp if run IDs not available
-        timestamp = datetime.now().strftime('%Y%m%d')
+        timestamp = datetime.now().strftime("%Y%m%d")
         md_filename = f"{engine}_{cluster}_ConsecutiveRuns_{timestamp}.md"
 
     md_path = Path(args.output_dir) / md_filename
@@ -600,10 +614,10 @@ This will find all concurrency levels and compare the specified runs (or two mos
 
     generate_markdown_report(comparisons, engine, cluster, benchmark, str(md_path))
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("✅ Comparison Complete!")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

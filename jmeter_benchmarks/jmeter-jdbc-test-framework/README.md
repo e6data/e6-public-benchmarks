@@ -16,9 +16,9 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 
 - **Simple setup**:  
   You only need to:  
-  1. Create a `connection_properties` file in the `connection_properties/` folder  
-  2. Create a `test_properties` file in the `test_properties/` folder  
-  3. Add your queries as a `.csv` file in the `data_files/` folder  
+  1. Create a `connection_properties` file using `./create_connection.sh`  
+  2. Add your queries as a `.csv` file in the `data_files/` folder  
+  3. Run `./run_test.sh` or `./run_jmeter_tests_interactive.sh` for guided setup  
 
 - **Multi-database support**:
   The JMeter JDBC test plans can run against multiple databases that support JDBC connections (e.g., **E6Data** and others) using the appropriate `.properties` file.  
@@ -28,6 +28,7 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 
 ## Test Plans Available
 
+**JDBC Test Plans:**
 - **Test-Plan-Run-Once-static-concurrency.jmx** - Run all queries once at a fixed concurrency level and then complete
 - **Test-Plan-Maintain-static-concurrency.jmx** - Maintain fixed load/concurrency as per concurrency till hold period in test.properties 
 - **Test-Plan-Constant-QPS-On-Arrivals.jmx** - Fire queries at constant queries-per-second rate using QPS till hold period in test.properties
@@ -35,6 +36,11 @@ Framework to run **JMeter JDBC test plans** for database load and performance te
 - **Test-Plan-Fire-QPS-with-load-profile.jmx** - Variable QPS rate using load profile CSV file
 - **Test-Plan-Fire-QPM-with-load-profile.jmx** - Variable QPM rate using load profile CSV file
 - **Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx** - Variable concurrency using load profile CSV file
+
+**HTTP Endpoint Test Plans:**
+- **Test-Plan-Run-Once-http-endpoint.jmx** - Run all queries once against HTTP/REST API endpoint
+- **Test-Plan-Maintain-static-concurrency-http-endpoint.jmx** - Maintain fixed concurrency against HTTP endpoint
+- **Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx** - Variable QPS against HTTP endpoint
 
 ## Prerequisites
 
@@ -51,25 +57,49 @@ The setup script will attempt to install the following in your system, If some o
 - git: git version 2.47.3
 - JMeter: 5.6.3
 
-# Steps to run the Apache Jmeter using standard jmeter CLI command.
-### Create the connection properties files with the required connection using the template/sample properties file
+# Steps to run
 
+## Quick Start
+
+### 1. Create a connection properties file
 ```bash
-cd connection_properties
-cp sample_connection.properties <YOUR_DB_SERVER>_connection.properties
+./create_connection.sh
+```
+Interactive utility — prompts for JDBC URL, credentials, driver. Supports e6data, Databricks, Trino, HTTP endpoints.
+
+### 2. Add your queries as a CSV file
+```bash
+cp <YOUR_TEST_QUERIES>.csv data_files/
 ```
 
-### Create the test properties files with the test parameters using the template/sample properties file
+### 3. Run a test
+**Option A — Non-interactive (recommended for repeat runs):**
 ```bash
-cd test_properties
-cp sample_test.properties <YOUR_TEST>_test.properties
+export CONNECTION_FILE=connection_properties/e6data_prod_connection.properties
+export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
+export QUERY_FILE=data_files/my_queries.csv
+export CONCURRENT_QUERY_COUNT=4
+export HOLD_PERIOD=300
+./run_test.sh
+```
+Change one variable and re-run — no prompts, no file editing.
+
+**Option B — Using a config file:**
+```bash
+# Create config interactively
+./create_test_config.sh
+
+# Or copy a sample and edit
+cp test_configs/sample_concurrency_test.env test_configs/my_test.env
+# Edit my_test.env with your settings
+./run_test.sh test_configs/my_test.env
 ```
 
-### Create/copy the queries to the data_files folder as a .csv file
+**Option C — Fully interactive:**
 ```bash
-cd data_files
-cp <YOUR_TEST_QUERIES>.csv data_files
+./run_jmeter_tests_interactive.sh
 ```
+Guides you through selecting connection, test plan, test properties (create new or pick existing), query file, and metadata.
 
 ## ⚠️ Verify Test Plan in GUI Mode First
 
@@ -142,13 +172,15 @@ Both files can be:
 - Analyzed with spreadsheet tools (Excel, Google Sheets)
 - Processed with custom scripts for percentile calculations
 
-# Running Tests interactively using the wrapper script
+# Running Tests — All Options
 
-## Interactive Mode
-Execute the interactive test runner:
-```bash
-./run_jmeter_tests_interactive.sh
-```
+| Script | Mode | Best for |
+|--------|------|----------|
+| `create_connection.sh` | Interactive prompts | One-time connection setup |
+| `create_test_config.sh` | Interactive prompts | Create test config (connection + plan + queries + params) |
+| `run_test.sh` | Config file or env vars | Run tests — repeat runs, CI/CD, tweak-and-rerun |
+| `run_jmeter_tests_interactive.sh` | Interactive prompts | Run tests — guided setup for first-time users |
+| `utilities/run_all_concurrency.sh` | CLI args | Batch sweep across concurrency levels |
 
 ## Automated Batch Testing
 
@@ -164,23 +196,17 @@ Run all concurrency levels (1, 2, 4, 8, 12, 16) for any engine, cluster, and ben
 # E6Data M-4x4 (120 cores) with TPCDS 29 queries on 1TB dataset
 ./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_29_1tb
 
-# DBR S-2x2 (60 cores) with TPCDS 29 queries on 1TB dataset
-./utilities/run_all_concurrency.sh dbr S-2x2 tpcds_29_1tb
-
-# DBR S-4x4 (120 cores) with TPCDS 29 queries on 1TB dataset
-./utilities/run_all_concurrency.sh dbr S-4x4 tpcds_29_1tb
-
 # Run with different benchmark (e.g., TPCDS 51 queries on 1TB)
 ./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_51_1tb
 ```
 
 **Arguments map directly to S3 path structure:**
 ```
-s3://e6-jmeter/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/
+s3://your-s3-bucket/jmeter-results/engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/
 ```
 
 **Features:**
-- Single unified script for all engines (e6data, dbr)
+- Single unified script for all engines
 - Runs all concurrency levels sequentially
 - Uses template system with runtime substitution for test inputs
 - Validates template files before starting
@@ -196,15 +222,13 @@ The batch runner uses a **template-based system** to eliminate redundancy. Inste
 
 **Template File Naming:**
 ```
-test_inputs/{ENGINE}_{CLUSTER_SIZE}_{BENCHMARK}_template.txt
+test_configs/{ENGINE}_{CLUSTER_SIZE}_{BENCHMARK}_template.txt
 ```
 
 **Examples:**
-- `test_inputs/e6data_s-2x2_tpcds_29_1tb_template.txt`
-- `test_inputs/e6data_m-4x4_tpcds_29_1tb_template.txt`
-- `test_inputs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
-- `test_inputs/dbr_s-2x2_tpcds_29_1tb_template.txt`
-- `test_inputs/dbr_s-4x4_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_m-4x4_tpcds_29_1tb_template.txt`
+- `test_configs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
 
 **Template Structure:**
 
@@ -219,7 +243,7 @@ E6Data_TPCDS_queries_29_1TB.csv
 ```
 
 **Supported Placeholders:**
-- `{ENGINE}` - Engine name (e6data, dbr)
+- `{ENGINE}` - Engine name (e.g., e6data)
 - `{CLUSTER_SIZE}` - Normalized cluster size (xs-1x1, s-2x2, m-4x4, s-4x4)
 - `{CLUSTER}` - Cluster identifier used in connection properties
 - `{CONCURRENCY}` - Concurrency level (1, 2, 4, 8, 12, 16)
@@ -228,7 +252,7 @@ E6Data_TPCDS_queries_29_1TB.csv
 **How It Works:**
 
 When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
-1. Script locates template: `test_inputs/e6data_s-2x2_tpcds_29_1tb_template.txt`
+1. Script locates template: `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
 2. For each concurrency level (1, 2, 4, 8, 12, 16):
    - Reads template and substitutes placeholders with actual values
    - Creates temporary resolved input file
@@ -241,8 +265,12 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 ```
 .
 ├── README.md
+├── CLAUDE.md                       # AI assistant context for this framework
 ├── setup_jmeter.sh
-├── run_jmeter_tests_interactive.sh
+├── create_connection.sh             # Interactive connection properties creator
+├── create_test_config.sh            # Interactive test config creator
+├── run_test.sh                      # Non-interactive runner (config file or env vars)
+├── run_jmeter_tests_interactive.sh  # Interactive test runner
 ├── apache-jmeter-5.6.3/           # JMeter installation (created by setup script)
 ├── connection_properties/
 │   ├── sample_connection.properties
@@ -250,24 +278,32 @@ When you run `./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb`:
 ├── data_files/
 │   ├── sample_jmeter_queries.csv
 │   └── [Your query CSV files]
-├── jdbc_drivers/            # JDBC driver JARs. Place your JDBC JARs in jdbc_drivers/ directory, then run ./setup_jmeter.sh to copy them to lib/ext
+├── jdbc_drivers/                   # JDBC driver JARs (copied to lib/ by setup script)
+├── JSR_scripts/                    # JSR223 Groovy scripts for advanced test plans
 ├── metadata_files/
-│   └── [Cluster metadata files for S3 upload]
+│   └── [Cluster metadata files for S3 upload and Athena integration]
 ├── test_properties/
 │   ├── sample_test.properties
 │   ├── load_profile.csv
 │   └── [Your test config files]
-├── test_inputs/
-│   └── [Template files for batch test execution]
+├── test_configs/
+│   ├── sample_concurrency_test.env  # Sample config for concurrency testing
+│   ├── sample_qps_test.env         # Sample config for QPS testing
+│   └── *_template.txt              # Template files for batch test execution
 ├── Test-Plans/
 │   ├── Test-Plan-Run-Once-static-concurrency.jmx
 │   ├── Test-Plan-Maintain-static-concurrency.jmx
 │   ├── Test-Plan-Constant-QPS-On-Arrivals.jmx
 │   ├── Test-Plan-Constant-QPM-On-Arrivals.jmx
 │   ├── Test-Plan-Fire-QPS-with-load-profile.jmx
+│   ├── Test-Plan-Run-Once-http-endpoint.jmx
+│   ├── Test-Plan-Maintain-static-concurrency-http-endpoint.jmx
 │   └── [Other test plans]
 ├── utilities/
-│   ├── run_all_concurrency.sh
+│   ├── run_all_concurrency.sh      # Batch concurrency sweep runner
+│   ├── post_test_analysis.sh       # Automated post-test workflow
+│   ├── athena/                     # Athena integration (upload, query, reports, baselines)
+│   ├── archive_adhoc_scripts/      # Deprecated/legacy scripts
 │   └── [Analysis and comparison scripts]
 └── reports/                        # Test results (generated at runtime)
 ```
