@@ -97,7 +97,6 @@ Guides you through selecting connection, test plan, query file, and parameters.
 | `Test-Plan-Constant-QPS-On-Arrivals.jmx` | Fire queries at constant queries-per-second | `QPS`, `HOLD_PERIOD` |
 | `Test-Plan-Constant-QPM-On-Arrivals.jmx` | Fire queries at constant queries-per-minute | `QPM`, `HOLD_PERIOD` |
 | `Test-Plan-Fire-QPS-with-load-profile.jmx` | Variable QPS rate from load profile CSV | `load_profile.csv`, `HOLD_PERIOD` |
-| `Test-Plan-Fire-QPM-with-load-profile.jmx` | Variable QPM rate from load profile CSV | `load_profile.csv`, `HOLD_PERIOD` |
 | `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx` | Variable concurrency from load profile CSV | `load_profile.csv`, `HOLD_PERIOD` |
 
 ### HTTP Endpoint Test Plans

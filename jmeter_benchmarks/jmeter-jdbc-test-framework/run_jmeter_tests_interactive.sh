@@ -128,13 +128,12 @@ if [ "$CONN_TYPE" = "jdbc" ]; then
     echo "  3) Constant QPS              - Fire queries at N per second"
     echo "  4) Constant QPM              - Fire queries at N per minute"
     echo "  5) QPS with Load Profile     - Variable QPS from CSV schedule"
-    echo "  6) QPM with Load Profile     - Variable QPM from CSV schedule"
-    echo "  7) Variable Concurrency      - Custom thread spawn schedule"
+    echo "  6) Variable Concurrency      - Custom thread spawn schedule"
     echo ""
 
     while true; do
-        read -p "Enter choice [1-7]: " plan_choice
-        if [[ "$plan_choice" =~ ^[1-7]$ ]]; then break; fi
+        read -p "Enter choice [1-6]: " plan_choice
+        if [[ "$plan_choice" =~ ^[1-6]$ ]]; then break; fi
         echo -e "${RED}Invalid choice.${NC}"
     done
 
@@ -144,8 +143,7 @@ if [ "$CONN_TYPE" = "jdbc" ]; then
         3) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx"; PLAN_TYPE="qps" ;;
         4) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx"; PLAN_TYPE="qpm" ;;
         5) TEST_PLAN="Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx"; PLAN_TYPE="qps_loadprofile" ;;
-        6) TEST_PLAN="Test-Plans/Test-Plan-Fire-QPM-with-load-profile.jmx"; PLAN_TYPE="qpm_loadprofile" ;;
-        7) TEST_PLAN="Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx"; PLAN_TYPE="variable_concurrency" ;;
+        6) TEST_PLAN="Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx"; PLAN_TYPE="variable_concurrency" ;;
     esac
 else
     echo -e "${BOLD}Select HTTP endpoint test plan:${NC}"
@@ -277,27 +275,6 @@ if [[ "$props_choice" =~ ^[Nn]$ ]]; then
             RAMP_UP_STEPS="1"
             RECYCLE_ON_EOF="true"
             FILENAME_PREFIX="qps_loadprofile"
-            ;;
-        qpm_loadprofile)
-            echo ""
-            echo -e "${DIM}Available load profiles in ${TEST_PROPS_DIR}/:${NC}"
-            LOAD_PROFILES=($(ls -1 "$TEST_PROPS_DIR"/*.csv 2>/dev/null | sort))
-            if [ ${#LOAD_PROFILES[@]} -gt 0 ]; then
-                for i in "${!LOAD_PROFILES[@]}"; do
-                    echo "  $((i + 1))) $(basename "${LOAD_PROFILES[$i]}")"
-                done
-                echo ""
-                read -p "Select load profile [1-${#LOAD_PROFILES[@]}]: " lp_choice
-                LOAD_PROFILE="${LOAD_PROFILES[$((lp_choice - 1))]}"
-            else
-                read -p "Load profile CSV path: " LOAD_PROFILE
-            fi
-            HOLD_PERIOD=$(prompt_with_default "Hold period (seconds)" "600")
-            CONCURRENT_QUERY_COUNT="1"
-            RAMP_UP_TIME="0"
-            RAMP_UP_STEPS="1"
-            RECYCLE_ON_EOF="true"
-            FILENAME_PREFIX="qpm_loadprofile"
             ;;
         variable_concurrency)
             echo ""
