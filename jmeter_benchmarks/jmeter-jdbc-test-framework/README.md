@@ -2,7 +2,16 @@
 
 Run **JMeter JDBC performance tests** against any database that supports JDBC connections.
 
-Queries are read from a CSV file, test parameters from a `.properties` file — no editing of JMeter test plans required.
+The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
+
+**Runner scripts** (`run_test.sh`, `run_jmeter_tests_interactive.sh`) handle JMeter invocation for you. All test settings — connection file, test plan, query file, concurrency, duration — can be passed as environment variables using `export`. This means you can change any parameter and re-run without editing files:
+
+```bash
+export HOLD_PERIOD=600    # change duration from 300 to 600
+./run_test.sh             # re-run with new value, everything else stays the same
+```
+
+Helper scripts (`create_connection.sh`, `create_test_config.sh`) interactively create the `.properties` and `.env` config files you need.
 
 ## Steps to Run
 
@@ -28,15 +37,9 @@ Interactive prompts for JDBC URL, credentials, driver class. Supports e6data, Da
 
 This creates a file in `connection_properties/` — e.g., `connection_properties/my_connection.properties`.
 
-### Step 3: Add your queries
+### Step 3: Create your queries CSV file
 
-Place a CSV file in `data_files/`:
-
-```bash
-cp my_queries.csv data_files/
-```
-
-CSV format — one query per row with an alias:
+Create a CSV file in `data_files/` with one query per row:
 
 ```csv
 query_alias,query_string
@@ -44,12 +47,16 @@ q1,"SELECT COUNT(*) FROM my_table"
 q2,"SELECT col1, col2 FROM my_table WHERE col1 > 100"
 ```
 
+```bash
+cp my_queries.csv data_files/
+```
+
 ### Step 4: Run a test
 
 **Option A — Export variables and run (recommended):**
 
 ```bash
-export CONNECTION_FILE=connection_properties/e6data_prod_connection.properties
+export CONNECTION_FILE=connection_properties/my_connection.properties
 export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
 export QUERY_FILE=data_files/my_queries.csv
 export CONCURRENT_QUERY_COUNT=4
@@ -58,7 +65,7 @@ export HOLD_PERIOD=300
 ./run_test.sh
 ```
 
-Change one variable and re-run — no prompts, no file editing.
+Change any variable and re-run — no prompts, no file editing.
 
 **Option B — Use a config file:**
 
@@ -101,14 +108,23 @@ Guides you through selecting connection, test plan, query file, and parameters.
 | `Test-Plan-Maintain-static-concurrency-http-endpoint.jmx` | Maintain fixed concurrency against HTTP endpoint |
 | `Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx` | Variable QPS against HTTP endpoint |
 
-### Switching test plans
+### Switching test plan, properties, or parameters
 
-Just change the `TEST_PLAN` export:
+Just change the relevant `export` and re-run:
 
 ```bash
+# Switch to a QPS test plan with different parameters
 export TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals.jmx
 export QPS=10
 export HOLD_PERIOD=300
+./run_test.sh
+
+# Switch connection to a different database
+export CONNECTION_FILE=connection_properties/another_connection.properties
+./run_test.sh
+
+# Same test plan, just change concurrency
+export CONCURRENT_QUERY_COUNT=8
 ./run_test.sh
 ```
 
