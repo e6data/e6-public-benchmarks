@@ -293,12 +293,10 @@ utilities/athena/
 ├── setup_all_athena_tables.sh         # Setup all tables at once
 ├── recreate_athena_table.sh           # Recreate table with updated schema
 ├── upload_runs_index_to_athena.py     # Upload runs index to S3 for Athena
-├── upload_all_runs_to_athena.sh       # Bulk upload for all runs
 ├── upload_metadata.py                 # Upload cluster metadata
 ├── generate_runs_index.py             # Generate runs index from S3
 ├── generate_metadata_index.py         # Generate metadata index from S3
 ├── generate_report_queries.sh         # Generate parameterized SQL files
-├── generate_comprehensive_reports.sh  # Generate comprehensive reports
 ├── run_athena_reports.sh              # Run all 8 standard reports
 ├── export_all_fields.sh               # Export all 62 fields to CSV
 ├── manage_baseline.py                 # Mark/unmark baselines

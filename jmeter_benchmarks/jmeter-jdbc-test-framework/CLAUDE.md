@@ -324,11 +324,9 @@ See `utilities/README.md` for more comparison examples and detailed documentatio
 - `utilities/compare_multi_concurrency_from_s3.py`: Compare all concurrency levels between two engines (most comprehensive)
 
 **Athena Integration:**
-- `utilities/athena/upload_all_runs_to_athena.sh`: Upload all test results to Athena for querying
 - `utilities/athena/upload_runs_index_to_athena.py`: Upload runs index with baseline tracking to Athena
 - `utilities/athena/upload_metadata.py`: Upload cluster metadata to Athena
 - `utilities/athena/run_athena_reports.sh`: Run all standard Athena reports
-- `utilities/athena/generate_comprehensive_reports.sh`: Generate comprehensive analysis reports
 - `utilities/athena/export_all_fields.sh`: Export all 62 fields to CSV for spreadsheet analysis
 - `utilities/athena/setup_all_athena_tables.sh`: Setup all Athena tables at once
 - `utilities/athena/recreate_athena_table.sh`: Recreate Athena table with updated schema
