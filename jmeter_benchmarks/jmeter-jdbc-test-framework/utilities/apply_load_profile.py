@@ -98,7 +98,9 @@ def main():
     with open(out_path, "w") as fh:
         fh.write(plan_out)
 
-    total = sum(start * dur for start, _, dur in rows)
+    # Trapezoid: a step ramping start->end over dur averages (start+end)/2.
+    # Using start alone under-reports any ramped step.
+    total = round(sum((start + end) / 2 * dur for start, end, dur in rows))
     duration = sum(dur for _, _, dur in rows)
     peak = max(max(s, e) for s, e, _ in rows)
     print(
