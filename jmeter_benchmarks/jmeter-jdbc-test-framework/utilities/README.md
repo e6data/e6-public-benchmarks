@@ -61,6 +61,25 @@ plan's hardcoded schedule (25 arrivals over 15s) was used instead. The schedule 
 injected before JMeter launches. The generated plan is written into the run's own
 `reports/<timestamp>/` directory as a per-run artifact.
 
+Verify the queries actually fired at the requested rate:
+
+```bash
+python3 utilities/verify_load_profile.py \
+  reports/<timestamp>/JmeterResultFile.csv test_properties/my_profile.csv
+```
+
+JMeter's `timeStamp` column is each sample's *start* time, so bucketing it per second
+reconstructs the true arrival curve — unaffected by how long queries took to finish, which
+matters because a saturated cluster stretches completions well past the profile window.
+
+```
+ sec | expected | actual |
+   8 |       56 |     56 | ########################################################
+...
+expected : 482
+actual   : 480  (99.6%)
+```
+
 Confirm what was applied — the line is printed on every run:
 
 ```
