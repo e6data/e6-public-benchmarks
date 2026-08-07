@@ -35,6 +35,41 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 | `convert_queries_for_jmeter_http.py` | Convert multiline SQL to single-line for JMeter HTTP API (no quote escaping) |
 | `convert_queries_for_json_api.py` | Convert multiline SQL to single-line with JSON/e6data fixes (backticks, keywords, CTEs) |
 
+### Load Profile
+
+| Script | Purpose |
+|--------|---------|
+| `apply_load_profile.py` | Inject a load-profile CSV into a plan's arrivals `Schedule` before JMeter starts |
+
+Called automatically by `run_jmeter_tests_interactive.sh` and `run_test.sh` whenever the
+selected plan contains a `FreeFormArrivalsThreadGroup`. Point `LOAD_PROFILE` in your test
+properties at any CSV — no per-profile test plan is needed.
+
+```properties
+LOAD_PROFILE=test_properties/my_profile.csv
+RECYCLE_ON_EOF=true      # required: without it threads hit EOF and vanish
+MAX_CONCURRANCY=200      # must exceed peak_qps x avg_latency_sec
+HOLD_PERIOD=60           # seconds; must be >= the profile's total duration
+```
+
+CSV format (header optional): `StartValue,EndValue,Duration`, duration in seconds.
+
+**Why this is needed:** the plan ships a JSR223 PreProcessor that tries to apply the profile
+via `ctx.getThreadGroup().setData()`. A PreProcessor runs when a sampler fires, by which point
+the thread group has already read its `Schedule` — so the CSV was silently ignored and the
+plan's hardcoded schedule (25 arrivals over 15s) was used instead. The schedule is now
+injected before JMeter launches. The generated plan is written into the run's own
+`reports/<timestamp>/` directory as a per-run artifact.
+
+Confirm what was applied — the line is printed on every run:
+
+```
+load profile applied: 15 steps, 17s, peak 56/s, ~482 expected samples
+```
+
+If actual samples fall well short of expected, the cluster is saturating and arrivals are
+being throttled by `MAX_CONCURRANCY`. That is a capacity result, not a tooling failure.
+
 ### Testing & Diagnostics (4)
 
 | Script | Purpose |

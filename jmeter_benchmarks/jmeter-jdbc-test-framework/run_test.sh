@@ -312,6 +312,27 @@ echo ""
 # Build and run JMeter command
 # ============================================================================
 
+# Apply the load profile CSV to the plan's arrivals schedule.
+# The plan's own JSR223 PreProcessor cannot do this: it runs when a sampler
+# fires, by which point the thread group has already read its Schedule. So the
+# schedule is injected here, before JMeter starts.
+if grep -q "FreeFormArrivalsThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+    if [ -z "${LOAD_PROFILE:-}" ]; then
+        echo -e "${YELLOW}Warning: load-profile plan selected but LOAD_PROFILE is not set.${NC}"
+        echo -e "${YELLOW}The plan's built-in schedule will be used instead.${NC}"
+        echo ""
+    elif [ ! -f "$LOAD_PROFILE" ]; then
+        echo -e "${RED}Error: LOAD_PROFILE file not found: ${LOAD_PROFILE}${NC}"
+        exit 1
+    else
+        GENERATED_PLAN="${REPORT_DIR}/$(basename "${TEST_PLAN%.jmx}")-generated.jmx"
+        python3 "${PROJECT_ROOT}/utilities/apply_load_profile.py" \
+            "$TEST_PLAN" "$LOAD_PROFILE" "$GENERATED_PLAN" || exit 1
+        echo ""
+        TEST_PLAN="$GENERATED_PLAN"
+    fi
+fi
+
 # Built as an array so values containing spaces or shell metacharacters
 # (e.g. threads_schedule=spawn(4,0s,...)) reach JMeter intact
 JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
