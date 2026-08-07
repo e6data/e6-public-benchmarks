@@ -466,6 +466,16 @@ if [ -n "$METADATA_FILE" ]; then
     source "$METADATA_FILE"
 fi
 
+# Values set in the environment win over the properties file, so a single
+# properties file can be reused across runs:
+#   LOAD_PROFILE=test_properties/spike.csv ./run_jmeter_tests_interactive.sh
+# Matches the precedence run_test.sh already implements.
+OVERRIDABLE="LOAD_PROFILE HOLD_PERIOD MAX_CONCURRANCY COPY_TO_S3 RECYCLE_ON_EOF \
+RANDOM_ORDER QPS QPM CONCURRENT_QUERY_COUNT RAMP_UP_TIME RAMP_UP_STEPS QUERY_TIMEOUT"
+for _k in $OVERRIDABLE; do
+    [ -n "${!_k:-}" ] && printf -v "_ENV_$_k" '%s' "${!_k}"
+done
+
 # Read test properties without executing them (values like
 # threads_schedule=spawn(4,0s,...) are not valid bash)
 while IFS='=' read -r key value; do
@@ -474,6 +484,15 @@ while IFS='=' read -r key value; do
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     printf -v "$key" '%s' "$value"
 done < "$TEST_PROPERTIES"
+
+# Re-apply the environment overrides captured above
+for _k in $OVERRIDABLE; do
+    _saved="_ENV_$_k"
+    if [ -n "${!_saved:-}" ]; then
+        printf -v "$_k" '%s' "${!_saved}"
+        echo -e "  ${DIM}override: ${_k}=${!_saved}${NC}"
+    fi
+done
 
 # Determine JMETER_HOME
 if [ -z "$JMETER_HOME" ]; then

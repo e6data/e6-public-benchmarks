@@ -54,6 +54,18 @@ HOLD_PERIOD=60           # seconds; must be >= the profile's total duration
 
 CSV format (header optional): `StartValue,EndValue,Duration`, duration in seconds.
 
+**You do not need a properties file per profile.** Environment values override the file, so one
+config serves every profile:
+
+```bash
+LOAD_PROFILE=test_properties/spike.csv ./run_jmeter_tests_interactive.sh
+LOAD_PROFILE=test_properties/spike.csv ./run_test.sh test_configs/my.env
+```
+
+Both runners print what was overridden. Also overridable this way: `HOLD_PERIOD`,
+`MAX_CONCURRANCY`, `COPY_TO_S3`, `RECYCLE_ON_EOF`, `RANDOM_ORDER`, `QPS`, `QPM`,
+`CONCURRENT_QUERY_COUNT`, `RAMP_UP_TIME`, `RAMP_UP_STEPS`, `QUERY_TIMEOUT`.
+
 **Why this is needed:** the plan ships a JSR223 PreProcessor that tries to apply the profile
 via `ctx.getThreadGroup().setData()`. A PreProcessor runs when a sampler fires, by which point
 the thread group has already read its `Schedule` — so the CSV was silently ignored and the
