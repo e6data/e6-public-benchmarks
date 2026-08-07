@@ -377,10 +377,23 @@ fi
 # Copy custom JDBC drivers from jdbc_drivers/ directory
 JDBC_DRIVERS_DIR="${SCRIPT_DIR}/jdbc_drivers"
 if [ -d "${JDBC_DRIVERS_DIR}" ]; then
-    # Copy custom JDBC drivers from jdbc_drivers/ to JMeter lib/ext/
+    # Remove any existing e6 driver first. Copying without this leaves several
+    # versions in lib/ext/ and the JVM loads whichever it finds first, which
+    # fails as "UNIMPLEMENTED: No cluster-name header or unknown cluster".
+    if ls "${JDBC_DRIVERS_DIR}"/e6-jdbc-driver-*.jar >/dev/null 2>&1; then
+        rm -f "${JMETER_DIR}"/lib/ext/e6-jdbc-driver-*.jar
+        rm -f "${JMETER_DIR}"/lib/e6-jdbc-driver-*.jar
+    fi
+
     cp -v "${JDBC_DRIVERS_DIR}"/*.jar "${JMETER_DIR}/lib/ext/" 2>/dev/null || {
         echo "  No custom JDBC drivers found in jdbc_drivers/"
     }
+
+    # Resolve Netty/gRPC collisions introduced by fat "-with-dependencies" jars
+    if [ -x "${SCRIPT_DIR}/utilities/fix_jmeter_jar_conflicts.sh" ]; then
+        echo ""
+        JMETER_HOME="${JMETER_DIR}" "${SCRIPT_DIR}/utilities/fix_jmeter_jar_conflicts.sh"
+    fi
 else
     echo "  WARNING: jdbc_drivers/ directory not found"
     echo "  You'll need to manually add JDBC drivers to ${JMETER_DIR}/lib/ext/"

@@ -1,11 +1,17 @@
 # E6Data S-2x2 Cluster (60 cores: 2 executors x 30 cores)
+# For the 25-query set: data_files/Jmeter-QPSRun-TPCDS-Queries-25q.csv
+#
+# Separate from e6data_s-2x2_metadata.txt because BENCHMARK_TYPE feeds the S3
+# partition path. That file is referenced by
+# test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt for 29-query batch runs,
+# so changing its BENCHMARK_TYPE would mislabel those.
 
 ENGINE=e6data
 CLUSTER_SIZE=S-2x2
 COPY_TO_S3=false
 S3_BASE_PATH=s3://e6-jmeter/jmeter-results
 
-BENCHMARK_TYPE="tpcds_29_1tb"
+BENCHMARK_TYPE="tpcds_25_1tb"
 DATA_SIZE="1TB"
 DATA_TYPE="TPCDS"
 
@@ -13,8 +19,8 @@ DATA_TYPE="TPCDS"
 RUN_MODE="prod"          # prod | test | benchmark
 CUSTOMER="e6data"
 CONFIG="default"
-TAGS="tpcds,1tb,production"
-COMMENTS="Baseline performance benchmark for S-2x2 cluster"
+TAGS="tpcds,1tb,25q"
+COMMENTS="25-query TPCDS run on S-2x2 cluster"
 
 CLUSTER_CONFIG='{
   "cluster_size": "S-2x2",

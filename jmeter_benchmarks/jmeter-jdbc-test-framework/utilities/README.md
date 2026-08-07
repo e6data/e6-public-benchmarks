@@ -35,13 +35,20 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 | `convert_queries_for_jmeter_http.py` | Convert multiline SQL to single-line for JMeter HTTP API (no quote escaping) |
 | `convert_queries_for_json_api.py` | Convert multiline SQL to single-line with JSON/e6data fixes (backticks, keywords, CTEs) |
 
-### Testing & Diagnostics (3)
+### Testing & Diagnostics (4)
 
 | Script | Purpose |
 |--------|---------|
 | `test_jdbc_connection.sh` | Test JDBC connectivity by compiling and running TestDriver.java |
 | `test_dbr_connectivity.sh` | Diagnose DBR connectivity issues with repeated DNS/HTTPS tests |
 | `test_queries_http.py` | Test SQL queries via e6data HTTP API (bypasses JMeter) |
+| `fix_jmeter_jar_conflicts.sh` | Quarantine duplicate e6 JDBC drivers and zero-byte jars (`--dry-run` supported) |
+
+**When to run `fix_jmeter_jar_conflicts.sh`:** if every query fails instantly with
+`UNIMPLEMENTED: No cluster-name header or unknown cluster`, more than one
+`e6-jdbc-driver-*.jar` is probably on the classpath and an old one is winning.
+Load order depends on the filesystem, so this can reproduce on Linux but not macOS.
+Check with `find apache-jmeter-5.6.3 -name "e6-jdbc-driver-*.jar"` — more than one line means ambiguity.
 
 ### Housekeeping (3)
 

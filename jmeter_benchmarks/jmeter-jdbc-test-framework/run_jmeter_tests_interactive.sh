@@ -466,8 +466,14 @@ if [ -n "$METADATA_FILE" ]; then
     source "$METADATA_FILE"
 fi
 
-# Source test properties for runtime variables
-source "$TEST_PROPERTIES"
+# Read test properties without executing them (values like
+# threads_schedule=spawn(4,0s,...) are not valid bash)
+while IFS='=' read -r key value; do
+    [[ "$key" =~ ^[[:space:]]*# ]] && continue
+    key=$(echo "$key" | xargs)
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    printf -v "$key" '%s' "$value"
+done < "$TEST_PROPERTIES"
 
 # Determine JMETER_HOME
 if [ -z "$JMETER_HOME" ]; then
@@ -479,6 +485,8 @@ if [ -z "$JMETER_HOME" ]; then
         JMETER_HOME=$(ls -d /opt/homebrew/Cellar/jmeter/*/libexec 2>/dev/null | head -1)
     elif [ -d "/usr/local/Cellar/jmeter" ]; then
         JMETER_HOME=$(ls -d /usr/local/Cellar/jmeter/*/libexec 2>/dev/null | head -1)
+    elif [ -d "apache-jmeter-5.6.3" ]; then
+        JMETER_HOME="$(pwd)/apache-jmeter-5.6.3"
     fi
 fi
 
@@ -497,15 +505,17 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REPORT_DIR="${REPORT_PATH:-reports}/${TIMESTAMP}"
 mkdir -p "$REPORT_DIR"
 
-# Build JMeter command
-JMETER_CMD="$JMETER_HOME/bin/jmeter -n"
-JMETER_CMD+=" -t $TEST_PLAN"
-JMETER_CMD+=" -l ${REPORT_DIR}/JmeterResultFile.csv"
-JMETER_CMD+=" -e -o ${REPORT_DIR}/dashboard"
+# Build JMeter command as an array so values containing spaces or shell
+# metacharacters (e.g. threads_schedule=spawn(4,0s,...)) reach JMeter intact
+JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
+JMETER_CMD+=(-t "$TEST_PLAN")
+JMETER_CMD+=(-q "$CONNECTION_FILE")
+JMETER_CMD+=(-l "${REPORT_DIR}/JmeterResultFile.csv")
+JMETER_CMD+=(-e -o "${REPORT_DIR}/dashboard")
 
 # Add all properties as JMeter parameters
-JMETER_CMD+=" -JCONNECTION_PROPERTIES=$CONNECTION_FILE"
-JMETER_CMD+=" -JQUERY_PATH=$QUERY_FILE"
+JMETER_CMD+=("-JCONNECTION_PROPERTIES=$CONNECTION_FILE")
+JMETER_CMD+=("-JQUERY_PATH=$QUERY_FILE")
 
 # Pass test properties as JMeter -J parameters
 while IFS='=' read -r key value; do
@@ -517,18 +527,18 @@ while IFS='=' read -r key value; do
     key=$(echo "$key" | xargs)
     value=$(echo "$value" | xargs)
     [ -z "$key" ] && continue
-    JMETER_CMD+=" -J${key}=${value}"
+    JMETER_CMD+=("-J${key}=${value}")
 done < "$TEST_PROPERTIES"
 
 # Override QUERY_PATH with user selection
-JMETER_CMD+=" -JQUERY_PATH=$QUERY_FILE"
+JMETER_CMD+=("-JQUERY_PATH=$QUERY_FILE")
 
 echo -e "${BLUE}Running JMeter...${NC}"
-echo -e "${DIM}${JMETER_CMD}${NC}"
+echo -e "${DIM}${JMETER_CMD[*]}${NC}"
 echo ""
 
 # Run JMeter
-eval "$JMETER_CMD"
+"${JMETER_CMD[@]}"
 
 echo ""
 echo -e "${GREEN}=========================================="
