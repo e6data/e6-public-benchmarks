@@ -433,6 +433,30 @@ if [ -n "$METADATA_FILE" ]; then
 fi
 echo ""
 
+# Show the endpoint being tested. The filename alone does not say which cluster
+# the run will hit, which matters when several files point at similar clusters.
+# Any password embedded in the URL is redacted.
+echo -e "${DIM}Target:${NC}"
+if [ "$CONN_TYPE" = "http" ]; then
+    _host=$(grep -E "^mainhost=" "$CONNECTION_FILE" 2>/dev/null | head -1 | cut -d= -f2-)
+    [ -n "$_host" ] && echo "  Host:            ${_host}"
+else
+    _url=$(grep -E "^CONNECTION_STRING=" "$CONNECTION_FILE" 2>/dev/null | head -1 | cut -d= -f2- \
+           | sed -E 's/([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]=)[^&]*/\1<redacted>/g')
+    _user=$(grep -E "^USER=" "$CONNECTION_FILE" 2>/dev/null | head -1 | cut -d= -f2-)
+    if [ -n "$_url" ]; then
+        echo "  JDBC URL:        ${_url}"
+        # cluster-name is the parameter that decides which cluster serves the query
+        case "$_url" in
+            *cluster-name=*) echo "  Cluster:         $(echo "$_url" | sed -E 's/.*cluster-name=([^&]*).*/\1/')" ;;
+        esac
+    else
+        echo -e "  ${YELLOW}No CONNECTION_STRING found in $(basename "$CONNECTION_FILE")${NC}"
+    fi
+    [ -n "$_user" ] && echo "  User:            ${_user}"
+fi
+echo ""
+
 # Show key test parameters from properties file
 echo -e "${DIM}Key parameters from test properties:${NC}"
 grep -E "^(CONCURRENT_QUERY_COUNT|QPS|QPM|HOLD_PERIOD|COPY_TO_S3|RECYCLE_ON_EOF)=" "$TEST_PROPERTIES" 2>/dev/null | while read -r line; do
@@ -461,20 +485,23 @@ echo ""
 # Build and run JMeter command
 # ============================================================================
 
-# Source metadata for runtime variables if present
-if [ -n "$METADATA_FILE" ]; then
-    source "$METADATA_FILE"
-fi
-
-# Values set in the environment win over the properties file, so a single
-# properties file can be reused across runs:
+# Values set in the environment win over both the metadata file and the
+# properties file, so a single config can be reused across runs:
 #   LOAD_PROFILE=test_properties/spike.csv ./run_jmeter_tests_interactive.sh
 # Matches the precedence run_test.sh already implements.
+#
+# Captured BEFORE the metadata is sourced: metadata defines COPY_TO_S3 and
+# would otherwise overwrite the environment value before it could be saved.
 OVERRIDABLE="LOAD_PROFILE HOLD_PERIOD MAX_CONCURRANCY COPY_TO_S3 RECYCLE_ON_EOF \
 RANDOM_ORDER QPS QPM CONCURRENT_QUERY_COUNT RAMP_UP_TIME RAMP_UP_STEPS QUERY_TIMEOUT"
 for _k in $OVERRIDABLE; do
     [ -n "${!_k:-}" ] && printf -v "_ENV_$_k" '%s' "${!_k}"
 done
+
+# Source metadata for runtime variables if present
+if [ -n "$METADATA_FILE" ]; then
+    source "$METADATA_FILE"
+fi
 
 # Read test properties without executing them (values like
 # threads_schedule=spawn(4,0s,...) are not valid bash)
@@ -601,7 +628,18 @@ if [ "${COPY_TO_S3:-false}" = "true" ] && [ -n "${S3_BASE_PATH:-}" ]; then
     S3_DEST="${S3_BASE_PATH}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/${RUN_TYPE_VAL}/run_id=${TIMESTAMP}/"
 
     echo "  S3 path: ${S3_DEST}"
-    aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive
+    # The JMeter HTML dashboard vendors jQuery/Bootstrap/font-awesome/flot -
+    # ~120 files and ~3.5MB per run, byte-identical every time and read by
+    # nothing downstream. Upload the data and the dashboard pages, skip the
+    # vendored assets. Set S3_UPLOAD_DASHBOARD_ASSETS=true to include them.
+    if [ "${S3_UPLOAD_DASHBOARD_ASSETS:-false}" = "true" ]; then
+        aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive
+    else
+        aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive \
+            --exclude "dashboard/sbadmin2-1.0.7/*" \
+            --exclude "dashboard/content/css/*" \
+            --exclude "dashboard/content/js/*"
+    fi
     echo -e "  ${GREEN}Uploaded to S3${NC}"
 fi
 

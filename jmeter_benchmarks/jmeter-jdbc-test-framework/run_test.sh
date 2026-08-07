@@ -390,7 +390,18 @@ if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_BASE_PATH:-}" ]; then
     echo ""
     echo "Uploading results to S3..."
     echo "  ${S3_DEST}"
-    aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive
+    # The JMeter HTML dashboard vendors jQuery/Bootstrap/font-awesome/flot -
+    # ~120 files and ~3.5MB per run, byte-identical every time and read by
+    # nothing downstream. Upload the data and the dashboard pages, skip the
+    # vendored assets. Set S3_UPLOAD_DASHBOARD_ASSETS=true to include them.
+    if [ "${S3_UPLOAD_DASHBOARD_ASSETS:-false}" = "true" ]; then
+        aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive
+    else
+        aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive \
+            --exclude "dashboard/sbadmin2-1.0.7/*" \
+            --exclude "dashboard/content/css/*" \
+            --exclude "dashboard/content/js/*"
+    fi
     echo -e "  ${GREEN}Uploaded to S3${NC}"
 fi
 
