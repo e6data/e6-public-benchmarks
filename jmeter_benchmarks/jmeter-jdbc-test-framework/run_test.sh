@@ -372,12 +372,31 @@ echo ""
 # Run JMeter
 "${JMETER_CMD[@]}"
 
+# Capture a standard run report alongside the raw results, so every run is
+# self-describing and the analysis does not depend on anyone remembering to run
+# it. Writes run_summary.json + run_report.md into the run directory.
+if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
+    CAPTURE_ARGS=("$REPORT_DIR")
+    [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] && CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
+    CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
+    CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}")
+    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}" || \
+        echo -e "  ${YELLOW}run report capture failed (results are unaffected)${NC}"
+fi
+
+# JMeter writes statistics.json under dashboard/; downstream analysis and Athena
+# scripts look for it at the run root, so publish a copy there.
+[ -f "${REPORT_DIR}/dashboard/statistics.json" ] && \
+    cp "${REPORT_DIR}/dashboard/statistics.json" "${REPORT_DIR}/statistics.json"
+
 echo ""
 echo -e "${GREEN}=========================================="
 echo " Test Complete!"
 echo -e "==========================================${NC}"
 echo ""
 echo "  Results:   ${REPORT_DIR}/"
+echo "  Report:    ${REPORT_DIR}/run_report.md"
 echo "  Dashboard: ${REPORT_DIR}/dashboard/index.html"
 
 # Copy to S3 if enabled

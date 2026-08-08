@@ -40,6 +40,9 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 | Script | Purpose |
 |--------|---------|
 | `apply_load_profile.py` | Inject a load-profile CSV into a plan's arrivals `Schedule` before JMeter starts |
+| `capture_run_report.py` | Write `run_summary.json` + `run_report.md` into a run dir (called automatically by both runners) |
+| `verify_load_profile.py` | Confirm arrivals matched the profile, per second |
+| `analyze_queue_buildup.py` | Queue depth / drain reconstruction for arrivals runs |
 
 Called automatically by `run_jmeter_tests_interactive.sh` and `run_test.sh` whenever the
 selected plan contains a `FreeFormArrivalsThreadGroup`. Point `LOAD_PROFILE` in your test
