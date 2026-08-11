@@ -264,18 +264,26 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     echo "Log file: $LOG_FILE"
     echo ""
 
-    # Create temporary resolved test input file
-    TEMP_TEST_INPUT="/tmp/test_input_resolved_${concurrency}.txt"
-    cat > "$TEMP_TEST_INPUT" << EOF
-$METADATA_FILE
-$TEST_PLAN
-$TEST_PROPS
-$CONNECTION_FILE
-$QUERY_FILE
-EOF
+    # Drive the non-interactive runner. This previously piped the five resolved
+    # filenames into run_jmeter_tests_interactive.sh, which stopped working when
+    # that script moved from filename prompts to numbered menus - it rejected
+    # every line ("Invalid choice") and the sweep could not run. run_test.sh takes
+    # explicit variables, so there are no menu indices to keep in sync.
+    #
+    # Values from the template are bare filenames; run_test.sh wants paths.
+    TEST_PLAN_PATH="$TEST_PLAN"
+    [ -f "$TEST_PLAN_PATH" ] || TEST_PLAN_PATH="Test-Plans/$TEST_PLAN"
+    QUERY_FILE_PATH="$QUERY_FILE"
+    [ -f "$QUERY_FILE_PATH" ] || QUERY_FILE_PATH="data_files/$QUERY_FILE"
 
-    # Run test with resolved input
-    if ./run_jmeter_tests_interactive.sh < "$TEMP_TEST_INPUT" 2>&1 | tee "$LOG_FILE"; then
+    # Concurrency comes from the sweep, not from the properties file, so the
+    # per-level properties file only needs to exist for its other settings.
+    if CONNECTION_FILE="connection_properties/$CONNECTION_FILE" \
+       TEST_PLAN="$TEST_PLAN_PATH" \
+       QUERY_FILE="$QUERY_FILE_PATH" \
+       METADATA_FILE="$METADATA_FULL_PATH" \
+       CONCURRENT_QUERY_COUNT="$concurrency" \
+       ./run_test.sh 2>&1 | tee "$LOG_FILE"; then
         echo -e "${GREEN}✓ Test completed: Concurrency ${concurrency}${NC}"
     else
         echo -e "${YELLOW}⚠ Test failed or interrupted: Concurrency ${concurrency}${NC}"
@@ -286,9 +294,6 @@ EOF
             exit 1
         fi
     fi
-
-    # Cleanup temporary file
-    rm -f "$TEMP_TEST_INPUT"
 
     # Wait between tests
     # Get last element in a shell-compatible way

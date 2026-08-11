@@ -4,7 +4,7 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 
 ## Script Inventory
 
-**43 scripts total** (22 top-level + 21 athena)
+**64 scripts total** (27 top-level + 37 athena)
 
 ### Analysis & Comparison (9)
 

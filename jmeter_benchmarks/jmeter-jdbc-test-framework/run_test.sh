@@ -343,7 +343,10 @@ JMETER_CMD+=(-e -o "${REPORT_DIR}/dashboard")
 
 # Pass all test parameters as JMeter -J properties
 JMETER_CMD+=("-JQUERY_PATH=$QUERY_FILE")
-JMETER_CMD+=("-JREPORT_PATH=$REPORT_PATH")
+# Point REPORT_PATH at this run's directory so the plan's
+# AggregateReport_<START_TIME>.csv / SummaryReport_... land with the run
+# instead of the reports/ root (where they are orphaned and never uploaded).
+JMETER_CMD+=("-JREPORT_PATH=$REPORT_DIR")
 JMETER_CMD+=("-JCOPY_TO_S3=$COPY_TO_S3")
 JMETER_CMD+=("-JS3_REPORT_PATH=$S3_REPORT_PATH")
 JMETER_CMD+=("-JCONCURRENT_QUERY_COUNT=$CONCURRENT_QUERY_COUNT")
@@ -384,6 +387,15 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}" || \
         echo -e "  ${YELLOW}run report capture failed (results are unaffected)${NC}"
 fi
+
+# The plan stamps these with JMeter's own START_TIME, which differs from run_id by
+# a few seconds. Normalise to the names the analysis and Athena scripts expect.
+for _f in "${REPORT_DIR}"/AggregateReport_*.csv; do
+    [ -e "$_f" ] && mv -f "$_f" "${REPORT_DIR}/AggregateReport.csv" && break
+done
+for _f in "${REPORT_DIR}"/SummaryReport_*.csv; do
+    [ -e "$_f" ] && mv -f "$_f" "${REPORT_DIR}/SummaryReport.csv" && break
+done
 
 # JMeter writes statistics.json under dashboard/; downstream analysis and Athena
 # scripts look for it at the run root, so publish a copy there.
