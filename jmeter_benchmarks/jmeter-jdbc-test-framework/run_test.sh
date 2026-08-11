@@ -339,7 +339,11 @@ JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
 JMETER_CMD+=(-t "$TEST_PLAN")
 JMETER_CMD+=(-q "$CONNECTION_FILE")
 JMETER_CMD+=(-l "${REPORT_DIR}/JmeterResultFile.csv")
-JMETER_CMD+=(-e -o "${REPORT_DIR}/dashboard")
+# HTML dashboard is ~3.5MB of vendored assets per run. CLAUDE.md documents
+# GENERATE_DASHBOARD=false to skip it; honour that here.
+if [ "${GENERATE_DASHBOARD:-true}" != "false" ]; then
+    JMETER_CMD+=(-e -o "${REPORT_DIR}/dashboard")
+fi
 
 # Pass all test parameters as JMeter -J properties
 JMETER_CMD+=("-JQUERY_PATH=$QUERY_FILE")

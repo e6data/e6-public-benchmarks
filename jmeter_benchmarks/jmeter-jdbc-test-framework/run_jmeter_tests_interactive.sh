@@ -36,6 +36,36 @@ METADATA_DIR="metadata_files"
 # Helper functions
 # ============================================================================
 
+# Match an answer against a file list, by number OR by filename.
+# Filenames are what scripted callers should use: list positions shift whenever a
+# file is added to the directory, so a piped number silently selects the wrong
+# file, while a filename keeps meaning the same thing.
+# Accepts: "3" | "e6data_test_connection.properties" | "e6data_test_connection"
+#          | "connection_properties/e6data_test_connection.properties"
+# Sets MATCHED_FILE, returns 0 on success.
+match_choice() {
+    local answer="$1"; shift
+    local files=("$@")
+    local count=${#files[@]}
+
+    if [[ "$answer" =~ ^[0-9]+$ ]] && [ "$answer" -ge 1 ] && [ "$answer" -le "$count" ]; then
+        MATCHED_FILE="${files[$((answer - 1))]}"
+        return 0
+    fi
+
+    local want
+    want=$(basename "$answer")
+    for f in "${files[@]}"; do
+        local b
+        b=$(basename "$f")
+        if [ "$b" = "$want" ] || [ "${b%.*}" = "$want" ]; then
+            MATCHED_FILE="$f"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Display a numbered list and get user selection
 # Usage: select_file "prompt" file1 file2 file3 ...
 # Returns: selected file path in SELECTED_FILE variable
@@ -57,12 +87,12 @@ select_file() {
     echo ""
 
     while true; do
-        read -p "Enter choice [1-${count}]: " choice
-        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
-            SELECTED_FILE="${files[$((choice - 1))]}"
+        read -p "Enter choice [1-${count}] or filename: " choice
+        if match_choice "$choice" "${files[@]}"; then
+            SELECTED_FILE="$MATCHED_FILE"
             return 0
         fi
-        echo -e "${RED}Invalid choice. Enter a number between 1 and ${count}.${NC}"
+        echo -e "${RED}Invalid choice. Enter a number between 1 and ${count}, or a filename from the list.${NC}"
     done
 }
 
@@ -195,15 +225,15 @@ fi
 echo ""
 
 while true; do
-    read -p "Enter choice [N or 1-${#TEST_PROPS_FILES[@]}]: " props_choice
+    read -p "Enter choice [N or 1-${#TEST_PROPS_FILES[@]}] or filename: " props_choice
     if [[ "$props_choice" =~ ^[Nn]$ ]]; then
         break
     fi
-    if [ ${#TEST_PROPS_FILES[@]} -gt 0 ] && [[ "$props_choice" =~ ^[0-9]+$ ]] && [ "$props_choice" -ge 1 ] && [ "$props_choice" -le ${#TEST_PROPS_FILES[@]} ]; then
-        TEST_PROPERTIES="${TEST_PROPS_FILES[$((props_choice - 1))]}"
+    if [ ${#TEST_PROPS_FILES[@]} -gt 0 ] && match_choice "$props_choice" "${TEST_PROPS_FILES[@]}"; then
+        TEST_PROPERTIES="$MATCHED_FILE"
         break
     fi
-    echo -e "${RED}Invalid choice. Enter N for new or a number.${NC}"
+    echo -e "${RED}Invalid choice. Enter N for new, a number, or a filename from the list.${NC}"
 done
 
 # Create new test properties if selected
@@ -399,17 +429,22 @@ if [ ${#METADATA_FILES[@]} -gt 0 ]; then
 fi
 echo ""
 
+METADATA_FILE=""
 while true; do
-    read -p "Enter choice [0-${#METADATA_FILES[@]}]: " meta_choice
-    if [[ "$meta_choice" =~ ^[0-9]+$ ]] && [ "$meta_choice" -ge 0 ] && [ "$meta_choice" -le ${#METADATA_FILES[@]} ]; then
+    read -p "Enter choice [0-${#METADATA_FILES[@]}] or filename: " meta_choice
+    if [ "$meta_choice" = "0" ] || [[ "$meta_choice" =~ ^([Ss]kip|[Nn]one)$ ]]; then
+        meta_choice=0
         break
     fi
-    echo -e "${RED}Invalid choice.${NC}"
+    if [ ${#METADATA_FILES[@]} -gt 0 ] && match_choice "$meta_choice" "${METADATA_FILES[@]}"; then
+        METADATA_FILE="$MATCHED_FILE"
+        meta_choice=1
+        break
+    fi
+    echo -e "${RED}Invalid choice. Enter 0 to skip, a number, or a filename from the list.${NC}"
 done
 
-METADATA_FILE=""
 if [ "$meta_choice" -gt 0 ]; then
-    METADATA_FILE="${METADATA_FILES[$((meta_choice - 1))]}"
     echo -e "  ${GREEN}Selected: $(basename "$METADATA_FILE")${NC}"
 else
     echo -e "  ${DIM}Skipped${NC}"
@@ -492,7 +527,7 @@ echo ""
 #
 # Captured BEFORE the metadata is sourced: metadata defines COPY_TO_S3 and
 # would otherwise overwrite the environment value before it could be saved.
-OVERRIDABLE="LOAD_PROFILE HOLD_PERIOD MAX_CONCURRANCY COPY_TO_S3 RECYCLE_ON_EOF \
+OVERRIDABLE="LOAD_PROFILE GENERATE_DASHBOARD HOLD_PERIOD MAX_CONCURRANCY COPY_TO_S3 RECYCLE_ON_EOF \
 RANDOM_ORDER QPS QPM CONCURRENT_QUERY_COUNT RAMP_UP_TIME RAMP_UP_STEPS QUERY_TIMEOUT"
 for _k in $OVERRIDABLE; do
     [ -n "${!_k:-}" ] && printf -v "_ENV_$_k" '%s' "${!_k}"
@@ -579,7 +614,11 @@ JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
 JMETER_CMD+=(-t "$TEST_PLAN")
 JMETER_CMD+=(-q "$CONNECTION_FILE")
 JMETER_CMD+=(-l "${REPORT_DIR}/JmeterResultFile.csv")
-JMETER_CMD+=(-e -o "${REPORT_DIR}/dashboard")
+# HTML dashboard is ~3.5MB of vendored assets per run. CLAUDE.md documents
+# GENERATE_DASHBOARD=false to skip it; honour that here.
+if [ "${GENERATE_DASHBOARD:-true}" != "false" ]; then
+    JMETER_CMD+=(-e -o "${REPORT_DIR}/dashboard")
+fi
 
 # Add all properties as JMeter parameters
 JMETER_CMD+=("-JCONNECTION_PROPERTIES=$CONNECTION_FILE")
