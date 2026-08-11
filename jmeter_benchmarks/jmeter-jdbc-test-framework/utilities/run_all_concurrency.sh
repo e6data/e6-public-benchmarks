@@ -276,8 +276,29 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     QUERY_FILE_PATH="$QUERY_FILE"
     [ -f "$QUERY_FILE_PATH" ] || QUERY_FILE_PATH="data_files/$QUERY_FILE"
 
-    # Concurrency comes from the sweep, not from the properties file, so the
-    # per-level properties file only needs to exist for its other settings.
+    # run_test.sh takes env vars, not a properties file, so load the template's
+    # properties file here and export its settings. Without this the sweep would
+    # silently fall back to run_test.sh defaults - MAX_CONCURRANCY 900 instead of
+    # the file's value, for example - while still printing the file name above as
+    # though it were in effect.
+    TEST_PROPS_PATH="$TEST_PROPS"
+    [ -f "$TEST_PROPS_PATH" ] || TEST_PROPS_PATH="test_properties/$TEST_PROPS"
+    if [ -f "$TEST_PROPS_PATH" ]; then
+        while IFS='=' read -r _k _v; do
+            [[ "$_k" =~ ^[[:space:]]*# ]] && continue
+            _k=$(echo "$_k" | xargs)
+            # only settings run_test.sh acts on; skip log_level.* and JMETER_HOME
+            case "$_k" in
+                HOLD_PERIOD|RAMP_UP_TIME|RAMP_UP_STEPS|QPS|QPM|RANDOM_ORDER|RECYCLE_ON_EOF|\
+                QUERY_TIMEOUT|LIMIT_RESULTSET|MAX_CONCURRANCY|LOAD_PROFILE|COPY_TO_S3|S3_REPORT_PATH)
+                    export "$_k=$(echo "$_v" | xargs)" ;;
+            esac
+        done < "$TEST_PROPS_PATH"
+    else
+        echo -e "${YELLOW}  Warning: properties file not found: $TEST_PROPS_PATH — using run_test.sh defaults${NC}"
+    fi
+
+    # Concurrency comes from the sweep, overriding whatever the properties file says.
     if CONNECTION_FILE="connection_properties/$CONNECTION_FILE" \
        TEST_PLAN="$TEST_PLAN_PATH" \
        QUERY_FILE="$QUERY_FILE_PATH" \
