@@ -204,9 +204,15 @@ cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 
 Each test run generates results in the `reports/` directory:
 
-- **JTL file** (`results.jtl`) — raw CSV with per-query timing (timestamp, elapsed ms, label, success)
-- **Aggregate report** (`AggregateReport_TIMESTAMP.csv`) — same data with timestamped filename
-- **Dashboard** (`statistics.json`) — summary statistics when dashboard generation is enabled
+Each run gets its own directory, `reports/<run_id>/`, containing:
+
+- **`JmeterResultFile.csv`** — raw CSV with per-query timing (timestamp, elapsed ms, label, success)
+- **`AggregateReport.csv`** / **`SummaryReport.csv`** — per-query and summary statistics
+- **`run_report.md`** — human-readable summary, generated automatically after every run
+- **`run_summary.json`** — the same metrics in machine-readable form
+- **`statistics.json`** and **`dashboard/`** — JMeter's aggregate stats and HTML dashboard
+
+Set `GENERATE_DASHBOARD=false` to skip the HTML dashboard (~3.5 MB per run).
 
 These can be opened in spreadsheet tools or processed with the scripts in `utilities/`.
 

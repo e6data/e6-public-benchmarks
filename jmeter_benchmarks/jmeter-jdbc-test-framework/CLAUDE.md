@@ -126,6 +126,11 @@ Interactive utility that creates connection properties files for JDBC (e6data, D
 ./run_jmeter_tests_interactive.sh
 ```
 
+Prompts accept a **filename as well as a list number**. Prefer filenames when scripting:
+the list is rebuilt from the directory each run and numbered by sort position, so adding a
+connection or properties file shifts every index after it and a piped number then selects a
+different file silently.
+
 This script:
 1. Lists existing connection properties files for selection (if none exist, directs to `create_connection.sh`)
 2. Prompts for test plan type (concurrency, QPS, QPM, load profile, variable concurrency; JDBC or HTTP variants)
@@ -423,20 +428,81 @@ JDBC drivers are stored in `jdbc_drivers/` directory:
 
 The `setup_jmeter.sh` script handles this automatically.
 
+## Load Profile Tests (variable QPS)
+
+`Test-Plan-Fire-QPS-with-load-profile.jmx` fires queries at a rate that varies over time,
+driven by a CSV. Point `LOAD_PROFILE` at any CSV — no per-profile test plan is needed:
+
+```bash
+LOAD_PROFILE=test_properties/my_profile.csv ./run_jmeter_tests_interactive.sh
+```
+
+CSV format (header optional), duration in seconds:
+
+```
+StartValue,EndValue,Duration
+3,3,1        # 3 QPS for 1s
+5,5,2        # 5 QPS for 2s
+1,10,5       # ramp 1 -> 10 QPS over 5s
+```
+
+Required settings for this plan type:
+
+| Setting | Why |
+|---|---|
+| `RECYCLE_ON_EOF=true` | without it threads hit EOF and vanish before the profile finishes |
+| `MAX_CONCURRANCY` | must exceed `peak_qps x latency_seconds`, or arrivals are silently dropped |
+| `HOLD_PERIOD` | at least the profile's total duration, plus time for the backlog to drain |
+
+Every run prints what was applied — its absence means the profile did not take effect:
+
+```
+load profile applied: 15 steps, 17s, peak 56/s, ~482 expected samples
+```
+
+Afterwards, `run_report.md` reports delivered-vs-expected arrivals. A `SHORTFALL` verdict
+means `MAX_CONCURRANCY` was too low. To inspect further:
+
+```bash
+python3 utilities/verify_load_profile.py reports/<run_id>/JmeterResultFile.csv <profile>.csv
+python3 utilities/analyze_queue_buildup.py reports/<run_id>/JmeterResultFile.csv --bucket 5
+```
+
+**Implementation note:** the schedule is injected into a copy of the plan by
+`utilities/apply_load_profile.py` before JMeter starts. The plan also contains a JSR223
+PreProcessor that appears to do this, but cannot — a PreProcessor runs when a sampler
+fires, after the thread group has already read its schedule.
+
 ## Report Output
 
-Each test execution generates timestamped reports:
+Each run writes a self-contained directory, `reports/<run_id>/`:
 
 ```
-reports/
-  results_YYYYMMDD-HHMMSS.jtl          # Raw JMeter results (CSV)
-  AggregateReport_YYYYMMDD-HHMMSS.csv  # Per-query statistics
-  statistics_YYYYMMDD-HHMMSS.json      # JSON summary for automation
-  test_result_YYYYMMDD-HHMMSS.json     # Test metadata
-  dashboard_YYYYMMDD-HHMMSS/           # HTML dashboard (if enabled)
+reports/20260807-180031/
+  JmeterResultFile.csv                 # raw per-sample results
+  AggregateReport.csv                  # per-query statistics
+  SummaryReport.csv                    # summary statistics
+  statistics.json                      # JMeter aggregate stats
+  run_report.md                        # human-readable summary (auto-generated)
+  run_summary.json                     # machine-readable metrics (auto-generated)
+  <plan>-generated.jmx                 # the exact plan that ran (load-profile runs)
+  dashboard/                           # HTML dashboard (unless disabled)
 ```
 
-Set `GENERATE_DASHBOARD=false` in test properties to skip HTML generation (saves ~50-100MB per test).
+`run_report.md` and `run_summary.json` are produced automatically by
+`utilities/capture_run_report.py` after every run — throughput, percentiles, drain time,
+queue build-up, and, for load-profile runs, delivered-vs-expected arrivals with a
+`SHORTFALL` verdict when arrivals were dropped.
+
+Set `GENERATE_DASHBOARD=false` to skip HTML generation — roughly 3.5 MB of vendored
+assets per run:
+
+```bash
+GENERATE_DASHBOARD=false ./run_jmeter_tests_interactive.sh
+```
+
+The S3 upload always omits those vendored assets (9 objects instead of 129); set
+`S3_UPLOAD_DASHBOARD_ASSETS=true` to include them.
 
 ## Common Development Tasks
 
@@ -531,6 +597,47 @@ java -version  # Verify
 2. Check connection string format for your database
 3. Use test script: `./utilities/test_jdbc_connection.sh connection.properties`
 4. Check JMeter logs in `apache-jmeter-5.6.3/bin/jmeter.log`
+
+### Load Profile Not Applied
+
+If a load-profile run produces far fewer samples than expected (classically exactly the
+number of queries in your CSV), check for the `load profile applied:` line at the start of
+the run. Without it the plan fell back to its built-in schedule. Confirm `LOAD_PROFILE`
+points at an existing file — a missing file is now a hard error rather than a silent
+fallback.
+
+If arrivals fall short *within* the profile window, `MAX_CONCURRANCY` is too low and the
+arrivals thread group dropped them. `run_report.md` flags this as `SHORTFALL`.
+
+### Databricks: ExceptionInInitializerError on Java 9+
+
+Every query fails immediately with `java.lang.ExceptionInInitializerError`. The Databricks
+driver bundles Apache Arrow, whose off-heap memory layer reflectively accesses
+`java.nio.DirectByteBuffer` internals. JMeter's launcher does not open `java.base/java.nio`,
+so Arrow's static initialiser fails. Either append to the connection string:
+
+```
+;EnableArrow=0
+```
+
+or keep Arrow and grant the module access on every run:
+
+```bash
+export JVM_ARGS="--add-opens=java.base/java.nio=ALL-UNNAMED"
+```
+
+### UNIMPLEMENTED: No cluster-name header or unknown cluster
+
+More than one `e6-jdbc-driver-*.jar` is on the classpath and an older one is winning. Load
+order depends on the filesystem, so this can reproduce on Linux but not macOS:
+
+```bash
+find apache-jmeter-5.6.3 -name "e6-jdbc-driver-*.jar"   # expect exactly one
+./utilities/fix_jmeter_jar_conflicts.sh
+```
+
+The same message also appears when the cluster is suspended — a suspended e6data cluster
+auto-resumes on first contact, and the first run afterwards can fail while it comes up.
 
 ### S3 Upload Failures
 
