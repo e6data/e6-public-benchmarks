@@ -144,10 +144,15 @@ def markdown(run_id, s, meta):
           f"| Peak in flight | {s['peak_in_flight']} (at t={s['peak_at_s']} s) |",
           ""]
     lt = s["latency_ms"]
-    L += ["## Latency (ms)", "",
-          "| min | p50 | p90 | p95 | p99 | max | mean |", "|---|---|---|---|---|---|---|",
-          f"| {lt['min']} | {lt['p50']} | {lt['p90']} | {lt['p95']} | {lt['p99']} | {lt['max']} | {lt['mean']} |",
-          "", "_Percentiles are nearest-rank over successful samples._", ""]
+    if lt["min"] is None:
+        L += ["## Latency", "",
+              "_No successful samples — every query failed, so there are no latencies to report._",
+              ""]
+    else:
+        L += ["## Latency (ms)", "",
+              "| min | p50 | p90 | p95 | p99 | max | mean |", "|---|---|---|---|---|---|---|",
+              f"| {lt['min']} | {lt['p50']} | {lt['p90']} | {lt['p95']} | {lt['p99']} | {lt['max']} | {lt['mean']} |",
+              "", "_Percentiles are nearest-rank over successful samples._", ""]
 
     if "load_profile" in s:
         lp = s["load_profile"]
