@@ -373,6 +373,16 @@ fi
 
 echo -e "${DIM}${JMETER_CMD[*]}${NC}"
 echo ""
+# The QPM plan uses Unit=M on its thread group, which governs BOTH the arrival rate
+# (QPM = per minute) and the hold duration - so HOLD_PERIOD is MINUTES there, unlike
+# every other plan where it is seconds. The two cannot be separated: setting Unit=S
+# would make QPM mean per-second. Warn rather than silently run 60x too long.
+if grep -q '<stringProp name="Unit">M</stringProp>' "$TEST_PLAN" 2>/dev/null; then
+    echo -e "${YELLOW}  Note: this plan measures time in MINUTES.${NC}"
+    echo -e "${YELLOW}  HOLD_PERIOD=${HOLD_PERIOD:-?} means ${HOLD_PERIOD:-?} minute(s), not seconds.${NC}"
+    echo ""
+fi
+
 echo -e "${BLUE}Running JMeter...${NC}"
 echo ""
 
@@ -384,7 +394,13 @@ echo ""
 # it. Writes run_summary.json + run_report.md into the run directory.
 if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     CAPTURE_ARGS=("$REPORT_DIR")
-    [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] && CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
+    # Only compare against a load profile when the plan is actually profile-driven.
+    # LOAD_PROFILE defaults to an existing file, so passing it unconditionally made
+    # every non-profile run report a bogus "SHORTFALL" against a schedule it never used.
+    if grep -q "FreeFormArrivalsThreadGroup" "$TEST_PLAN" 2>/dev/null \
+       && [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ]; then
+        CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
+    fi
     CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
     CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}")
     CAPTURE_ARGS+=(--meta "test_plan=$(basename "$TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
