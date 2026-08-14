@@ -158,7 +158,7 @@ if [ "$CONN_TYPE" = "jdbc" ]; then
     echo "  3) Constant QPS              - Fire queries at N per second"
     echo "  4) Constant QPM              - Fire queries at N per minute"
     echo "  5) QPS with Load Profile     - Variable QPS from CSV schedule"
-    echo "  6) Variable Concurrency      - Custom thread spawn schedule"
+    echo "  6) Variable Concurrency      - Variable concurrency from CSV schedule"
     echo ""
 
     while true; do
@@ -308,12 +308,25 @@ if [[ "$props_choice" =~ ^[Nn]$ ]]; then
             ;;
         variable_concurrency)
             echo ""
-            echo "Enter thread spawn schedule using UTG format:"
-            echo -e "${DIM}  Format: spawn(threads, initialDelay, startupTime, holdFor, shutdownTime)${NC}"
-            echo -e "${DIM}  Example: spawn(4,0s,0s,80s,0s) spawn(16,0s,0s,80s,0s)${NC}"
-            echo ""
-            read -p "Thread schedule: " THREADS_SCHEDULE
-            HOLD_PERIOD=$(prompt_with_default "Hold period (seconds)" "600")
+            echo -e "${DIM}Available concurrency profiles in ${TEST_PROPS_DIR}/${NC}"
+            echo -e "${DIM}  (5 columns: Threads,StartTime,StartupTime,HoldTime,ShutdownTime)${NC}"
+            # Only 5-column CSVs suit this plan; a 3-column arrivals profile would
+            # be rejected by the injector, so do not offer it here.
+            LOAD_PROFILES=()
+            for c in $(ls -1 "$TEST_PROPS_DIR"/*.csv 2>/dev/null | sort); do
+                cols=$(grep -vE '^\s*$' "$c" | head -1 | awk -F, '{print NF}')
+                [ "${cols:-0}" -ge 5 ] && LOAD_PROFILES+=("$c")
+            done
+            if [ ${#LOAD_PROFILES[@]} -gt 0 ]; then
+                for i in "${!LOAD_PROFILES[@]}"; do
+                    echo "  $((i + 1))) $(basename "${LOAD_PROFILES[$i]}")"
+                done
+                echo ""
+                read -p "Select concurrency profile [1-${#LOAD_PROFILES[@]}]: " lp_choice
+                LOAD_PROFILE="${LOAD_PROFILES[$((lp_choice - 1))]}"
+            else
+                read -p "Concurrency profile CSV path: " LOAD_PROFILE
+            fi
             CONCURRENT_QUERY_COUNT="1"
             RAMP_UP_TIME="0"
             RAMP_UP_STEPS="1"
@@ -365,9 +378,6 @@ if [[ "$props_choice" =~ ^[Nn]$ ]]; then
         fi
         if [ -n "${LOAD_PROFILE:-}" ]; then
             echo "LOAD_PROFILE=${LOAD_PROFILE}"
-        fi
-        if [ -n "${THREADS_SCHEDULE:-}" ]; then
-            echo "threads_schedule=${THREADS_SCHEDULE}"
         fi
         if [ -n "${STOP_THREAD_ON_EOF:-}" ]; then
             echo "STOP_THREAD_ON_EOF=${STOP_THREAD_ON_EOF}"
@@ -539,7 +549,7 @@ if [ -n "$METADATA_FILE" ]; then
 fi
 
 # Read test properties without executing them (values like
-# threads_schedule=spawn(4,0s,...) are not valid bash)
+# values containing parentheses or spaces are not valid bash)
 while IFS='=' read -r key value; do
     [[ "$key" =~ ^[[:space:]]*# ]] && continue
     key=$(echo "$key" | xargs)
@@ -586,11 +596,18 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REPORT_DIR="${REPORT_PATH:-reports}/${TIMESTAMP}"
 mkdir -p "$REPORT_DIR"
 
-# Apply the load profile CSV to the plan's arrivals schedule.
-# The plan's own JSR223 PreProcessor cannot do this: it runs when a sampler
-# fires, by which point the thread group has already read its Schedule. So the
-# schedule is injected here, before JMeter starts.
-if grep -q "FreeFormArrivalsThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+# Apply the load profile CSV to the plan's thread-group schedule.
+# Covers both families: FreeFormArrivalsThreadGroup (arrival rate) and
+# UltimateThreadGroup (concurrency waves).
+# The plans' own JSR223 PreProcessors cannot do this: they run when a sampler
+# fires, by which point the thread group has already read its schedule and
+# started threads. So the schedule is injected here, before JMeter starts.
+if grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+    # The two families take different CSV formats, so the default follows the plan.
+    if [ -z "${LOAD_PROFILE:-}" ] && grep -q "UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null \
+       && [ -f "${PROJECT_ROOT}/test_properties/utg_load_profile.csv" ]; then
+        LOAD_PROFILE="test_properties/utg_load_profile.csv"
+    fi
     if [ -z "${LOAD_PROFILE:-}" ]; then
         echo -e "${YELLOW}Warning: load-profile plan selected but LOAD_PROFILE is not set.${NC}"
         echo -e "${YELLOW}The plan's built-in schedule will be used instead.${NC}"
@@ -609,7 +626,7 @@ if grep -q "FreeFormArrivalsThreadGroup" "$TEST_PLAN" 2>/dev/null; then
 fi
 
 # Build JMeter command as an array so values containing spaces or shell
-# metacharacters (e.g. threads_schedule=spawn(4,0s,...)) reach JMeter intact
+# metacharacters (e.g. a query path with spaces) reach JMeter intact
 JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
 JMETER_CMD+=(-t "$TEST_PLAN")
 JMETER_CMD+=(-q "$CONNECTION_FILE")
@@ -671,15 +688,26 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     # Only compare against a load profile when the plan is actually profile-driven.
     # LOAD_PROFILE defaults to an existing file, so passing it unconditionally made
     # every non-profile run report a bogus "SHORTFALL" against a schedule it never used.
-    if grep -q "FreeFormArrivalsThreadGroup" "$TEST_PLAN" 2>/dev/null \
+    if grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null \
        && [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ]; then
         CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
     fi
     CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
     CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}" --meta "run_type=${PLAN_TYPE}")
     CAPTURE_ARGS+=(--meta "test_plan=$(basename "$TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
-    python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}" || \
+    # Exit 2 from the report means the run itself failed (no samples, or an error
+    # rate above MAX_ERROR_PCT). Propagate it: a run where the queries did not
+    # succeed must not report success, or callers and CI treat it as a result.
+    RUN_FAILED=0
+    set +e
+    python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}"
+    CAPTURE_RC=$?
+    set -e
+    if [ "$CAPTURE_RC" -eq 2 ]; then
+        RUN_FAILED=1
+    elif [ "$CAPTURE_RC" -ne 0 ]; then
         echo -e "  ${YELLOW}run report capture failed (results are unaffected)${NC}"
+    fi
 fi
 
 # The plan stamps these with JMeter's own START_TIME, which differs from run_id by
@@ -697,9 +725,15 @@ done
     cp "${REPORT_DIR}/dashboard/statistics.json" "${REPORT_DIR}/statistics.json"
 
 echo ""
-echo -e "${GREEN}=========================================="
-echo " Test Complete!"
-echo -e "==========================================${NC}"
+if [ "${RUN_FAILED:-0}" -eq 1 ]; then
+    echo -e "${RED}=========================================="
+    echo " Test FAILED"
+    echo -e "==========================================${NC}"
+else
+    echo -e "${GREEN}=========================================="
+    echo " Test Complete!"
+    echo -e "==========================================${NC}"
+fi
 echo ""
 echo "  Results: ${REPORT_DIR}/"
 echo "  Report:  ${REPORT_DIR}/run_report.md"
@@ -733,3 +767,7 @@ if [ "${COPY_TO_S3:-false}" = "true" ] && [ -n "${S3_BASE_PATH:-}" ]; then
 fi
 
 echo ""
+
+# Exit non-zero when the run produced no usable result, so callers and CI can
+# tell a real benchmark from one where every query failed.
+exit "${RUN_FAILED:-0}"

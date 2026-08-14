@@ -39,23 +39,34 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 
 | Script | Purpose |
 |--------|---------|
-| `apply_load_profile.py` | Inject a load-profile CSV into a plan's arrivals `Schedule` before JMeter starts |
+| `apply_load_profile.py` | Inject a load-profile CSV into a plan's thread-group schedule before JMeter starts |
 | `capture_run_report.py` | Write `run_summary.json` + `run_report.md` into a run dir (called automatically by both runners) |
 | `verify_load_profile.py` | Confirm arrivals matched the profile, per second |
 | `analyze_queue_buildup.py` | Queue depth / drain reconstruction for arrivals runs |
 
 Called automatically by `run_jmeter_tests_interactive.sh` and `run_test.sh` whenever the
-selected plan contains a `FreeFormArrivalsThreadGroup`. Point `LOAD_PROFILE` in your test
-properties at any CSV — no per-profile test plan is needed.
+selected plan contains a `FreeFormArrivalsThreadGroup` or an `UltimateThreadGroup`. Point
+`LOAD_PROFILE` at any CSV — no per-profile test plan is needed.
+
+Two formats, chosen from the plan rather than a flag (header optional, times in seconds):
+
+| Plan controls | Thread group | Block rewritten | CSV columns |
+|---|---|---|---|
+| arrival rate | `FreeFormArrivalsThreadGroup` | `Schedule` | `StartValue,EndValue,Duration` |
+| concurrency | `UltimateThreadGroup` | `ultimatethreadgroupdata` | `Threads,StartTime,StartupTime,HoldTime,ShutdownTime` |
+
+Concurrency rows **stack** — each wave adds its threads on top of any still running — and
+ramp linearly over `StartupTime` / `ShutdownTime`. Set both to `0` for a flat step.
 
 ```properties
 LOAD_PROFILE=test_properties/my_profile.csv
-RECYCLE_ON_EOF=true      # required: without it threads hit EOF and vanish
-MAX_CONCURRANCY=200      # must exceed peak_qps x avg_latency_sec
-HOLD_PERIOD=60           # seconds; must be >= the profile's total duration
+RECYCLE_ON_EOF=true      # required for both: without it threads hit EOF and vanish
+MAX_CONCURRANCY=200      # arrivals plan only; must exceed peak_qps x avg_latency_sec
+HOLD_PERIOD=60           # arrivals plan only; >= the profile's total duration
 ```
 
-CSV format (header optional): `StartValue,EndValue,Duration`, duration in seconds.
+The concurrency plan ignores `MAX_CONCURRANCY` and `HOLD_PERIOD` — its CSV sets both the
+concurrency and the run length.
 
 **You do not need a properties file per profile.** Environment values override the file, so one
 config serves every profile:

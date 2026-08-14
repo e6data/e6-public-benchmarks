@@ -397,9 +397,15 @@ RECYCLE_ON_EOF=false
 
 **IMPORTANT:** The test **ALWAYS runs for the full HOLD_PERIOD duration**, regardless of RECYCLE_ON_EOF setting or when queries finish.
 
-**HOLD_PERIOD is in SECONDS** (despite misleading comments in properties files saying "minutes"):
+**HOLD_PERIOD is in SECONDS** on every plan except one:
 - `HOLD_PERIOD=300` = 5 minutes (not 5 hours!)
 - Test duration = `RAMP_UP_TIME` + `HOLD_PERIOD` (in seconds)
+- **Exception:** `Test-Plan-Constant-QPM-On-Arrivals.jmx` runs on `Unit=M`, which
+  governs both the rate denominator and the hold duration, so there `HOLD_PERIOD`
+  is in **MINUTES** — `HOLD_PERIOD=5` means 5 minutes. This cannot be normalized
+  without breaking the queries-per-minute rate; the runners print a warning.
+- Not used at all by `Run-Once` (bounded by query count) or the two load-profile
+  plans (bounded by the profile).
 
 **When `RECYCLE_ON_EOF=false` (run queries once):**
 - Queries from CSV are read once
@@ -428,16 +434,29 @@ JDBC drivers are stored in `jdbc_drivers/` directory:
 
 The `setup_jmeter.sh` script handles this automatically.
 
-## Load Profile Tests (variable QPS)
+## Load Profile Tests
 
-`Test-Plan-Fire-QPS-with-load-profile.jmx` fires queries at a rate that varies over time,
-driven by a CSV. Point `LOAD_PROFILE` at any CSV — no per-profile test plan is needed:
+Two plans vary their load over time from a CSV. They control **different things**, so they
+take **different CSV formats** — the format is chosen from the plan, not from a flag.
+
+| Plan | Thread group | Controls | CSV |
+|---|---|---|---|
+| `Test-Plan-Fire-QPS-with-load-profile.jmx` | `FreeFormArrivalsThreadGroup` | arrival rate | 3 columns |
+| `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx` | `UltimateThreadGroup` | concurrency | 5 columns |
+
+Point `LOAD_PROFILE` at any CSV — no per-profile test plan is needed:
 
 ```bash
 LOAD_PROFILE=test_properties/my_profile.csv ./run_jmeter_tests_interactive.sh
 ```
 
-CSV format (header optional), duration in seconds:
+If `LOAD_PROFILE` is unset, the default follows the plan: `test_properties/load_profile.csv`
+for the QPS plan, `test_properties/utg_load_profile.csv` for the concurrency plan.
+
+### Arrival-rate CSV (3 columns)
+
+Controls how fast queries are *submitted*, regardless of whether earlier ones finished.
+Durations in seconds; header optional.
 
 ```
 StartValue,EndValue,Duration
@@ -446,22 +465,50 @@ StartValue,EndValue,Duration
 1,10,5       # ramp 1 -> 10 QPS over 5s
 ```
 
-Required settings for this plan type:
-
 | Setting | Why |
 |---|---|
 | `RECYCLE_ON_EOF=true` | without it threads hit EOF and vanish before the profile finishes |
 | `MAX_CONCURRANCY` | must exceed `peak_qps x latency_seconds`, or arrivals are silently dropped |
 | `HOLD_PERIOD` | at least the profile's total duration, plus time for the backlog to drain |
 
+### Concurrency CSV (5 columns)
+
+Controls how many queries run *at once*. Rows **stack** — each adds its threads on top of
+any wave still running — and ramp linearly over `StartupTime` / `ShutdownTime`.
+
+```
+Threads,StartTime,StartupTime,HoldTime,ShutdownTime
+10,0,30,60,10     # ramp to 10 over 30s, hold 60s, wind down over 10s
+20,90,30,60,10    # +20 more from t=90  -> 30 concurrent at the plateau
+```
+
+For a flat step with no ramp, set `StartupTime=0` and `ShutdownTime=0`:
+
+```
+Threads,StartTime,StartupTime,HoldTime,ShutdownTime
+2,0,0,45,0
+3,45,0,45,0
+```
+
+`RECYCLE_ON_EOF=true` is needed here too. `MAX_CONCURRANCY` and `HOLD_PERIOD` are not used
+by this plan — the CSV alone sets both the concurrency and the run length.
+
+### Verifying it took effect
+
 Every run prints what was applied — its absence means the profile did not take effect:
 
 ```
-load profile applied: 15 steps, 17s, peak 56/s, ~482 expected samples
+load profile applied (arrival rate): 15 steps, 17s, peak 56/s, ~482 expected samples
+load profile applied (concurrency): 2 waves, 90s, peak 3 concurrent, levels [2, 3]
 ```
 
-Afterwards, `run_report.md` reports delivered-vs-expected arrivals. A `SHORTFALL` verdict
-means `MAX_CONCURRANCY` was too low. To inspect further:
+Afterwards `run_report.md` scores the run against the profile:
+
+- **arrival rate** — delivered vs expected arrivals. `SHORTFALL` means `MAX_CONCURRANCY`
+  was too low.
+- **concurrency** — how many seconds in-flight stayed within 1 of the profile. A brief
+  overshoot at a wave boundary is expected: a thread finishes its current query before
+  stopping, so the outgoing and incoming waves overlap for a few seconds.
 
 ```bash
 python3 utilities/verify_load_profile.py reports/<run_id>/JmeterResultFile.csv <profile>.csv
@@ -469,9 +516,37 @@ python3 utilities/analyze_queue_buildup.py reports/<run_id>/JmeterResultFile.csv
 ```
 
 **Implementation note:** the schedule is injected into a copy of the plan by
-`utilities/apply_load_profile.py` before JMeter starts. The plan also contains a JSR223
-PreProcessor that appears to do this, but cannot — a PreProcessor runs when a sampler
-fires, after the thread group has already read its schedule.
+`utilities/apply_load_profile.py` before JMeter starts — into `Schedule` for the arrivals
+plan, `ultimatethreadgroupdata` for the concurrency plan. Both plans also contain JSR223
+PreProcessors that appear to do this, but cannot — a PreProcessor runs when a sampler
+fires, after the thread group has already read its schedule and started threads. Those
+elements ship `enabled="false"`; leave them that way.
+
+## Exit Codes
+
+Both runners exit non-zero when a run did not produce a usable result. This matters
+because JMeter itself returns 0 even when every sample failed — a run against an
+unreachable cluster used to print "Test Complete!" and exit 0, so any script or CI
+wrapped around it reported success on numbers that meant nothing.
+
+| Code | Meaning |
+|---|---|
+| 0 | Run completed, error rate within `MAX_ERROR_PCT` |
+| 1 | Not a usable result — no samples recorded, or error rate above the threshold |
+
+`MAX_ERROR_PCT` defaults to **5**. The results directory is still written on failure
+so the run can be diagnosed, and the banner reads `Test FAILED` instead of
+`Test Complete!`. The report prints the top failure messages:
+
+```
+  run report: 25 samples, 100.0% errors, 2.18/s, peak 2 in flight
+  [FAIL] error rate 100.0% exceeds the 5.0% threshold - this run is not a usable result
+         25x java.sql.SQLException: UNIMPLEMENTED: No cluster-name header or unknown cluster
+```
+
+Set `MAX_ERROR_PCT=100` when errors are expected (fault-injection, capacity limits).
+`utilities/capture_run_report.py` uses exit code 2 for this so callers can tell a
+failed *run* from a failed *script*; the runners translate it to 1.
 
 ## Report Output
 

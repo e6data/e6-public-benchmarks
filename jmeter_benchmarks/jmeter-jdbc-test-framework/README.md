@@ -141,17 +141,30 @@ export CONCURRENT_QUERY_COUNT=8
 
 ### Load profile CSV
 
-For load-profile-based test plans, edit `test_properties/load_profile.csv`:
+The two load-profile plans control different things, so they take different CSV formats.
+The format is picked from the plan automatically — set `LOAD_PROFILE` to any CSV.
+
+**Arrival rate** — `Test-Plan-Fire-QPS-with-load-profile.jmx`, default
+`test_properties/load_profile.csv`. Controls how fast queries are *submitted*:
 
 ```csv
 StartValue,EndValue,Duration
-1,1,5
-2,2,10
-4,4,10
-2,2,5
+1,1,5        # 1 QPS for 5s
+2,2,10       # 2 QPS for 10s
+1,10,5       # ramp 1 -> 10 QPS over 5s
 ```
 
-Each row: hold `StartValue`-to-`EndValue` concurrency/QPS/QPM for `Duration` seconds.
+**Concurrency** — `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx`, default
+`test_properties/utg_load_profile.csv`. Controls how many run *at once*. Rows stack:
+
+```csv
+Threads,StartTime,StartupTime,HoldTime,ShutdownTime
+10,0,30,60,10     # ramp to 10 over 30s, hold 60s, wind down over 10s
+20,90,30,60,10    # +20 more from t=90 -> 30 concurrent
+```
+
+Use `StartupTime=0` and `ShutdownTime=0` for a flat step with no ramp. All times in seconds.
+See `CLAUDE.md` for the full reference.
 
 ## Configuration Reference
 

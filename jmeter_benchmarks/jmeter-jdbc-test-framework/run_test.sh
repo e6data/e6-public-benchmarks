@@ -29,6 +29,13 @@
 #   LIMIT_RESULTSET           - max result rows (default: 1000)
 #   MAX_CONCURRANCY           - max threads (default: 900)
 #   JMETER_HOME               - JMeter installation path (auto-detected if not set)
+#   MAX_ERROR_PCT             - fail the run above this error rate (default: 5)
+#
+# Exit codes:
+#   0  the run completed and the error rate was within MAX_ERROR_PCT
+#   1  the run is not a usable result - no samples recorded, or too many errors.
+#      The results directory is still written so the failure can be diagnosed.
+#      Set MAX_ERROR_PCT=100 to accept any error rate.
 #
 # Examples:
 #
@@ -95,7 +102,6 @@ if [ -n "$1" ]; then
     _SAVE_LIMIT_RESULTSET="${LIMIT_RESULTSET:-}"
     _SAVE_MAX_CONCURRANCY="${MAX_CONCURRANCY:-}"
     _SAVE_JMETER_HOME="${JMETER_HOME:-}"
-    _SAVE_THREADS_SCHEDULE="${THREADS_SCHEDULE:-}"
 
     source "$SUITE_FILE"
 
@@ -120,7 +126,6 @@ if [ -n "$1" ]; then
     [ -n "$_SAVE_LIMIT_RESULTSET" ] && LIMIT_RESULTSET="$_SAVE_LIMIT_RESULTSET"
     [ -n "$_SAVE_MAX_CONCURRANCY" ] && MAX_CONCURRANCY="$_SAVE_MAX_CONCURRANCY"
     [ -n "$_SAVE_JMETER_HOME" ] && JMETER_HOME="$_SAVE_JMETER_HOME"
-    [ -n "$_SAVE_THREADS_SCHEDULE" ] && THREADS_SCHEDULE="$_SAVE_THREADS_SCHEDULE"
 fi
 
 # ============================================================================
@@ -182,7 +187,14 @@ QPM="${QPM:-10}"
 HOLD_PERIOD="${HOLD_PERIOD:-300}"
 RAMP_UP_TIME="${RAMP_UP_TIME:-1}"
 RAMP_UP_STEPS="${RAMP_UP_STEPS:-1}"
-LOAD_PROFILE="${LOAD_PROFILE:-test_properties/load_profile.csv}"
+# The two load-profile plan families take different CSV formats, so the default
+# follows the plan: 5-column concurrency waves for UltimateThreadGroup,
+# 3-column arrival-rate steps for FreeFormArrivalsThreadGroup.
+if grep -q "UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+    LOAD_PROFILE="${LOAD_PROFILE:-test_properties/utg_load_profile.csv}"
+else
+    LOAD_PROFILE="${LOAD_PROFILE:-test_properties/load_profile.csv}"
+fi
 RANDOM_ORDER="${RANDOM_ORDER:-false}"
 RECYCLE_ON_EOF="${RECYCLE_ON_EOF:-false}"
 COPY_TO_S3="${COPY_TO_S3:-false}"
@@ -312,11 +324,13 @@ echo ""
 # Build and run JMeter command
 # ============================================================================
 
-# Apply the load profile CSV to the plan's arrivals schedule.
-# The plan's own JSR223 PreProcessor cannot do this: it runs when a sampler
-# fires, by which point the thread group has already read its Schedule. So the
-# schedule is injected here, before JMeter starts.
-if grep -q "FreeFormArrivalsThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+# Apply the load profile CSV to the plan's thread-group schedule.
+# Covers both families: FreeFormArrivalsThreadGroup (arrival rate) and
+# UltimateThreadGroup (concurrency waves).
+# The plans' own JSR223 PreProcessors cannot do this: they run when a sampler
+# fires, by which point the thread group has already read its schedule and
+# started threads. So the schedule is injected here, before JMeter starts.
+if grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
     if [ -z "${LOAD_PROFILE:-}" ]; then
         echo -e "${YELLOW}Warning: load-profile plan selected but LOAD_PROFILE is not set.${NC}"
         echo -e "${YELLOW}The plan's built-in schedule will be used instead.${NC}"
@@ -334,7 +348,8 @@ if grep -q "FreeFormArrivalsThreadGroup" "$TEST_PLAN" 2>/dev/null; then
 fi
 
 # Built as an array so values containing spaces or shell metacharacters
-# (e.g. threads_schedule=spawn(4,0s,...)) reach JMeter intact
+# (e.g. a query path with spaces, or a value containing parentheses) reach
+# JMeter intact rather than being re-split by the shell
 JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
 JMETER_CMD+=(-t "$TEST_PLAN")
 JMETER_CMD+=(-q "$CONNECTION_FILE")
@@ -366,11 +381,6 @@ JMETER_CMD+=("-JQUERY_TIMEOUT=$QUERY_TIMEOUT")
 JMETER_CMD+=("-JLIMIT_RESULTSET=$LIMIT_RESULTSET")
 JMETER_CMD+=("-JMAX_CONCURRANCY=$MAX_CONCURRANCY")
 
-# Optional: threads_schedule for variable concurrency
-if [ -n "${THREADS_SCHEDULE:-}" ]; then
-    JMETER_CMD+=("-Jthreads_schedule=$THREADS_SCHEDULE")
-fi
-
 echo -e "${DIM}${JMETER_CMD[*]}${NC}"
 echo ""
 # The QPM plan uses Unit=M on its thread group, which governs BOTH the arrival rate
@@ -397,15 +407,26 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     # Only compare against a load profile when the plan is actually profile-driven.
     # LOAD_PROFILE defaults to an existing file, so passing it unconditionally made
     # every non-profile run report a bogus "SHORTFALL" against a schedule it never used.
-    if grep -q "FreeFormArrivalsThreadGroup" "$TEST_PLAN" 2>/dev/null \
+    if grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null \
        && [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ]; then
         CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
     fi
     CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
     CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}")
     CAPTURE_ARGS+=(--meta "test_plan=$(basename "$TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
-    python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}" || \
+    # Exit 2 from the report means the run itself failed (no samples, or an error
+    # rate above MAX_ERROR_PCT). Propagate it: a run where the queries did not
+    # succeed must not report success, or callers and CI treat it as a result.
+    RUN_FAILED=0
+    set +e
+    python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}"
+    CAPTURE_RC=$?
+    set -e
+    if [ "$CAPTURE_RC" -eq 2 ]; then
+        RUN_FAILED=1
+    elif [ "$CAPTURE_RC" -ne 0 ]; then
         echo -e "  ${YELLOW}run report capture failed (results are unaffected)${NC}"
+    fi
 fi
 
 # The plan stamps these with JMeter's own START_TIME, which differs from run_id by
@@ -423,9 +444,15 @@ done
     cp "${REPORT_DIR}/dashboard/statistics.json" "${REPORT_DIR}/statistics.json"
 
 echo ""
-echo -e "${GREEN}=========================================="
-echo " Test Complete!"
-echo -e "==========================================${NC}"
+if [ "${RUN_FAILED:-0}" -eq 1 ]; then
+    echo -e "${RED}=========================================="
+    echo " Test FAILED"
+    echo -e "==========================================${NC}"
+else
+    echo -e "${GREEN}=========================================="
+    echo " Test Complete!"
+    echo -e "==========================================${NC}"
+fi
 echo ""
 echo "  Results:   ${REPORT_DIR}/"
 echo "  Report:    ${REPORT_DIR}/run_report.md"
@@ -457,3 +484,6 @@ if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_BASE_PATH:-}" ]; then
 fi
 
 echo ""
+# Exit non-zero when the run produced no usable result, so callers and CI can
+# tell a real benchmark from one where every query failed.
+exit "${RUN_FAILED:-0}"
