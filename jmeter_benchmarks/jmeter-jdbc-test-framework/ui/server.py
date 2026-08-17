@@ -203,13 +203,15 @@ class Run:
     logs: deque[str] = field(default_factory=lambda: deque(maxlen=300), repr=False)
 
     def public(self) -> dict[str, Any]:
+        summary_paths = sorted(self.report_root.glob("*/run_summary.json"), key=lambda p: p.stat().st_mtime)
         summary = find_summary(self.report_root)
+        report_id = str(summary_paths[-1].parent.relative_to(REPORTS)) if summary_paths else None
         return {
             "id": self.run_id, "label": self.label, "status": self.status,
             "started_at": self.started_at, "finished_at": self.finished_at,
             "return_code": self.return_code, "config": self.config,
             "metrics": live_metrics(self.report_root), "summary": summary,
-            "logs": list(self.logs), "report_path": str(self.report_root.relative_to(ROOT)),
+            "logs": list(self.logs), "report_path": str(self.report_root.relative_to(ROOT)), "report_id": report_id,
         }
 
 
@@ -272,6 +274,50 @@ def report_by_id(report_id: str) -> dict[str, Any]:
     if REPORTS.resolve() not in path.parents or not path.is_file():
         raise ValueError("Unknown report")
     return json.loads(path.read_text())
+
+
+def report_details(report_id: str) -> dict[str, Any]:
+    directory = (REPORTS / report_id).resolve()
+    if REPORTS.resolve() not in directory.parents or not directory.is_dir():
+        raise ValueError("Unknown report")
+    summary = report_by_id(report_id)
+    result_file = directory / "JmeterResultFile.csv"
+    grouped: dict[str, list[dict[str, str]]] = {}
+    if result_file.is_file():
+        with result_file.open(newline="", errors="replace") as handle:
+            for row in csv.DictReader(handle):
+                label, success, elapsed = row.get("label"), row.get("success"), row.get("elapsed")
+                if not label or label.startswith(("Setup-", "Control-")) or success not in {"true", "false"} or not (elapsed or "").isdigit():
+                    continue
+                grouped.setdefault(label, []).append(row)
+
+    def percentile(values: list[int], pct: int) -> int | None:
+        if not values:
+            return None
+        ordered = sorted(values)
+        index = min(len(ordered) - 1, max(0, (len(ordered) * pct + 99) // 100 - 1))
+        return ordered[index]
+
+    per_query = []
+    for label, rows in sorted(grouped.items()):
+        successes = [int(row["elapsed"]) for row in rows if row["success"] == "true"]
+        failures = len(rows) - len(successes)
+        messages: dict[str, int] = {}
+        for row in rows:
+            if row["success"] == "false":
+                message = (row.get("responseMessage") or "Unknown error").strip()[:240]
+                messages[message] = messages.get(message, 0) + 1
+        top_error = max(messages.items(), key=lambda item: item[1])[0] if messages else None
+        per_query.append({
+            "label": label, "samples": len(rows), "successful": len(successes), "failed": failures,
+            "min_ms": min(successes) if successes else None,
+            "mean_ms": round(sum(successes) / len(successes)) if successes else None,
+            "p50_ms": percentile(successes, 50), "p95_ms": percentile(successes, 95),
+            "p99_ms": percentile(successes, 99), "max_ms": max(successes) if successes else None,
+            "top_error": top_error,
+        })
+    artifacts = [path.name for path in directory.iterdir() if path.is_file()]
+    return {"id": report_id, "summary": summary, "per_query": per_query, "artifacts": sorted(artifacts)}
 
 
 def comparison(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
@@ -337,6 +383,9 @@ class Handler(SimpleHTTPRequestHandler):
             elif parsed.path == "/api/report":
                 report_id = parse_qs(parsed.query).get("id", [""])[0]
                 self._json(report_by_id(report_id))
+            elif parsed.path == "/api/report-details":
+                report_id = parse_qs(parsed.query).get("id", [""])[0]
+                self._json(report_details(report_id))
             else:
                 super().do_GET()
         except (ValueError, json.JSONDecodeError) as exc:

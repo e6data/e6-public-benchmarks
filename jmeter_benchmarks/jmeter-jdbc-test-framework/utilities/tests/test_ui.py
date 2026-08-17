@@ -85,6 +85,31 @@ class UiTests(unittest.TestCase):
             query.unlink(missing_ok=True)
         self.assertEqual(env["RECYCLE_ON_EOF"], "false")
 
+    def test_every_ui_plan_builds_a_runner_environment(self):
+        jdbc = server.ROOT / "connection_properties" / "ui_test_jdbc.properties"
+        http = server.ROOT / "connection_properties" / "ui_test_http.properties"
+        query = server.ROOT / "data_files" / "ui_test.csv"
+        arrivals = server.ROOT / "test_properties" / "ui_test_arrivals.csv"
+        concurrency = server.ROOT / "test_properties" / "ui_test_concurrency.csv"
+        try:
+            jdbc.write_text("CONNECTION_STRING=jdbc:test\n")
+            http.write_text("mainhost=localhost\n")
+            query.write_text('query_alias,query_string\nq1,"select 1"\n')
+            arrivals.write_text("StartValue,EndValue,Duration\n1,1,1\n")
+            concurrency.write_text("Threads,StartTime,StartupTime,HoldTime,ShutdownTime\n1,0,0,1,0\n")
+            for plan, (_, expected_path, transport) in server.PLANS.items():
+                profile = "test_properties/ui_test_concurrency.csv" if plan == "jdbc_variable_concurrency" else "test_properties/ui_test_arrivals.csv"
+                env = server.build_environment({
+                    "plan": plan,
+                    "connection": f"connection_properties/ui_test_{transport}.properties",
+                    "query_file": "data_files/ui_test.csv",
+                    "load_profile": profile,
+                }, plan)
+                self.assertEqual(env["TEST_PLAN"], expected_path)
+        finally:
+            for path in (jdbc, http, query, arrivals, concurrency):
+                path.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()
