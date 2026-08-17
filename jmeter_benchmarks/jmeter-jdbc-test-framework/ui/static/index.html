@@ -53,12 +53,12 @@
     </section>
 
     <section id="live" class="panel">
-      <div class="section-heading"><div><span class="eyebrow">LIVE TELEMETRY</span><h2>Active benchmark runs</h2></div><button id="refreshRuns" class="secondary">Refresh</button></div>
+      <div class="section-heading"><div><span class="eyebrow">LIVE TELEMETRY</span><h2>Benchmark runs</h2><p>Live values come from the active JMeter result CSV; final values come from <code>run_summary.json</code>.</p></div><button id="refreshRuns" class="secondary">Refresh</button></div>
       <div id="liveRuns" class="run-grid empty">No runs launched in this UI session.</div>
     </section>
 
     <section id="compare" class="panel">
-      <div class="section-heading"><div><span class="eyebrow">RUN ANALYSIS</span><h2>Compare completed results</h2><p>Compare engines, builds, cluster sizes, or before-and-after runs.</p></div></div>
+      <div class="section-heading"><div><span class="eyebrow">RUN ANALYSIS</span><h2>Compare completed results</h2><p>Local report storage · <code>reports/**/run_summary.json</code> · no database required</p></div></div>
       <div class="compare-picker card">
         <label>Baseline run<select id="leftReport"></select></label><span>versus</span><label>Candidate run<select id="rightReport"></select></label><button id="compareButton" class="primary">Compare</button>
       </div>

@@ -30,6 +30,9 @@ class UiTests(unittest.TestCase):
         self.assertEqual(metrics["successful"], 1)
         self.assertEqual(metrics["failed"], 1)
         self.assertEqual(metrics["active"], 2)
+        self.assertEqual(metrics["series"]["arrivals"], [2])
+        self.assertEqual(metrics["series"]["in_flight"], [2])
+        self.assertEqual(metrics["top_failure"]["count"], 1)
 
     def test_path_validation_blocks_traversal(self):
         with self.assertRaises(ValueError):

@@ -113,7 +113,7 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
 def live_metrics(report_root: Path) -> dict[str, Any]:
     files = sorted(report_root.glob("*/JmeterResultFile.csv"), key=lambda p: p.stat().st_mtime)
     if not files:
-        return {"samples": 0, "successful": 0, "failed": 0, "throughput": 0, "p50": None, "p95": None, "active": 0}
+        return {"samples": 0, "successful": 0, "failed": 0, "throughput": 0, "p50": None, "p95": None, "active": 0, "series": {"arrivals": [], "in_flight": [], "latency_ms": []}}
     rows: list[dict[str, str]] = []
     try:
         with files[-1].open(newline="", errors="replace") as handle:
@@ -121,15 +121,38 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
     except (OSError, csv.Error):
         pass
     if not rows:
-        return {"samples": 0, "successful": 0, "failed": 0, "throughput": 0, "p50": None, "p95": None, "active": 0}
+        return {"samples": 0, "successful": 0, "failed": 0, "throughput": 0, "p50": None, "p95": None, "active": 0, "series": {"arrivals": [], "in_flight": [], "latency_ms": []}}
     elapsed = sorted(int(row.get("elapsed") or 0) for row in rows if row.get("success", "").lower() == "true")
     started = [int(row["timeStamp"]) for row in rows]
     window = max(1, (max(started) - min(started)) / 1000)
     percentile = lambda pct: elapsed[min(len(elapsed) - 1, max(0, (len(elapsed) * pct + 99) // 100 - 1))] if elapsed else None
+    origin = min(started)
+    last_second = max(max(0, (int(row["timeStamp"]) + int(row.get("elapsed") or 0) - origin) // 1000) for row in rows)
+    arrivals = [0] * (last_second + 1)
+    in_flight = [0] * (last_second + 1)
+    latency_sum = [0] * (last_second + 1)
+    latency_count = [0] * (last_second + 1)
+    failures: dict[str, int] = {}
+    for row in rows:
+        start = max(0, (int(row["timeStamp"]) - origin) // 1000)
+        duration = int(row.get("elapsed") or 0)
+        end = max(start, (int(row["timeStamp"]) + duration - origin) // 1000)
+        arrivals[start] += 1
+        for second in range(start, min(end + 1, len(in_flight))):
+            in_flight[second] += 1
+        latency_sum[end] += duration
+        latency_count[end] += 1
+        if row.get("success", "").lower() != "true":
+            message = (row.get("responseMessage") or row.get("failureMessage") or "Unknown error").strip()
+            failures[message[:240]] = failures.get(message[:240], 0) + 1
+    latency_series = [round(total / count) if count else 0 for total, count in zip(latency_sum, latency_count)]
+    top_failure = max(failures.items(), key=lambda item: item[1]) if failures else None
     return {
         "samples": len(rows), "successful": len(elapsed), "failed": len(rows) - len(elapsed),
         "throughput": round(len(rows) / window, 2), "p50": percentile(50), "p95": percentile(95),
         "active": max((int(row.get("allThreads") or 0) for row in rows), default=0),
+        "series": {"arrivals": arrivals, "in_flight": in_flight, "latency_ms": latency_series},
+        "top_failure": {"message": top_failure[0], "count": top_failure[1]} if top_failure else None,
     }
 
 
