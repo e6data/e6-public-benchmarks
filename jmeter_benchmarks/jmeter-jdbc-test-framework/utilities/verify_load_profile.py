@@ -18,32 +18,11 @@ MAX_CONCURRANCY (it feeds ConcurrencyLimit).
 """
 
 import collections
-import csv
 import sys
 
+import csv
 
-def read_profile(path):
-    rows = []
-    with open(path, newline="") as fh:
-        for parts in csv.reader(fh):
-            if not parts or not any(p.strip() for p in parts):
-                continue
-            if parts[0].strip().lower().startswith("startvalue"):
-                continue
-            start, end, dur = (int(p.strip()) for p in parts[:3])
-            rows.append((start, end, dur))
-    return rows
-
-
-def expected_per_second(rows):
-    """Expand profile steps into a per-second expected rate, interpolating ramps."""
-    out = []
-    for start, end, dur in rows:
-        for i in range(dur):
-            # linear interpolation across the step; flat when start == end
-            rate = start if dur == 1 else start + (end - start) * i / (dur - 1)
-            out.append(round(rate))
-    return out
+from load_profile import expected_arrivals_per_second, read_profile
 
 
 def main():
@@ -58,7 +37,13 @@ def main():
     t0 = min(stamps)
     actual = collections.Counter((t - t0) // 1000 for t in stamps)
 
-    expected = expected_per_second(read_profile(profile_path))
+    try:
+        kind, profile = read_profile(profile_path)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if kind != "arrivals":
+        raise SystemExit(f"{profile_path}: expected an arrival-rate profile")
+    expected = expected_arrivals_per_second(profile)
 
     print(f"{'sec':>4} | {'expected':>8} | {'actual':>6} |")
     print("-" * 30)

@@ -37,58 +37,10 @@ Two plan families are supported; the format is chosen from the plan, not a flag.
 Durations are in the unit set by the thread group's Unit property (S = seconds).
 """
 
-import csv
 import re
 import sys
 
-
-# ---------------------------------------------------------------- parsing
-
-def _rows(path, ncols, header_prefix):
-    """Read a CSV of exactly ncols integer columns, skipping a header if present."""
-    out = []
-    with open(path, newline="") as fh:
-        for lineno, parts in enumerate(csv.reader(fh), 1):
-            if not parts or not any(p.strip() for p in parts):
-                continue
-            if parts[0].strip().lower().startswith(header_prefix):
-                continue  # header
-            if len(parts) < ncols:
-                raise SystemExit(
-                    f"{path}:{lineno}: expected {ncols} columns, "
-                    f"got {len(parts)}: {parts!r}"
-                )
-            try:
-                out.append(tuple(int(p.strip()) for p in parts[:ncols]))
-            except ValueError:
-                raise SystemExit(
-                    f"{path}:{lineno}: non-integer value in {parts[:ncols]!r}"
-                )
-    if not out:
-        raise SystemExit(f"{path}: no usable rows found")
-    return out
-
-
-def read_arrivals_profile(path):
-    rows = _rows(path, 3, "startvalue")
-    for start, end, dur in rows:
-        if dur <= 0:
-            raise SystemExit(f"{path}: duration must be > 0, got {dur}")
-        if start < 0 or end < 0:
-            raise SystemExit(f"{path}: arrival rate must be >= 0, got {start},{end}")
-    return rows
-
-
-def read_concurrency_profile(path):
-    rows = _rows(path, 5, "threads")
-    for threads, start, startup, hold, shutdown in rows:
-        if threads <= 0:
-            raise SystemExit(f"{path}: Threads must be > 0, got {threads}")
-        if min(start, startup, hold, shutdown) < 0:
-            raise SystemExit(f"{path}: times must be >= 0 in row {rows!r}")
-        if hold <= 0:
-            raise SystemExit(f"{path}: HoldTime must be > 0, got {hold}")
-    return rows
+from load_profile import read_arrivals_profile, read_concurrency_profile
 
 
 # ---------------------------------------------------------------- emitting
@@ -210,7 +162,10 @@ def main():
         if marker not in plan:
             continue
 
-        rows = reader(profile_path)
+        try:
+            rows = reader(profile_path)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
         # Non-greedy plus a lookahead anchor: inner </collectionProp> tags are not
         # followed by the anchor, so the match extends to the correct outer close.
         plan_out, n = re.subn(

@@ -12,6 +12,7 @@
 # Concurrency levels: 1, 2, 4, 8, 12, 16
 
 set -e
+set -o pipefail
 
 # Check arguments
 if [ $# -lt 3 ]; then

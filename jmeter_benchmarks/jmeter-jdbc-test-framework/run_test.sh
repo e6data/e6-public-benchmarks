@@ -30,6 +30,7 @@
 #   MAX_CONCURRANCY           - max threads (default: 900)
 #   JMETER_HOME               - JMeter installation path (auto-detected if not set)
 #   MAX_ERROR_PCT             - fail the run above this error rate (default: 5)
+#   RUN_TYPE                  - S3 partition label (inferred from the plan if omitted)
 #
 # Exit codes:
 #   0  the run completed and the error rate was within MAX_ERROR_PCT
@@ -102,6 +103,9 @@ if [ -n "$1" ]; then
     _SAVE_LIMIT_RESULTSET="${LIMIT_RESULTSET:-}"
     _SAVE_MAX_CONCURRANCY="${MAX_CONCURRANCY:-}"
     _SAVE_JMETER_HOME="${JMETER_HOME:-}"
+    _SAVE_MAX_ERROR_PCT="${MAX_ERROR_PCT:-}"
+    _SAVE_GENERATE_DASHBOARD="${GENERATE_DASHBOARD:-}"
+    _SAVE_RUN_TYPE="${RUN_TYPE:-}"
 
     source "$SUITE_FILE"
 
@@ -126,6 +130,9 @@ if [ -n "$1" ]; then
     [ -n "$_SAVE_LIMIT_RESULTSET" ] && LIMIT_RESULTSET="$_SAVE_LIMIT_RESULTSET"
     [ -n "$_SAVE_MAX_CONCURRANCY" ] && MAX_CONCURRANCY="$_SAVE_MAX_CONCURRANCY"
     [ -n "$_SAVE_JMETER_HOME" ] && JMETER_HOME="$_SAVE_JMETER_HOME"
+    [ -n "$_SAVE_MAX_ERROR_PCT" ] && MAX_ERROR_PCT="$_SAVE_MAX_ERROR_PCT"
+    [ -n "$_SAVE_GENERATE_DASHBOARD" ] && GENERATE_DASHBOARD="$_SAVE_GENERATE_DASHBOARD"
+    [ -n "$_SAVE_RUN_TYPE" ] && RUN_TYPE="$_SAVE_RUN_TYPE"
 fi
 
 # ============================================================================
@@ -172,6 +179,8 @@ for var in CONNECTION_FILE TEST_PLAN QUERY_FILE; do
     fi
 done
 
+ORIGINAL_TEST_PLAN="$TEST_PLAN"
+
 if [ -n "${METADATA_FILE:-}" ] && [ ! -f "$METADATA_FILE" ]; then
     echo -e "${RED}Error: METADATA_FILE not found: ${METADATA_FILE}${NC}"
     exit 1
@@ -209,6 +218,15 @@ if [ -n "${METADATA_FILE:-}" ]; then
     source "$METADATA_FILE"
 fi
 
+# S3_REPORT_PATH is the public runner setting. Older metadata files use
+# S3_BASE_PATH; keep that as a backwards-compatible alias while ensuring the
+# documented setting is sufficient on its own.
+if [ -n "${S3_BASE_PATH:-}" ] && [ -n "${S3_REPORT_PATH:-}" ] \
+   && [ "$S3_BASE_PATH" != "$S3_REPORT_PATH" ]; then
+    echo -e "${YELLOW}Warning: S3_BASE_PATH overrides S3_REPORT_PATH; migrate metadata to S3_REPORT_PATH.${NC}"
+fi
+S3_UPLOAD_ROOT="${S3_BASE_PATH:-$S3_REPORT_PATH}"
+
 # ============================================================================
 # Find JMeter
 # ============================================================================
@@ -235,12 +253,16 @@ fi
 # Display configuration
 # ============================================================================
 
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+TIMESTAMP=$(python3 -c 'from datetime import datetime; print(datetime.now().strftime("%Y%m%d-%H%M%S-%f"))')
 REPORT_DIR="${REPORT_PATH}/${TIMESTAMP}"
-mkdir -p "$REPORT_DIR"
+mkdir -p "$REPORT_PATH"
+if ! mkdir "$REPORT_DIR"; then
+    echo -e "${RED}Error: report directory already exists: ${REPORT_DIR}${NC}"
+    exit 1
+fi
 
-# Count queries in data file
-QUERY_COUNT=$(wc -l < "$QUERY_FILE" | tr -d ' ')
+# Count logical query rows, excluding a recognized CSV header.
+QUERY_COUNT=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field rows)
 
 # Infer test type from test plan filename for display
 PLAN_BASENAME=$(basename "$TEST_PLAN" .jmx | tr '[:upper:]' '[:lower:]')
@@ -260,6 +282,28 @@ else
     TEST_TYPE="Static Concurrency"
 fi
 
+# Keep uploads compatible with the partition layout consumed by the S3 and
+# Athena utilities. Callers can set RUN_TYPE explicitly for custom plans.
+if [ -z "${RUN_TYPE:-}" ]; then
+    case "$TEST_TYPE" in
+        "Run Once")
+            if [ "$CONCURRENT_QUERY_COUNT" = "1" ]; then
+                RUN_TYPE="sequential"
+            else
+                RUN_TYPE="concurrency_${CONCURRENT_QUERY_COUNT}"
+            fi
+            ;;
+        "Static Concurrency") RUN_TYPE="concurrency_${CONCURRENT_QUERY_COUNT}" ;;
+        "Constant QPS") RUN_TYPE="qps_${QPS}" ;;
+        "Constant QPM") RUN_TYPE="qpm_${QPM}" ;;
+        "Variable Concurrency (load profile)") RUN_TYPE="variable_concurrency" ;;
+        "QPS with Load Profile") RUN_TYPE="qps_load_profile" ;;
+        *) RUN_TYPE="custom" ;;
+    esac
+fi
+# Partition values must remain a single safe path component.
+RUN_TYPE=$(printf '%s' "$RUN_TYPE" | tr -cs 'A-Za-z0-9._-' '_')
+
 # Extract connection details for display
 CONN_HOST=$(grep -E "^HOSTNAME=|^mainhost=" "$CONNECTION_FILE" 2>/dev/null | head -1 | cut -d= -f2)
 CONN_ENGINE=$(grep -E "^# Engine:" "$CONNECTION_FILE" 2>/dev/null | cut -d: -f2 | tr -d ' ')
@@ -277,6 +321,7 @@ echo ""
 echo -e "  ${BOLD}Test${NC}"
 echo "    Plan:       $(basename "$TEST_PLAN")"
 echo "    Type:       ${TEST_TYPE}"
+echo "    Run type:   ${RUN_TYPE}"
 echo "    Queries:    $(basename "$QUERY_FILE") (${QUERY_COUNT} queries)"
 [ -n "${METADATA_FILE:-}" ] && echo "    Metadata:   $(basename "$METADATA_FILE")"
 echo ""
@@ -396,8 +441,17 @@ fi
 echo -e "${BLUE}Running JMeter...${NC}"
 echo ""
 
-# Run JMeter
+# Run JMeter. Preserve its status but continue through report capture and output
+# normalization so failed starts/runs leave useful diagnostics behind.
+set +e
 "${JMETER_CMD[@]}"
+JMETER_RC=$?
+set -e
+RUN_FAILED=0
+if [ "$JMETER_RC" -ne 0 ]; then
+    RUN_FAILED=1
+    echo -e "${RED}JMeter exited with status ${JMETER_RC}; finalizing available artifacts.${NC}"
+fi
 
 # Capture a standard run report alongside the raw results, so every run is
 # self-describing and the analysis does not depend on anyone remembering to run
@@ -412,12 +466,23 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
         CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
     fi
     CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
-    CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}")
-    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}" --meta "run_type=${RUN_TYPE}")
+    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    [ -n "${GENERATED_PLAN:-}" ] && CAPTURE_ARGS+=(--meta "generated_plan=$(basename "$GENERATED_PLAN")")
+    QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field sha256)
+    CAPTURE_ARGS+=(--meta "query_sha256=${QUERY_SHA}" --meta "requested_concurrency=${CONCURRENT_QUERY_COUNT}")
+    CAPTURE_ARGS+=(--meta "requested_qps=${QPS}" --meta "requested_qpm=${QPM}")
+    CAPTURE_ARGS+=(--meta "hold_period=${HOLD_PERIOD}" --meta "ramp_up_time=${RAMP_UP_TIME}" --meta "ramp_up_steps=${RAMP_UP_STEPS}")
+    CAPTURE_ARGS+=(--meta "max_concurrency=${MAX_CONCURRANCY}" --meta "recycle_on_eof=${RECYCLE_ON_EOF}" --meta "random_order=${RANDOM_ORDER}")
+    CAPTURE_ARGS+=(--meta "jmeter_version=$(basename "$JMETER_HOME")" --meta "java_version=$(java -version 2>&1 | head -1)")
+    CAPTURE_ARGS+=(--meta "git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)")
+    if [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] \
+       && grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+        CAPTURE_ARGS+=(--meta "profile=$(basename "$LOAD_PROFILE")" --meta "profile_sha256=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$LOAD_PROFILE" --field sha256)")
+    fi
     # Exit 2 from the report means the run itself failed (no samples, or an error
     # rate above MAX_ERROR_PCT). Propagate it: a run where the queries did not
     # succeed must not report success, or callers and CI treat it as a result.
-    RUN_FAILED=0
     set +e
     python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}"
     CAPTURE_RC=$?
@@ -456,14 +521,18 @@ fi
 echo ""
 echo "  Results:   ${REPORT_DIR}/"
 echo "  Report:    ${REPORT_DIR}/run_report.md"
-echo "  Dashboard: ${REPORT_DIR}/dashboard/index.html"
+if [ "${GENERATE_DASHBOARD:-true}" != "false" ]; then
+    echo "  Dashboard: ${REPORT_DIR}/dashboard/index.html"
+else
+    echo "  Dashboard: disabled"
+fi
 
 # Copy to S3 if enabled
-if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_BASE_PATH:-}" ]; then
+if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_UPLOAD_ROOT:-}" ]; then
     ENGINE_VAL="${ENGINE:-unknown}"
     CLUSTER_SIZE_VAL="${CLUSTER_SIZE:-unknown}"
     BENCHMARK_VAL="${BENCHMARK_TYPE:-unknown}"
-    S3_DEST="${S3_BASE_PATH}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/run_id=${TIMESTAMP}/"
+    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/run_type=${RUN_TYPE}/run_id=${TIMESTAMP}/"
 
     echo ""
     echo "Uploading results to S3..."

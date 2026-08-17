@@ -30,10 +30,21 @@ import os
 import statistics
 import sys
 
+from load_profile import (
+    expected_arrivals_per_second,
+    expected_concurrency_per_second,
+    read_profile,
+)
+
 
 # Exit code meaning "JMeter ran, but the run is not usable as a result".
 # Distinct from 1 (this script itself failed) so callers can tell them apart.
 EXIT_FAILED_RUN = 2
+
+# Infrastructure samplers may be written to the same JTL as query samplers.
+# They are useful in the raw file but must not affect query latency, throughput,
+# or error thresholds.
+CONTROL_SAMPLE_LABELS = {"Setup-Query-Loader-Trigger"}
 
 
 def load(run_dir):
@@ -43,72 +54,39 @@ def load(run_dir):
         # This is a failed run, not a reporting glitch, so it must not exit 0.
         print(f"  [FAIL] {path}: not found - no samples were recorded")
         raise SystemExit(EXIT_FAILED_RUN)
-    rows = list(csv.DictReader(open(path)))
+    raw_rows = list(csv.DictReader(open(path)))
+    rows = [row for row in raw_rows if row.get("label") not in CONTROL_SAMPLE_LABELS]
     if not rows:
         print(f"  [FAIL] {path}: no samples - nothing executed")
         raise SystemExit(EXIT_FAILED_RUN)
-    return rows
+    return rows, len(raw_rows), len(raw_rows) - len(rows)
 
 
-def read_profile(path):
-    """Return (kind, rows) for either load-profile CSV format.
+def peak_inflight_per_second(starts, ends, t0, buckets):
+    """Return peak interval overlap in each second.
 
-    3 columns -> "arrivals"    StartValue,EndValue,Duration        (rate over time)
-    5 columns -> "concurrency" Threads,StartTime,StartupTime,
-                               HoldTime,ShutdownTime               (threads over time)
-
-    The two are checked differently: an arrivals profile is verified by counting
-    samples submitted, a concurrency profile by how many were in flight.
+    Counting only arrivals minus completions at the end of a one-second bucket
+    reports zero for every query that starts and finishes within that bucket.
+    An event sweep preserves those short-lived queries and measures actual
+    query-in-flight concurrency rather than a bucket-end backlog snapshot.
     """
-    rows, width = [], None
-    for parts in csv.reader(open(path, newline="")):
-        parts = [p.strip() for p in parts if p.strip() != ""]
-        if not parts:
-            continue
-        if parts[0].lower().startswith(("startvalue", "threads")):
-            continue  # header
-        if width is None:
-            width = len(parts)
-        try:
-            rows.append(tuple(int(p) for p in parts[:width]))
-        except ValueError:
-            continue
-    if not rows:
-        return None, []
-    return ("concurrency" if width >= 5 else "arrivals"), rows
-
-
-def expected_per_second(steps):
-    """Arrivals profile: expected arrival rate at each second."""
-    out = []
-    for start, end, dur in steps:
-        for i in range(dur):
-            out.append(round(start if dur == 1 else start + (end - start) * i / (dur - 1)))
-    return out
-
-
-def expected_concurrency(waves):
-    """Concurrency profile: expected live threads at each second.
-
-    UltimateThreadGroup waves STACK - each row adds its threads on top of any
-    still running - and ramp linearly over StartupTime / ShutdownTime.
-    """
-    end = max(st + up + hold + down for _, st, up, hold, down in waves)
-    out = []
-    for t in range(end + 1):
-        n = 0.0
-        for threads, st, up, hold, down in waves:
-            if t < st:
-                continue
-            dt = t - st
-            if dt < up:
-                n += threads * dt / up
-            elif dt < up + hold:
-                n += threads
-            elif dt < up + hold + down:
-                n += threads * (1 - (dt - up - hold) / down)
-        out.append(n)
-    return out
+    events = {}
+    for start, end in zip(starts, ends):
+        events[start] = events.get(start, 0) + 1
+        events[end] = events.get(end, 0) - 1
+    ordered = sorted(events.items())
+    result = []
+    active = 0
+    position = 0
+    for bucket in range(buckets):
+        bucket_end = t0 + (bucket + 1) * 1000
+        peak = active
+        while position < len(ordered) and ordered[position][0] < bucket_end:
+            active += ordered[position][1]
+            peak = max(peak, active)
+            position += 1
+        result.append(peak)
+    return result
 
 
 def analyse(rows, profile_steps=None, profile_kind="arrivals"):
@@ -126,10 +104,7 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
     for s, e in zip(starts, ends):
         arr[(s - t0) // 1000] += 1
         comp[(e - t0) // 1000] += 1
-    inflight, running = [], 0
-    for a, c in zip(arr, comp):
-        running += a - c
-        inflight.append(running)
+    inflight = peak_inflight_per_second(starts, ends, t0, n)
 
     def p(q):
         return lat[math.ceil(q * len(lat)) - 1] if lat else None
@@ -156,7 +131,7 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
     }
 
     if profile_steps and profile_kind == "arrivals":
-        exp = expected_per_second(profile_steps)
+        exp = expected_arrivals_per_second(profile_steps)
         delivered = sum(arr[: len(exp)])
         out["load_profile"] = {
             "kind": "arrivals",
@@ -168,7 +143,7 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
             "expected_per_s": exp,
         }
     elif profile_steps and profile_kind == "concurrency":
-        exp = expected_concurrency(profile_steps)
+        exp = expected_concurrency_per_second(profile_steps)
         # Compare second by second, not on peak. At a wave boundary threads from
         # the outgoing wave finish their in-flight query while the incoming wave
         # starts, so peak in-flight briefly exceeds the profile by design - a
@@ -226,6 +201,9 @@ def markdown(run_id, s, meta):
           f"| Drain after last arrival | {s['drain_s']} s |",
           f"| Peak in flight | {s['peak_in_flight']} (at t={s['peak_at_s']} s) |",
           ""]
+    if s.get("ignored_control_samples"):
+        L += [f"_Excluded {s['ignored_control_samples']} framework control sample(s) "
+              f"from {s['raw_samples']} raw samples._", ""]
     lt = s["latency_ms"]
     if lt["min"] is None:
         L += ["## Latency", "",
@@ -299,10 +277,17 @@ def main():
              % EXIT_FAILED_RUN)
     a = ap.parse_args()
 
-    rows = load(a.run_dir)
-    kind, steps = (read_profile(a.profile)
-                   if a.profile and os.path.exists(a.profile) else (None, None))
+    rows, raw_samples, ignored_control_samples = load(a.run_dir)
+    try:
+        kind, steps = (read_profile(a.profile)
+                       if a.profile and os.path.exists(a.profile) else (None, None))
+    except ValueError as exc:
+        print(f"  [FAIL] invalid load profile: {exc}")
+        raise SystemExit(1) from exc
     s = analyse(rows, steps, kind)
+    s["raw_samples"] = raw_samples
+    s["query_samples"] = len(rows)
+    s["ignored_control_samples"] = ignored_control_samples
 
     meta = {}
     for kv in a.meta:

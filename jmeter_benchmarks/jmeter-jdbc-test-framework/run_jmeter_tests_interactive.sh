@@ -512,7 +512,7 @@ echo ""
 # Source metadata if present (to get COPY_TO_S3 override, ENGINE, etc.)
 if [ -n "$METADATA_FILE" ]; then
     echo -e "${DIM}Metadata overrides:${NC}"
-    grep -E "^(ENGINE|COPY_TO_S3|S3_BASE_PATH|BENCHMARK_TYPE)=" "$METADATA_FILE" 2>/dev/null | while read -r line; do
+    grep -E "^(ENGINE|COPY_TO_S3|S3_REPORT_PATH|S3_BASE_PATH|BENCHMARK_TYPE|RUN_TYPE)=" "$METADATA_FILE" 2>/dev/null | while read -r line; do
         echo "  $line"
     done
     echo ""
@@ -538,7 +538,7 @@ echo ""
 # Captured BEFORE the metadata is sourced: metadata defines COPY_TO_S3 and
 # would otherwise overwrite the environment value before it could be saved.
 OVERRIDABLE="LOAD_PROFILE GENERATE_DASHBOARD HOLD_PERIOD MAX_CONCURRANCY COPY_TO_S3 RECYCLE_ON_EOF \
-RANDOM_ORDER QPS QPM CONCURRENT_QUERY_COUNT RAMP_UP_TIME RAMP_UP_STEPS QUERY_TIMEOUT"
+RANDOM_ORDER QPS QPM CONCURRENT_QUERY_COUNT RAMP_UP_TIME RAMP_UP_STEPS QUERY_TIMEOUT MAX_ERROR_PCT RUN_TYPE S3_REPORT_PATH"
 for _k in $OVERRIDABLE; do
     [ -n "${!_k:-}" ] && printf -v "_ENV_$_k" '%s' "${!_k}"
 done
@@ -547,6 +547,12 @@ done
 if [ -n "$METADATA_FILE" ]; then
     source "$METADATA_FILE"
 fi
+
+if [ -n "${S3_BASE_PATH:-}" ] && [ -n "${S3_REPORT_PATH:-}" ] \
+   && [ "$S3_BASE_PATH" != "$S3_REPORT_PATH" ]; then
+    echo -e "${YELLOW}Warning: S3_BASE_PATH overrides S3_REPORT_PATH; migrate metadata to S3_REPORT_PATH.${NC}"
+fi
+S3_UPLOAD_ROOT="${S3_BASE_PATH:-${S3_REPORT_PATH:-}}"
 
 # Read test properties without executing them (values like
 # values containing parentheses or spaces are not valid bash)
@@ -592,9 +598,14 @@ echo -e "${GREEN}Using JMeter: ${JMETER_HOME}${NC}"
 echo ""
 
 # Generate report directory with timestamp
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+TIMESTAMP=$(python3 -c 'from datetime import datetime; print(datetime.now().strftime("%Y%m%d-%H%M%S-%f"))')
 REPORT_DIR="${REPORT_PATH:-reports}/${TIMESTAMP}"
-mkdir -p "$REPORT_DIR"
+mkdir -p "${REPORT_PATH:-reports}"
+if ! mkdir "$REPORT_DIR"; then
+    echo -e "${RED}Error: report directory already exists: ${REPORT_DIR}${NC}"
+    exit 1
+fi
+ORIGINAL_TEST_PLAN="$TEST_PLAN"
 
 # Apply the load profile CSV to the plan's thread-group schedule.
 # Covers both families: FreeFormArrivalsThreadGroup (arrival rate) and
@@ -677,8 +688,30 @@ echo -e "${BLUE}Running JMeter...${NC}"
 echo -e "${DIM}${JMETER_CMD[*]}${NC}"
 echo ""
 
-# Run JMeter
+# Run JMeter, but always finalize whatever artifacts it produced.
+set +e
 "${JMETER_CMD[@]}"
+JMETER_RC=$?
+set -e
+RUN_FAILED=0
+if [ "$JMETER_RC" -ne 0 ]; then
+    RUN_FAILED=1
+    echo -e "${RED}JMeter exited with status ${JMETER_RC}; finalizing available artifacts.${NC}"
+fi
+
+INFERRED_RUN_TYPE=""
+case "$PLAN_TYPE" in
+    run_once)
+        if [ "${CONCURRENT_QUERY_COUNT:-1}" = "1" ]; then INFERRED_RUN_TYPE="sequential";
+        else INFERRED_RUN_TYPE="concurrency_${CONCURRENT_QUERY_COUNT}"; fi ;;
+    concurrency) INFERRED_RUN_TYPE="concurrency_${CONCURRENT_QUERY_COUNT:-1}" ;;
+    qps) INFERRED_RUN_TYPE="qps_${QPS:-1}" ;;
+    qpm) INFERRED_RUN_TYPE="qpm_${QPM:-1}" ;;
+    qps_loadprofile) INFERRED_RUN_TYPE="qps_load_profile" ;;
+    variable_concurrency) INFERRED_RUN_TYPE="variable_concurrency" ;;
+    *) INFERRED_RUN_TYPE="custom" ;;
+esac
+RUN_TYPE=$(printf '%s' "${RUN_TYPE:-$INFERRED_RUN_TYPE}" | tr -cs 'A-Za-z0-9._-' '_')
 
 # Capture a standard run report alongside the raw results, so every run is
 # self-describing and the analysis does not depend on anyone remembering to run
@@ -693,12 +726,23 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
         CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
     fi
     CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
-    CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}" --meta "run_type=${PLAN_TYPE}")
-    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}" --meta "run_type=${RUN_TYPE}")
+    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    [ -n "${GENERATED_PLAN:-}" ] && CAPTURE_ARGS+=(--meta "generated_plan=$(basename "$GENERATED_PLAN")")
+    QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field sha256)
+    CAPTURE_ARGS+=(--meta "query_sha256=${QUERY_SHA}" --meta "requested_concurrency=${CONCURRENT_QUERY_COUNT:-unknown}")
+    CAPTURE_ARGS+=(--meta "requested_qps=${QPS:-unknown}" --meta "requested_qpm=${QPM:-unknown}")
+    CAPTURE_ARGS+=(--meta "hold_period=${HOLD_PERIOD:-unknown}" --meta "ramp_up_time=${RAMP_UP_TIME:-unknown}" --meta "ramp_up_steps=${RAMP_UP_STEPS:-unknown}")
+    CAPTURE_ARGS+=(--meta "max_concurrency=${MAX_CONCURRANCY:-unknown}" --meta "recycle_on_eof=${RECYCLE_ON_EOF:-unknown}" --meta "random_order=${RANDOM_ORDER:-unknown}")
+    CAPTURE_ARGS+=(--meta "jmeter_version=$(basename "$JMETER_HOME")" --meta "java_version=$(java -version 2>&1 | head -1)")
+    CAPTURE_ARGS+=(--meta "git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)")
+    if [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] \
+       && grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+        CAPTURE_ARGS+=(--meta "profile=$(basename "$LOAD_PROFILE")" --meta "profile_sha256=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$LOAD_PROFILE" --field sha256)")
+    fi
     # Exit 2 from the report means the run itself failed (no samples, or an error
     # rate above MAX_ERROR_PCT). Propagate it: a run where the queries did not
     # succeed must not report success, or callers and CI treat it as a result.
-    RUN_FAILED=0
     set +e
     python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}"
     CAPTURE_RC=$?
@@ -737,18 +781,22 @@ fi
 echo ""
 echo "  Results: ${REPORT_DIR}/"
 echo "  Report:  ${REPORT_DIR}/run_report.md"
-echo "  Dashboard: ${REPORT_DIR}/dashboard/index.html"
+if [ "${GENERATE_DASHBOARD:-true}" != "false" ]; then
+    echo "  Dashboard: ${REPORT_DIR}/dashboard/index.html"
+else
+    echo "  Dashboard: disabled"
+fi
 echo ""
 
 # Copy to S3 if enabled
-if [ "${COPY_TO_S3:-false}" = "true" ] && [ -n "${S3_BASE_PATH:-}" ]; then
+if [ "${COPY_TO_S3:-false}" = "true" ] && [ -n "${S3_UPLOAD_ROOT:-}" ]; then
     echo "Uploading results to S3..."
     # Build S3 path from metadata
     ENGINE_VAL="${ENGINE:-unknown}"
     CLUSTER_SIZE_VAL="${CLUSTER_SIZE:-unknown}"
     BENCHMARK_VAL="${BENCHMARK_TYPE:-unknown}"
-    RUN_TYPE_VAL="run_type=${PLAN_TYPE}"
-    S3_DEST="${S3_BASE_PATH}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/${RUN_TYPE_VAL}/run_id=${TIMESTAMP}/"
+    RUN_TYPE_VAL="run_type=${RUN_TYPE}"
+    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/${RUN_TYPE_VAL}/run_id=${TIMESTAMP}/"
 
     echo "  S3 path: ${S3_DEST}"
     # The JMeter HTML dashboard vendors jQuery/Bootstrap/font-awesome/flot -
