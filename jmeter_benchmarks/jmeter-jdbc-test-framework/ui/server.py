@@ -9,14 +9,19 @@ same CSV/JSON artifacts that CLI users already receive.
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import errno
+import hashlib
+import hmac
 import json
 import logging
 import mimetypes
 import os
 import re
 import signal
+import shutil
+import sqlite3
 import subprocess
 import threading
 import time
@@ -35,6 +40,9 @@ STATIC = Path(__file__).resolve().parent / "static"
 REPORTS = ROOT / "reports"
 LOG_DIR = ROOT / "logs"
 LOGGER = logging.getLogger("benchmark-ui")
+DB_PATH = Path(os.environ.get("BENCHMARK_UI_DB", ROOT / "ui" / "benchmark_ui.db"))
+AUTH_TOKEN = os.environ.get("BENCHMARK_UI_TOKEN", "")
+DB_READY = False
 
 PLANS = {
     "jdbc_run_once": ("Run once", "Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "jdbc"),
@@ -82,6 +90,105 @@ DISPLAY_ENV_FIELDS = (
     "MAX_ERROR_PCT", "RECYCLE_ON_EOF", "RANDOM_ORDER", "REPORT_PATH",
     "RUN_TYPE", "COPY_TO_S3", "GENERATE_DASHBOARD", *METADATA_FIELDS,
 )
+
+
+def init_registry() -> None:
+    global DB_READY
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as db:
+        db.execute("CREATE TABLE IF NOT EXISTS runs (run_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at REAL NOT NULL)")
+    DB_READY = True
+
+
+def persist_run(run: "Run") -> None:
+    if not DB_READY:
+        return
+    payload = {
+        "id": run.run_id, "label": run.label, "config": run.config,
+        "report_root": str(run.report_root), "status": run.status,
+        "started_at": run.started_at, "finished_at": run.finished_at,
+        "return_code": run.return_code, "logs": list(run.logs),
+    }
+    with sqlite3.connect(DB_PATH) as db:
+        db.execute(
+            "INSERT INTO runs(run_id,payload,updated_at) VALUES(?,?,?) "
+            "ON CONFLICT(run_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+            (run.run_id, json.dumps(payload), time.time()),
+        )
+
+
+def restore_runs() -> None:
+    if not DB_READY:
+        return
+    with sqlite3.connect(DB_PATH) as db:
+        rows = db.execute("SELECT payload FROM runs ORDER BY updated_at").fetchall()
+    for (raw,) in rows:
+        try:
+            item = json.loads(raw)
+            status = item["status"]
+            if status in {"queued", "running"}:
+                status = "interrupted"
+            run = Run(
+                item["id"], item.get("label", "Benchmark"), item.get("config", {}),
+                Path(item["report_root"]), status=status,
+                started_at=item.get("started_at"), finished_at=item.get("finished_at"),
+                return_code=item.get("return_code"), logs=deque(item.get("logs", []), maxlen=300),
+            )
+            RUNS[run.run_id] = run
+            persist_run(run)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            LOGGER.warning("Ignoring invalid persisted run record")
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def host_snapshot() -> dict[str, Any]:
+    usage = shutil.disk_usage(ROOT)
+    return {
+        "captured_at": time.time(), "hostname": os.uname().nodename,
+        "cpu_count": os.cpu_count(), "load_average": list(os.getloadavg()),
+        "disk_free_bytes": usage.free, "disk_total_bytes": usage.total,
+    }
+
+
+def write_manifest(run: "Run", env: dict[str, str]) -> None:
+    query = ROOT / env["QUERY_FILE"]
+    plan = ROOT / env["TEST_PLAN"]
+    manifest = {
+        "schema_version": 1, "run_id": run.run_id, "created_at": time.time(),
+        "launch_source": "ui", "environment": {key: env[key] for key in DISPLAY_ENV_FIELDS if key in env},
+        "artifacts": {"query_sha256": file_sha256(query), "test_plan_sha256": file_sha256(plan)},
+        "host_before": host_snapshot(),
+    }
+    if env.get("LOAD_PROFILE") and (ROOT / env["LOAD_PROFILE"]).is_file():
+        manifest["artifacts"]["load_profile_sha256"] = file_sha256(ROOT / env["LOAD_PROFILE"])
+    run.report_root.mkdir(parents=True, exist_ok=True)
+    (run.report_root / "ui_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+
+
+def preflight(config: dict[str, Any]) -> dict[str, Any]:
+    env = build_environment(config, "preflight")
+    query_path = ROOT / env["QUERY_FILE"]
+    with query_path.open(newline="", errors="replace") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames or not {"query_alias", "query_string"}.issubset(reader.fieldnames):
+            raise ValueError("QUERY_FILE must contain query_alias and query_string columns")
+        query_count = sum(1 for row in reader if row.get("query_string", "").strip())
+    if not query_count:
+        raise ValueError("QUERY_FILE contains no executable queries")
+    warnings = []
+    free_gb = shutil.disk_usage(ROOT).free / 1024 ** 3
+    if free_gb < 5:
+        warnings.append(f"Only {free_gb:.1f} GB free on the load generator")
+    if int(env["QPS"]) > int(env["MAX_CONCURRANCY"]):
+        warnings.append("QPS exceeds MAX_CONCURRANCY; long queries may cause arrival shortfall")
+    return {"ok": True, "query_count": query_count, "warnings": warnings, "environment": {key: env[key] for key in DISPLAY_ENV_FIELDS if key in env}, "host": host_snapshot()}
 
 
 def _property_value(value: Any, field: str, required: bool = False) -> str:
@@ -412,9 +519,11 @@ RUN_LOCK = threading.Lock()
 
 def _execute(run: Run, env: dict[str, str]) -> None:
     run.status, run.started_at = "running", time.time()
+    persist_run(run)
     LOGGER.info("run=%s status=running label=%s plan=%s", run.run_id, run.label, run.config.get("plan"))
     try:
         run.report_root.mkdir(parents=True, exist_ok=True)
+        write_manifest(run, env)
         runner_log = run.report_root / "ui_runner.log"
         run.process = subprocess.Popen(
             [str(ROOT / "run_test.sh")], cwd=ROOT, env=env, stdout=subprocess.PIPE,
@@ -436,6 +545,18 @@ def _execute(run: Run, env: dict[str, str]) -> None:
         run.return_code, run.status = 1, "failed"
     finally:
         run.finished_at = time.time()
+        try:
+            manifest_path = run.report_root / "ui_manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["host_after"] = host_snapshot()
+            manifest["return_code"] = run.return_code
+            manifest["status"] = run.status
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+            for summary_path in run.report_root.glob("*/run_summary.json"):
+                (summary_path.parent / "ui_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        except (OSError, json.JSONDecodeError):
+            LOGGER.exception("run=%s could not finalize manifest", run.run_id)
+        persist_run(run)
         LOGGER.info("run=%s status=%s return_code=%s report=%s", run.run_id, run.status, run.return_code, run.report_root)
 
 
@@ -447,6 +568,7 @@ def prepare_run(config: dict[str, Any], label: str = "Benchmark") -> tuple[Run, 
     run = Run(run_id, label[:80], public_config, REPORTS / f"ui-{run_id}")
     with RUN_LOCK:
         RUNS[run_id] = run
+    persist_run(run)
     return run, env
 
 
@@ -565,7 +687,18 @@ def comparison(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
         a, b = value(left, *path), value(right, *path)
         pct = round((b - a) / a * 100, 2) if a else None
         delta[name] = {"left": a, "right": b, "change_pct": pct, "higher_is_better": higher_better}
-    return {"left": compact_summary(left), "right": compact_summary(right), "metrics": delta}
+    left_meta, right_meta = left.get("meta", {}), right.get("meta", {})
+    compatibility = []
+    for key in ("query_sha256", "test_plan", "profile_sha256", "requested_concurrency", "requested_qps", "requested_qpm", "hold_period"):
+        a, b = left_meta.get(key), right_meta.get(key)
+        if a not in {None, ""} and b not in {None, ""} and a != b:
+            compatibility.append({"field": key, "left": a, "right": b, "severity": "workload"})
+    for key, legacy in (("engine", "engine"), ("CLUSTER_SIZE", "cluster_size"), ("ENGINE_BUILD", "ENGINE_BUILD")):
+        a = left_meta.get(key, left_meta.get(legacy))
+        b = right_meta.get(key, right_meta.get(legacy))
+        if a not in {None, ""} and b not in {None, ""} and a != b:
+            compatibility.append({"field": key, "left": a, "right": b, "severity": "context"})
+    return {"left": compact_summary(left), "right": compact_summary(right), "metrics": delta, "compatibility": compatibility}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -574,6 +707,33 @@ class Handler(SimpleHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: Any) -> None:
         LOGGER.info("client=%s %s", self.address_string(), fmt % args)
+
+    def end_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        super().end_headers()
+
+    def _authorized(self) -> bool:
+        if not AUTH_TOKEN:
+            return True
+        header = self.headers.get("Authorization", "")
+        try:
+            scheme, encoded = header.split(" ", 1)
+            decoded = base64.b64decode(encoded).decode()
+            _, password = decoded.split(":", 1)
+            return scheme.lower() == "basic" and hmac.compare_digest(password, AUTH_TOKEN)
+        except (ValueError, UnicodeDecodeError):
+            return False
+
+    def _require_auth(self) -> bool:
+        if self._authorized():
+            return False
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="e6data Benchmark Studio"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return True
 
     def _json(self, payload: Any, status: int = 200) -> None:
         body = json.dumps(payload).encode()
@@ -608,6 +768,15 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/healthz":
+            self._json({"status": "ok"})
+            return
+        if parsed.path == "/readyz":
+            ready = DB_READY and (ROOT / "run_test.sh").is_file() and REPORTS.parent.is_dir()
+            self._json({"status": "ready" if ready else "not_ready"}, 200 if ready else 503)
+            return
+        if self._require_auth():
+            return
         try:
             if parsed.path == "/api/config":
                 connections = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "connection_properties").glob("*.properties"))
@@ -641,6 +810,8 @@ class Handler(SimpleHTTPRequestHandler):
             self._json({"error": "UI backend error; see logs/ui.log"}, 500)
 
     def do_POST(self) -> None:
+        if self._require_auth():
+            return
         try:
             parsed = urlparse(self.path)
             if parsed.path == "/api/upload":
@@ -672,6 +843,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/import-s3":
                 saved = import_s3_input(str(body.get("kind", "")), str(body.get("uri", "")))
                 self._json({"file": saved}, HTTPStatus.CREATED)
+            elif self.path == "/api/preflight":
+                self._json(preflight(body))
             elif self.path.endswith("/cancel") and self.path.startswith("/api/runs/"):
                 run_id = self.path.split("/")[3]
                 with RUN_LOCK:
@@ -680,6 +853,7 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ValueError("Run is not active")
                 os.killpg(run.process.pid, signal.SIGTERM)
                 run.status = "cancelled"
+                persist_run(run)
                 LOGGER.info("run=%s cancellation requested", run.run_id)
                 self._json(run.public())
             elif self.path == "/api/compare":
@@ -704,8 +878,10 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(message)s",
         handlers=[logging.FileHandler(LOG_DIR / "ui.log"), logging.StreamHandler()],
     )
-    if args.host not in {"127.0.0.1", "localhost", "::1"}:
-        LOGGER.warning("Remote binding has no built-in authentication; use a secured reverse proxy")
+    if args.host not in {"127.0.0.1", "localhost", "::1"} and not AUTH_TOKEN:
+        parser.exit(2, "Remote binding requires BENCHMARK_UI_TOKEN. Put TLS in front of this service.\n")
+    init_registry()
+    restore_runs()
     try:
         server = ThreadingHTTPServer((args.host, args.port), Handler)
     except OSError as exc:

@@ -231,6 +231,42 @@ writes its complete runner output to `reports/ui-<run-id>/ui_runner.log`, while
 JMeter errors and final metrics remain in the timestamped child directory's
 `JmeterResultFile.csv`, `run_report.md`, and `run_summary.json`.
 
+### Persistent and production operation
+
+Localhost remains zero-configuration. The UI stores its run registry in
+`ui/benchmark_ui.db` by default, so completed/interrupted run records survive a
+UI restart; JMeter artifacts remain ordinary files under `reports/`.
+
+For a fixed production URL, run the service on localhost behind authenticated
+HTTPS. Remote binding is refused unless `BENCHMARK_UI_TOKEN` is set. The token
+is used as the password for HTTP Basic authentication (the username can be any
+value); TLS must be terminated by the reverse proxy.
+
+Deployment templates are provided under `deploy/`:
+
+```bash
+sudo install -d -o e6benchmark -g e6benchmark /var/lib/e6-benchmark-ui
+sudo install -m 600 deploy/benchmark-ui.env.example /etc/e6-benchmark-ui.env
+# Edit the token and paths/server name in the three deployment templates.
+sudo install deploy/e6-benchmark-ui.service /etc/systemd/system/
+sudo install deploy/nginx-benchmark-ui.conf /etc/nginx/conf.d/e6-benchmark-ui.conf
+sudo systemctl daemon-reload
+sudo systemctl enable --now e6-benchmark-ui
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Operational endpoints:
+
+- `GET /healthz` — process liveness;
+- `GET /readyz` — registry and runner readiness.
+
+Every UI launch performs a query/configuration preflight and writes
+`ui_manifest.json` with the resolved non-secret environment, query/JMX/profile
+hashes, and load-generator host snapshots. Comparisons warn when workload
+signatures differ. These checks improve trustworthiness but do not modify the
+JMeter result files or metric calculations.
+
 ## Test Plans
 
 ### JDBC Test Plans

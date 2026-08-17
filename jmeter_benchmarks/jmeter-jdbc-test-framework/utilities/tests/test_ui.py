@@ -105,13 +105,14 @@ class UiTests(unittest.TestCase):
         self.assertEqual(details["per_query"][0]["sampleCount"], 4)
 
     def test_comparison_calculates_regression_direction_inputs(self):
-        left = {"throughput_per_s": 10, "error_pct": 1, "latency_ms": {"p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "drain_s": 2}
-        right = {"throughput_per_s": 12, "error_pct": 2, "latency_ms": {"p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "drain_s": 3}
+        left = {"throughput_per_s": 10, "error_pct": 1, "latency_ms": {"p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "drain_s": 2, "meta": {"query_sha256": "a"}}
+        right = {"throughput_per_s": 12, "error_pct": 2, "latency_ms": {"p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "drain_s": 3, "meta": {"query_sha256": "b"}}
         result = server.comparison(left, right)
         self.assertEqual(result["metrics"]["throughput_per_s"]["change_pct"], 20)
         self.assertEqual(result["metrics"]["p95_ms"]["change_pct"], -10)
         self.assertTrue(result["metrics"]["throughput_per_s"]["higher_is_better"])
         self.assertFalse(result["metrics"]["p95_ms"]["higher_is_better"])
+        self.assertEqual(result["compatibility"][0]["severity"], "workload")
 
     def test_live_metrics_ignores_setup_samples(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -216,6 +217,24 @@ class UiTests(unittest.TestCase):
         self.assertEqual(compact["chart_bucket_s"], 10)
         self.assertNotIn("expected_per_s", compact["load_profile"])
         self.assertEqual(len(original["arrivals_per_s"]), 1000)
+
+    def test_registry_restores_running_record_as_interrupted(self):
+        old_path, old_ready, old_runs = server.DB_PATH, server.DB_READY, dict(server.RUNS)
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                server.DB_PATH = Path(temp) / "registry.db"
+                server.DB_READY = False
+                server.RUNS.clear()
+                server.init_registry()
+                run = server.Run("persisted", "test", {}, Path(temp) / "reports", status="running")
+                server.persist_run(run)
+                server.RUNS.clear()
+                server.restore_runs()
+                self.assertEqual(server.RUNS["persisted"].status, "interrupted")
+        finally:
+            server.DB_PATH, server.DB_READY = old_path, old_ready
+            server.RUNS.clear()
+            server.RUNS.update(old_runs)
 
     def test_run_once_always_disables_recycling(self):
         connection = server.ROOT / "connection_properties" / "ui_test.properties"

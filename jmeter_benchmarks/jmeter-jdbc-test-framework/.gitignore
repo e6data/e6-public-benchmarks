@@ -37,6 +37,9 @@ backups/
 __pycache__/
 *.pyc
 *.pyo
+ui/*.db
+ui/*.db-shm
+ui/*.db-wal
 
 # Test config files (user-created, may reference real connections)
 test_configs/*.env

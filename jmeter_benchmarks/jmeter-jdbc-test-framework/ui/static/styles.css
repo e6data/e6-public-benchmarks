@@ -189,6 +189,9 @@ select:focus, input:focus { outline: 2px solid rgba(116, 28, 245, .16); border-c
 .report-filters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 14px; padding: 16px 20px; }
 .compare-picker > span { padding-bottom: 12px; color: var(--muted); }
 .comparison { margin-top: 22px; }
+.compatibility-warning { margin-bottom: 16px; padding: 14px; background: #fff7dd; border-left: 3px solid var(--amber); }
+.compatibility-warning p { margin: 4px 0 12px; color: var(--text); font-size: 12px; }
+.compatibility-ok { margin-bottom: 16px; padding: 11px 14px; color: var(--green); background: var(--green-bg); border-left: 3px solid var(--green); font-weight: 700; }
 .compare-table { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--line); box-shadow: var(--shadow); }
 .compare-table th, .compare-table td { padding: 14px 16px; text-align: right; border-bottom: 1px solid var(--line); }
 .compare-table th { color: var(--muted); font-size: 11px; text-transform: uppercase; background: #fafafd; }

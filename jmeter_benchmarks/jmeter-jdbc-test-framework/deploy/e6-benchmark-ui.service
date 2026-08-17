@@ -1,0 +1,26 @@
+[Unit]
+Description=e6data JMeter Benchmark Studio
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=e6benchmark
+Group=e6benchmark
+WorkingDirectory=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
+EnvironmentFile=/etc/e6-benchmark-ui.env
+ExecStart=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/run_ui.sh --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/reports
+ReadWritePaths=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/logs
+ReadWritePaths=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/data_files
+ReadWritePaths=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/test_properties
+ReadWritePaths=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/connection_properties
+ReadWritePaths=/var/lib/e6-benchmark-ui
+
+[Install]
+WantedBy=multi-user.target
