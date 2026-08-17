@@ -8,13 +8,22 @@
 </head>
 <body>
   <header>
-    <div><span class="eyebrow">JMETER CONTROL PLANE</span><h1>Benchmark Studio</h1></div>
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 42 38" aria-hidden="true">
+        <path d="M0 4 7 0h19l11 19-11 19H7l11-19L9 4Z" fill="currentColor" opacity=".55"/>
+        <path d="M13 0h19l10 19-10 19H13l11-19Z" fill="currentColor"/>
+        <path d="m24 8 6 11-6 11h-7l6-11-6-11Z" fill="#fff"/>
+      </svg>
+      <strong>e6data</strong><span class="product-name">Benchmark Studio</span>
+    </div>
     <div class="connection"><span class="dot"></span> Local runner <code>127.0.0.1</code></div>
   </header>
   <nav>
-    <button class="tab active" data-tab="launch">Launch</button>
-    <button class="tab" data-tab="live">Live runs <span id="liveCount">0</span></button>
-    <button class="tab" data-tab="compare">Compare</button>
+    <div class="nav-label">PERFORMANCE</div>
+    <button class="tab active" data-tab="launch"><b>＋</b> Launch test</button>
+    <button class="tab" data-tab="live"><b>◉</b> Live runs <span id="liveCount">0</span></button>
+    <button class="tab" data-tab="compare"><b>⇄</b> Compare runs</button>
+    <div class="nav-note"><strong>CLI compatible</strong><small>Every UI run uses the existing runner and report format.</small></div>
   </nav>
   <main>
     <section id="launch" class="panel active">
