@@ -506,7 +506,7 @@ Afterwards `run_report.md` scores the run against the profile:
 
 - **arrival rate** — delivered vs expected arrivals. `SHORTFALL` means `MAX_CONCURRANCY`
   was too low.
-- **concurrency** — how many seconds in-flight stayed within 1 of the profile. A brief
+- **concurrency** — how many seconds peak query-in-flight stayed within the documented tolerance of the profile. A brief
   overshoot at a wave boundary is expected: a thread finishes its current query before
   stopping, so the outgoing and incoming waves overlap for a few seconds.
 
@@ -589,7 +589,7 @@ To enable batch testing for a new engine/cluster/benchmark combination:
    ```bash
    cp metadata_files/e6data_s-2x2_metadata.txt metadata_files/my_engine_my-cluster_metadata.txt
    ```
-   Edit cluster configuration JSON, S3 settings, and `S3_BASE_PATH`
+   Edit cluster configuration JSON, S3 settings, and `S3_REPORT_PATH` (`S3_BASE_PATH` is a legacy metadata alias)
 
 2. **Create connection properties** (if not exists):
    ```bash
@@ -717,6 +717,6 @@ auto-resumes on first contact, and the first run afterwards can fail while it co
 ### S3 Upload Failures
 
 1. Ensure AWS credentials configured: `aws s3 ls s3://your-bucket/`
-2. Check `S3_BASE_PATH` in metadata file
+2. Check `S3_REPORT_PATH` in the runner configuration (or legacy `S3_BASE_PATH` in metadata)
 3. Verify `COPY_TO_S3=true` in test properties
 4. Check logs in `/tmp/jmeter_test_logs/`

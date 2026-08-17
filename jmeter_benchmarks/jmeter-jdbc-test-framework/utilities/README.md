@@ -4,7 +4,7 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 
 ## Script Inventory
 
-**64 scripts total** (27 top-level + 37 athena)
+The inventory below is grouped by purpose. Counts are intentionally omitted because this directory evolves frequently; use `find utilities -type f` for the current file list.
 
 ### Analysis & Comparison (9)
 
@@ -115,7 +115,7 @@ load profile applied: 15 steps, 17s, peak 56/s, ~482 expected samples
 If actual samples fall well short of expected, the cluster is saturating and arrivals are
 being throttled by `MAX_CONCURRANCY`. That is a capacity result, not a tooling failure.
 
-### Testing & Diagnostics (4)
+### Testing & Diagnostics
 
 | Script | Purpose |
 |--------|---------|
@@ -123,12 +123,16 @@ being throttled by `MAX_CONCURRANCY`. That is a capacity result, not a tooling f
 | `test_dbr_connectivity.sh` | Diagnose DBR connectivity issues with repeated DNS/HTTPS tests |
 | `test_queries_http.py` | Test SQL queries via e6data HTTP API (bypasses JMeter) |
 | `fix_jmeter_jar_conflicts.sh` | Quarantine duplicate e6 JDBC drivers and zero-byte jars (`--dry-run` supported) |
+| `run_premerge_checks.sh` | Run unit, Python, shell, JMX, and profile-injection checks used by CI |
+| `run_smoke_suite.sh` | Run a bounded five-plan JDBC smoke suite against a real target |
 
 **When to run `fix_jmeter_jar_conflicts.sh`:** if every query fails instantly with
 `UNIMPLEMENTED: No cluster-name header or unknown cluster`, more than one
 `e6-jdbc-driver-*.jar` is probably on the classpath and an old one is winning.
 Load order depends on the filesystem, so this can reproduce on Linux but not macOS.
 Check with `find apache-jmeter-5.6.3 -name "e6-jdbc-driver-*.jar"` — more than one line means ambiguity.
+
+The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. Those are informational because removing individual classes from a signed/vendor artifact is unsafe; prefer a vendor-approved thin or correctly shaded driver when one becomes available.
 
 ### Housekeeping (3)
 
