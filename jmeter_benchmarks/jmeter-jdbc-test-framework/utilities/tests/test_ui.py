@@ -57,6 +57,21 @@ class UiTests(unittest.TestCase):
         self.assertEqual(env["GENERATE_DASHBOARD"], "false")
         self.assertEqual(env["REPORT_PATH"], "reports/ui-abc")
 
+    def test_run_once_always_disables_recycling(self):
+        connection = server.ROOT / "connection_properties" / "ui_test.properties"
+        query = server.ROOT / "data_files" / "ui_test.csv"
+        try:
+            connection.write_text("CONNECTION_STRING=jdbc:test\n")
+            query.write_text('query_alias,query_string\nq1,"select 1"\n')
+            env = server.build_environment({
+                "plan": "jdbc_run_once", "connection": "connection_properties/ui_test.properties",
+                "query_file": "data_files/ui_test.csv", "RECYCLE_ON_EOF": True,
+            }, "once")
+        finally:
+            connection.unlink(missing_ok=True)
+            query.unlink(missing_ok=True)
+        self.assertEqual(env["RECYCLE_ON_EOF"], "false")
+
 
 if __name__ == "__main__":
     unittest.main()

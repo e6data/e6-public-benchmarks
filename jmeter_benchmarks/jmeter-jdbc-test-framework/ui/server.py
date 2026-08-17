@@ -95,7 +95,9 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
         "COPY_TO_S3": "false",
         "GENERATE_DASHBOARD": "false",
         "RANDOM_ORDER": "true" if config.get("RANDOM_ORDER") is True else "false",
-        "RECYCLE_ON_EOF": "true" if config.get("RECYCLE_ON_EOF", True) is True else "false",
+        # A run-once plan must terminate at EOF even if a stale browser form
+        # submits RECYCLE_ON_EOF=true. Rate/concurrency plans default to repeat.
+        "RECYCLE_ON_EOF": "false" if plan_key.endswith("run_once") else ("true" if config.get("RECYCLE_ON_EOF", True) is True else "false"),
     })
     defaults = {
         "CONCURRENT_QUERY_COUNT": 2, "QPS": 1, "QPM": 60, "HOLD_PERIOD": 60,
@@ -130,7 +132,7 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
     origin = min(started)
     last_second = max(max(0, (int(row["timeStamp"]) + int(row.get("elapsed") or 0) - origin) // 1000) for row in rows)
     arrivals = [0] * (last_second + 1)
-    in_flight = [0] * (last_second + 1)
+    in_flight_delta = [0] * (last_second + 2)
     latency_sum = [0] * (last_second + 1)
     latency_count = [0] * (last_second + 1)
     failures: dict[str, int] = {}
@@ -139,13 +141,20 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         duration = int(row.get("elapsed") or 0)
         end = max(start, (int(row["timeStamp"]) + duration - origin) // 1000)
         arrivals[start] += 1
-        for second in range(start, min(end + 1, len(in_flight))):
-            in_flight[second] += 1
+        # Difference array keeps polling linear in rows + seconds. Iterating
+        # over every active second for every sample made long runs block the API.
+        in_flight_delta[start] += 1
+        in_flight_delta[min(end + 1, len(in_flight_delta) - 1)] -= 1
         latency_sum[end] += duration
         latency_count[end] += 1
         if row.get("success", "").lower() != "true":
             message = (row.get("responseMessage") or row.get("failureMessage") or "Unknown error").strip()
             failures[message[:240]] = failures.get(message[:240], 0) + 1
+    in_flight: list[int] = []
+    current = 0
+    for change in in_flight_delta[:-1]:
+        current += change
+        in_flight.append(current)
     latency_series = [round(total / count) if count else 0 for total, count in zip(latency_sum, latency_count)]
     top_failure = max(failures.items(), key=lambda item: item[1]) if failures else None
     return {
