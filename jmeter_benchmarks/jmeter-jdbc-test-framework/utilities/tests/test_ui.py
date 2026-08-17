@@ -1,7 +1,9 @@
+import stat
 import tempfile
 import unittest
-import stat
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from ui import server
 
@@ -56,6 +58,36 @@ class UiTests(unittest.TestCase):
         finally:
             target.unlink(missing_ok=True)
 
+    def test_local_csv_upload_is_scoped_and_does_not_overwrite(self):
+        target = server.ROOT / "data_files" / "ui_upload_unit.csv"
+        try:
+            relative = server.save_input("query", "ui_upload_unit.csv", b"query_alias,query_string\nq1,select 1\n")
+            self.assertEqual(relative, "data_files/ui_upload_unit.csv")
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                server.save_input("query", "ui_upload_unit.csv", b"replacement")
+            self.assertIn("select 1", target.read_text())
+        finally:
+            target.unlink(missing_ok=True)
+
+    def test_csv_upload_rejects_traversal_and_wrong_extension(self):
+        for name in ("../outside.csv", "queries.sql"):
+            with self.assertRaises(ValueError):
+                server.save_input("query", name, b"content")
+
+    def test_s3_import_downloads_to_runner_input_directory(self):
+        target = server.ROOT / "test_properties" / "ui_s3_unit.csv"
+
+        def fake_run(command, **_kwargs):
+            Path(command[4]).write_text("StartValue,EndValue,Duration\n1,1,1\n")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        try:
+            with mock.patch.object(server.subprocess, "run", side_effect=fake_run):
+                relative = server.import_s3_input("profile", "s3://example-bucket/folder/ui_s3_unit.csv")
+            self.assertEqual(relative, "test_properties/ui_s3_unit.csv")
+        finally:
+            target.unlink(missing_ok=True)
+
     def test_comparison_calculates_regression_direction_inputs(self):
         left = {"throughput_per_s": 10, "error_pct": 1, "latency_ms": {"p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "drain_s": 2}
         right = {"throughput_per_s": 12, "error_pct": 2, "latency_ms": {"p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "drain_s": 3}
@@ -101,7 +133,7 @@ class UiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             server._inside("../../etc/passwd", "connection_properties", ".properties")
 
-    def test_build_environment_does_not_enable_upload_or_dashboard(self):
+    def test_build_environment_keeps_upload_disabled_and_enables_standard_dashboard(self):
         connection = server.ROOT / "connection_properties" / "ui_test.properties"
         query = server.ROOT / "data_files" / "ui_test.csv"
         try:
@@ -117,7 +149,7 @@ class UiTests(unittest.TestCase):
             connection.unlink(missing_ok=True)
             query.unlink(missing_ok=True)
         self.assertEqual(env["COPY_TO_S3"], "false")
-        self.assertEqual(env["GENERATE_DASHBOARD"], "false")
+        self.assertEqual(env["GENERATE_DASHBOARD"], "true")
         self.assertEqual(env["REPORT_PATH"], "reports/ui-abc")
 
     def test_run_once_always_disables_recycling(self):

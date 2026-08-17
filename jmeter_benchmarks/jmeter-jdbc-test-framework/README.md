@@ -162,8 +162,12 @@ Then open <http://127.0.0.1:8765>. The UI supports:
   an existing one;
 - selecting the same `TEST_PLAN`, `QUERY_FILE`, `LOAD_PROFILE`, concurrency,
   rate, duration, and safety variables accepted by `run_test.sh`;
+- choosing an already-local CSV, uploading a CSV from the browser, or importing
+  one from S3 using the UI host's configured AWS CLI credentials;
 - starting one engine or the same workload on two engines in parallel;
 - live samples, throughput, errors, active threads, latency, and runner logs;
+- opening JMeter's standard HTML dashboard after a run when
+  `GENERATE_DASHBOARD` is enabled;
 - cancelling only the selected UI-started process;
 - comparing any two completed `run_summary.json` reports graphically.
 
@@ -172,9 +176,18 @@ When the UI creates a profile, it writes the same format as
 with owner-only (`0600`) permissions. Connection secrets are never returned to
 the browser or stored in run metadata. Existing-profile selection is available
 through `CONNECTION_FILE mode`. Inputs are restricted to known test plans and
-files in `connection_properties/`, `data_files/`, and `test_properties/`. S3
-upload and the JMeter HTML dashboard are disabled for UI runs; the UI produces
-normal reports under `reports/ui-<run-id>/`.
+files in `connection_properties/`, `data_files/`, and `test_properties/`. Local
+browser uploads and S3 imports are copied into those git-ignored input
+directories before the unchanged runner starts. Result upload to S3 remains
+disabled for UI runs. The UI produces normal reports under
+`reports/ui-<run-id>/`.
+
+The live workload chart is calculated from the actively growing
+`JmeterResultFile.csv`; JMeter does not produce its standard HTML graphs while a
+test is running. After completion, use **Per-query results → Open standard
+JMeter dashboard** for the standard report. Dashboard generation is enabled by
+default in the UI and can be disabled with `GENERATE_DASHBOARD` for lower disk
+usage.
 
 The server binds to localhost by default. On EC2, prefer SSH port forwarding:
 

@@ -113,6 +113,9 @@ label small { font-weight: 500; color: var(--muted); }
 select, input { width: 100%; margin-top: 7px; border: 1px solid #cfd4dc; border-radius: 5px; padding: 10px 11px; background: white; color: var(--ink); font: inherit; }
 select:hover, input:hover { border-color: #aeb4c0; }
 select:focus, input:focus { outline: 2px solid rgba(116, 28, 245, .16); border-color: var(--purple-600); }
+.source-actions { display: flex; gap: 6px; margin-top: 7px; }
+.source-actions input[type="file"] { display: none; }
+.source-actions button { border: 1px solid #d7cfdf; background: var(--purple-50); color: var(--purple-700); border-radius: 4px; padding: 5px 8px; cursor: pointer; font-size: 10px; font-weight: 700; }
 .checks { display: flex; gap: 26px; margin-top: 20px; }
 .checks label { display: flex; align-items: center; gap: 8px; }
 .checks input { width: auto; margin: 0; }
@@ -166,6 +169,8 @@ select:focus, input:focus { outline: 2px solid rgba(116, 28, 245, .16); border-c
 .detail-results .compare-table { box-shadow: none; font-size: 11px; }
 .detail-results .compare-table th, .detail-results .compare-table td { padding: 9px 10px; white-space: nowrap; }
 .artifact-list { margin-top: 10px; color: var(--muted); font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.dashboard-action { margin-top: 14px; }
+.dashboard-link { display: inline-block; text-decoration: none; padding: 8px 11px; }
 .danger { border: 1px solid #f2caca; background: var(--red-bg); color: var(--red); padding: 7px 11px; border-radius: 5px; cursor: pointer; }
 
 .compare-picker { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 18px; align-items: end; }

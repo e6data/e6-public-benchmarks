@@ -37,8 +37,8 @@
           <div class="card-title"><span>02</span><div><h3>Workload</h3><p>Shared by both engines for a fair comparison</p></div></div>
           <div class="fields">
             <label>TEST_PLAN <small>test pattern</small><select id="plan"></select></label>
-            <label>QUERY_FILE <small>query dataset</small><select id="query_file" required></select></label>
-            <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select></label>
+            <label>QUERY_FILE <small>query dataset</small><select id="query_file" required></select><span class="source-actions"><input id="query_upload" type="file" accept=".csv"><button type="button" data-upload="query">Local CSV</button><button type="button" data-s3="query">S3 URI</button></span></label>
+            <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
             <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
             <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>
             <label class="param qpm">QPM <small>queries / minute</small><input id="QPM" type="number" value="60" min="1"></label>
@@ -46,7 +46,7 @@
             <label>MAX_CONCURRANCY <small>runner spelling</small><input id="MAX_CONCURRANCY" type="number" value="100" min="1"></label>
             <label>MAX_ERROR_PCT<input id="MAX_ERROR_PCT" type="number" value="5" min="0" max="100"></label>
           </div>
-          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> RECYCLE_ON_EOF</label><label><input id="RANDOM_ORDER" type="checkbox"> RANDOM_ORDER</label></div>
+          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> RECYCLE_ON_EOF</label><label><input id="RANDOM_ORDER" type="checkbox"> RANDOM_ORDER</label><label><input id="GENERATE_DASHBOARD" type="checkbox" checked> GENERATE_DASHBOARD</label></div>
         </div>
         <div class="actions"><p id="formError" class="error"></p><button class="primary" type="submit">Launch benchmark <span>→</span></button></div>
       </form>

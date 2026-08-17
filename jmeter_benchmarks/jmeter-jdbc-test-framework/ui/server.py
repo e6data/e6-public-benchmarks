@@ -13,6 +13,7 @@ import csv
 import errno
 import json
 import logging
+import mimetypes
 import os
 import re
 import signal
@@ -26,7 +27,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,19 +56,20 @@ NUMERIC_LIMITS = {
 }
 
 PROFILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+CSV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.csv$", re.IGNORECASE)
 JDBC_DRIVERS = {
     "e6data": "io.e6.jdbc.driver.E6Driver",
     "databricks": "com.databricks.client.jdbc.Driver",
     "trino": "io.trino.jdbc.TrinoDriver",
 }
 PUBLIC_RUN_FIELDS = {
-    "plan", "connection", "query_file", "load_profile", "CONCURRENT_QUERY_COUNT",
+    "plan", "engine", "connection", "query_file", "load_profile", "CONCURRENT_QUERY_COUNT",
     "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME", "RAMP_UP_STEPS",
     "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET", "MAX_ERROR_PCT",
-    "RECYCLE_ON_EOF", "RANDOM_ORDER",
+    "RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD",
 }
 DISPLAY_ENV_FIELDS = (
-    "CONNECTION_FILE", "TEST_PLAN", "QUERY_FILE", "LOAD_PROFILE",
+    "ENGINE", "CONNECTION_FILE", "TEST_PLAN", "QUERY_FILE", "LOAD_PROFILE",
     "CONCURRENT_QUERY_COUNT", "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME",
     "RAMP_UP_STEPS", "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET",
     "MAX_ERROR_PCT", "RECYCLE_ON_EOF", "RANDOM_ORDER", "REPORT_PATH",
@@ -138,6 +140,56 @@ def create_connection_profile(config: dict[str, Any]) -> str:
     return target.relative_to(ROOT).as_posix()
 
 
+def input_destination(kind: str, filename: str) -> Path:
+    directory = {"query": "data_files", "profile": "test_properties"}.get(kind)
+    clean_name = Path(filename).name
+    if not directory or filename != clean_name or not CSV_NAME.fullmatch(clean_name):
+        raise ValueError("Input must be a CSV filename for query or profile")
+    target = ROOT / directory / clean_name
+    if target.exists():
+        raise ValueError("A local input with this filename already exists")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def save_input(kind: str, filename: str, content: bytes) -> str:
+    if not content or len(content) > 50 * 1024 * 1024:
+        raise ValueError("CSV input must be between 1 byte and 50 MB")
+    target = input_destination(kind, filename)
+    temp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp.write_bytes(content)
+        os.replace(temp, target)
+    finally:
+        temp.unlink(missing_ok=True)
+    return target.relative_to(ROOT).as_posix()
+
+
+def import_s3_input(kind: str, uri: str) -> str:
+    parsed = urlparse(uri)
+    filename = Path(parsed.path).name
+    if parsed.scheme != "s3" or not parsed.netloc or not filename:
+        raise ValueError("Use a complete s3://bucket/path/file.csv URI")
+    target = input_destination(kind, filename)
+    try:
+        result = subprocess.run(
+            ["aws", "s3", "cp", uri, str(target), "--only-show-errors"],
+            capture_output=True, text=True, timeout=120, check=False,
+        )
+        if result.returncode != 0:
+            raise ValueError((result.stderr or "S3 download failed; check AWS credentials and URI").strip()[:500])
+        if not target.is_file() or not 0 < target.stat().st_size <= 50 * 1024 * 1024:
+            raise ValueError("Downloaded CSV must be between 1 byte and 50 MB")
+    except FileNotFoundError as exc:
+        raise ValueError("AWS CLI is not installed on the UI host") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("S3 download timed out after 120 seconds") from exc
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return target.relative_to(ROOT).as_posix()
+
+
 def _inside(relative: str, directory: str, suffix: str) -> str:
     """Return a normalized repo-relative file from one allowed directory."""
     candidate = (ROOT / relative).resolve()
@@ -177,12 +229,16 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
         "REPORT_PATH": f"reports/ui-{run_id}",
         "RUN_TYPE": f"ui_{plan_key}",
         "COPY_TO_S3": "false",
-        "GENERATE_DASHBOARD": "false",
+        "GENERATE_DASHBOARD": "true" if config.get("GENERATE_DASHBOARD", True) is True else "false",
         "RANDOM_ORDER": "true" if config.get("RANDOM_ORDER") is True else "false",
         # A run-once plan must terminate at EOF even if a stale browser form
         # submits RECYCLE_ON_EOF=true. Rate/concurrency plans default to repeat.
         "RECYCLE_ON_EOF": "false" if plan_key.endswith("run_once") else ("true" if config.get("RECYCLE_ON_EOF", True) is True else "false"),
     })
+    engine = _property_value(config.get("engine"), "ENGINE") or "unknown"
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", engine):
+        raise ValueError("ENGINE contains invalid characters")
+    env["ENGINE"] = engine
     defaults = {
         "CONCURRENT_QUERY_COUNT": 2, "QPS": 1, "QPM": 60, "HOLD_PERIOD": 60,
         "RAMP_UP_TIME": 1, "RAMP_UP_STEPS": 1, "MAX_CONCURRANCY": 100,
@@ -403,7 +459,7 @@ def report_details(report_id: str) -> dict[str, Any]:
             "top_error": top_error,
         })
     artifacts = [path.name for path in directory.iterdir() if path.is_file()]
-    return {"id": report_id, "summary": summary, "per_query": per_query, "artifacts": sorted(artifacts)}
+    return {"id": report_id, "summary": summary, "per_query": per_query, "artifacts": sorted(artifacts), "dashboard": (directory / "dashboard" / "index.html").is_file()}
 
 
 def comparison(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
@@ -448,6 +504,22 @@ class Handler(SimpleHTTPRequestHandler):
             raise ValueError("Request too large")
         return json.loads(self.rfile.read(length) or b"{}")
 
+    def _dashboard_asset(self, request_path: str) -> None:
+        remainder = request_path.removeprefix("/artifacts/")
+        encoded_id, separator, asset = remainder.partition("/dashboard/")
+        if not separator:
+            raise ValueError("Unknown dashboard artifact")
+        directory = (REPORTS / unquote(encoded_id) / "dashboard").resolve()
+        path = (directory / asset).resolve()
+        if REPORTS.resolve() not in directory.parents or directory not in path.parents or not path.is_file():
+            raise ValueError("Unknown dashboard artifact")
+        content = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         try:
@@ -472,6 +544,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif parsed.path == "/api/report-details":
                 report_id = parse_qs(parsed.query).get("id", [""])[0]
                 self._json(report_details(report_id))
+            elif parsed.path.startswith("/artifacts/"):
+                self._dashboard_asset(parsed.path)
             else:
                 super().do_GET()
         except (ValueError, json.JSONDecodeError) as exc:
@@ -482,6 +556,15 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/upload":
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > 50 * 1024 * 1024:
+                    raise ValueError("CSV input must not exceed 50 MB")
+                params = parse_qs(parsed.query)
+                saved = save_input(params.get("kind", [""])[0], unquote(params.get("name", [""])[0]), self.rfile.read(length))
+                self._json({"file": saved}, HTTPStatus.CREATED)
+                return
             body = self._body()
             if self.path == "/api/runs":
                 configs = body.get("runs") or [body]
@@ -497,6 +580,9 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/connections":
                 connection = create_connection_profile(body)
                 self._json({"connection": connection}, HTTPStatus.CREATED)
+            elif self.path == "/api/import-s3":
+                saved = import_s3_input(str(body.get("kind", "")), str(body.get("uri", "")))
+                self._json({"file": saved}, HTTPStatus.CREATED)
             elif self.path.endswith("/cancel") and self.path.startswith("/api/runs/"):
                 run_id = self.path.split("/")[3]
                 with RUN_LOCK:
