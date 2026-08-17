@@ -29,6 +29,14 @@
 #   LIMIT_RESULTSET           - max result rows (default: 1000)
 #   MAX_CONCURRANCY           - max threads (default: 900)
 #   JMETER_HOME               - JMeter installation path (auto-detected if not set)
+#   MAX_ERROR_PCT             - fail the run above this error rate (default: 5)
+#   RUN_TYPE                  - S3 partition label (inferred from the plan if omitted)
+#
+# Exit codes:
+#   0  the run completed and the error rate was within MAX_ERROR_PCT
+#   1  the run is not a usable result - no samples recorded, or too many errors.
+#      The results directory is still written so the failure can be diagnosed.
+#      Set MAX_ERROR_PCT=100 to accept any error rate.
 #
 # Examples:
 #
@@ -95,7 +103,9 @@ if [ -n "$1" ]; then
     _SAVE_LIMIT_RESULTSET="${LIMIT_RESULTSET:-}"
     _SAVE_MAX_CONCURRANCY="${MAX_CONCURRANCY:-}"
     _SAVE_JMETER_HOME="${JMETER_HOME:-}"
-    _SAVE_THREADS_SCHEDULE="${THREADS_SCHEDULE:-}"
+    _SAVE_MAX_ERROR_PCT="${MAX_ERROR_PCT:-}"
+    _SAVE_GENERATE_DASHBOARD="${GENERATE_DASHBOARD:-}"
+    _SAVE_RUN_TYPE="${RUN_TYPE:-}"
 
     source "$SUITE_FILE"
 
@@ -120,7 +130,9 @@ if [ -n "$1" ]; then
     [ -n "$_SAVE_LIMIT_RESULTSET" ] && LIMIT_RESULTSET="$_SAVE_LIMIT_RESULTSET"
     [ -n "$_SAVE_MAX_CONCURRANCY" ] && MAX_CONCURRANCY="$_SAVE_MAX_CONCURRANCY"
     [ -n "$_SAVE_JMETER_HOME" ] && JMETER_HOME="$_SAVE_JMETER_HOME"
-    [ -n "$_SAVE_THREADS_SCHEDULE" ] && THREADS_SCHEDULE="$_SAVE_THREADS_SCHEDULE"
+    [ -n "$_SAVE_MAX_ERROR_PCT" ] && MAX_ERROR_PCT="$_SAVE_MAX_ERROR_PCT"
+    [ -n "$_SAVE_GENERATE_DASHBOARD" ] && GENERATE_DASHBOARD="$_SAVE_GENERATE_DASHBOARD"
+    [ -n "$_SAVE_RUN_TYPE" ] && RUN_TYPE="$_SAVE_RUN_TYPE"
 fi
 
 # ============================================================================
@@ -167,6 +179,8 @@ for var in CONNECTION_FILE TEST_PLAN QUERY_FILE; do
     fi
 done
 
+ORIGINAL_TEST_PLAN="$TEST_PLAN"
+
 if [ -n "${METADATA_FILE:-}" ] && [ ! -f "$METADATA_FILE" ]; then
     echo -e "${RED}Error: METADATA_FILE not found: ${METADATA_FILE}${NC}"
     exit 1
@@ -182,7 +196,14 @@ QPM="${QPM:-10}"
 HOLD_PERIOD="${HOLD_PERIOD:-300}"
 RAMP_UP_TIME="${RAMP_UP_TIME:-1}"
 RAMP_UP_STEPS="${RAMP_UP_STEPS:-1}"
-LOAD_PROFILE="${LOAD_PROFILE:-test_properties/load_profile.csv}"
+# The two load-profile plan families take different CSV formats, so the default
+# follows the plan: 5-column concurrency waves for UltimateThreadGroup,
+# 3-column arrival-rate steps for FreeFormArrivalsThreadGroup.
+if grep -q "UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+    LOAD_PROFILE="${LOAD_PROFILE:-test_properties/utg_load_profile.csv}"
+else
+    LOAD_PROFILE="${LOAD_PROFILE:-test_properties/load_profile.csv}"
+fi
 RANDOM_ORDER="${RANDOM_ORDER:-false}"
 RECYCLE_ON_EOF="${RECYCLE_ON_EOF:-false}"
 COPY_TO_S3="${COPY_TO_S3:-false}"
@@ -196,6 +217,15 @@ MAX_CONCURRANCY="${MAX_CONCURRANCY:-900}"
 if [ -n "${METADATA_FILE:-}" ]; then
     source "$METADATA_FILE"
 fi
+
+# S3_REPORT_PATH is the public runner setting. Older metadata files use
+# S3_BASE_PATH; keep that as a backwards-compatible alias while ensuring the
+# documented setting is sufficient on its own.
+if [ -n "${S3_BASE_PATH:-}" ] && [ -n "${S3_REPORT_PATH:-}" ] \
+   && [ "$S3_BASE_PATH" != "$S3_REPORT_PATH" ]; then
+    echo -e "${YELLOW}Warning: S3_BASE_PATH overrides S3_REPORT_PATH; migrate metadata to S3_REPORT_PATH.${NC}"
+fi
+S3_UPLOAD_ROOT="${S3_BASE_PATH:-$S3_REPORT_PATH}"
 
 # ============================================================================
 # Find JMeter
@@ -223,12 +253,16 @@ fi
 # Display configuration
 # ============================================================================
 
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+TIMESTAMP=$(python3 -c 'from datetime import datetime; print(datetime.now().strftime("%Y%m%d-%H%M%S-%f"))')
 REPORT_DIR="${REPORT_PATH}/${TIMESTAMP}"
-mkdir -p "$REPORT_DIR"
+mkdir -p "$REPORT_PATH"
+if ! mkdir "$REPORT_DIR"; then
+    echo -e "${RED}Error: report directory already exists: ${REPORT_DIR}${NC}"
+    exit 1
+fi
 
-# Count queries in data file
-QUERY_COUNT=$(wc -l < "$QUERY_FILE" | tr -d ' ')
+# Count logical query rows, excluding a recognized CSV header.
+QUERY_COUNT=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field rows)
 
 # Infer test type from test plan filename for display
 PLAN_BASENAME=$(basename "$TEST_PLAN" .jmx | tr '[:upper:]' '[:lower:]')
@@ -248,6 +282,28 @@ else
     TEST_TYPE="Static Concurrency"
 fi
 
+# Keep uploads compatible with the partition layout consumed by the S3 and
+# Athena utilities. Callers can set RUN_TYPE explicitly for custom plans.
+if [ -z "${RUN_TYPE:-}" ]; then
+    case "$TEST_TYPE" in
+        "Run Once")
+            if [ "$CONCURRENT_QUERY_COUNT" = "1" ]; then
+                RUN_TYPE="sequential"
+            else
+                RUN_TYPE="concurrency_${CONCURRENT_QUERY_COUNT}"
+            fi
+            ;;
+        "Static Concurrency") RUN_TYPE="concurrency_${CONCURRENT_QUERY_COUNT}" ;;
+        "Constant QPS") RUN_TYPE="qps_${QPS}" ;;
+        "Constant QPM") RUN_TYPE="qpm_${QPM}" ;;
+        "Variable Concurrency (load profile)") RUN_TYPE="variable_concurrency" ;;
+        "QPS with Load Profile") RUN_TYPE="qps_load_profile" ;;
+        *) RUN_TYPE="custom" ;;
+    esac
+fi
+# Partition values must remain a single safe path component.
+RUN_TYPE=$(printf '%s' "$RUN_TYPE" | tr -cs 'A-Za-z0-9._-' '_')
+
 # Extract connection details for display
 CONN_HOST=$(grep -E "^HOSTNAME=|^mainhost=" "$CONNECTION_FILE" 2>/dev/null | head -1 | cut -d= -f2)
 CONN_ENGINE=$(grep -E "^# Engine:" "$CONNECTION_FILE" 2>/dev/null | cut -d: -f2 | tr -d ' ')
@@ -265,6 +321,7 @@ echo ""
 echo -e "  ${BOLD}Test${NC}"
 echo "    Plan:       $(basename "$TEST_PLAN")"
 echo "    Type:       ${TEST_TYPE}"
+echo "    Run type:   ${RUN_TYPE}"
 echo "    Queries:    $(basename "$QUERY_FILE") (${QUERY_COUNT} queries)"
 [ -n "${METADATA_FILE:-}" ] && echo "    Metadata:   $(basename "$METADATA_FILE")"
 echo ""
@@ -312,17 +369,48 @@ echo ""
 # Build and run JMeter command
 # ============================================================================
 
+# Apply the load profile CSV to the plan's thread-group schedule.
+# Covers both families: FreeFormArrivalsThreadGroup (arrival rate) and
+# UltimateThreadGroup (concurrency waves).
+# The plans' own JSR223 PreProcessors cannot do this: they run when a sampler
+# fires, by which point the thread group has already read its schedule and
+# started threads. So the schedule is injected here, before JMeter starts.
+if grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+    if [ -z "${LOAD_PROFILE:-}" ]; then
+        echo -e "${YELLOW}Warning: load-profile plan selected but LOAD_PROFILE is not set.${NC}"
+        echo -e "${YELLOW}The plan's built-in schedule will be used instead.${NC}"
+        echo ""
+    elif [ ! -f "$LOAD_PROFILE" ]; then
+        echo -e "${RED}Error: LOAD_PROFILE file not found: ${LOAD_PROFILE}${NC}"
+        exit 1
+    else
+        GENERATED_PLAN="${REPORT_DIR}/$(basename "${TEST_PLAN%.jmx}")-generated.jmx"
+        python3 "${PROJECT_ROOT}/utilities/apply_load_profile.py" \
+            "$TEST_PLAN" "$LOAD_PROFILE" "$GENERATED_PLAN" || exit 1
+        echo ""
+        TEST_PLAN="$GENERATED_PLAN"
+    fi
+fi
+
 # Built as an array so values containing spaces or shell metacharacters
-# (e.g. threads_schedule=spawn(4,0s,...)) reach JMeter intact
+# (e.g. a query path with spaces, or a value containing parentheses) reach
+# JMeter intact rather than being re-split by the shell
 JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
 JMETER_CMD+=(-t "$TEST_PLAN")
 JMETER_CMD+=(-q "$CONNECTION_FILE")
 JMETER_CMD+=(-l "${REPORT_DIR}/JmeterResultFile.csv")
-JMETER_CMD+=(-e -o "${REPORT_DIR}/dashboard")
+# HTML dashboard is ~3.5MB of vendored assets per run. CLAUDE.md documents
+# GENERATE_DASHBOARD=false to skip it; honour that here.
+if [ "${GENERATE_DASHBOARD:-true}" != "false" ]; then
+    JMETER_CMD+=(-e -o "${REPORT_DIR}/dashboard")
+fi
 
 # Pass all test parameters as JMeter -J properties
 JMETER_CMD+=("-JQUERY_PATH=$QUERY_FILE")
-JMETER_CMD+=("-JREPORT_PATH=$REPORT_PATH")
+# Point REPORT_PATH at this run's directory so the plan's
+# AggregateReport_<START_TIME>.csv / SummaryReport_... land with the run
+# instead of the reports/ root (where they are orphaned and never uploaded).
+JMETER_CMD+=("-JREPORT_PATH=$REPORT_DIR")
 JMETER_CMD+=("-JCOPY_TO_S3=$COPY_TO_S3")
 JMETER_CMD+=("-JS3_REPORT_PATH=$S3_REPORT_PATH")
 JMETER_CMD+=("-JCONCURRENT_QUERY_COUNT=$CONCURRENT_QUERY_COUNT")
@@ -338,39 +426,133 @@ JMETER_CMD+=("-JQUERY_TIMEOUT=$QUERY_TIMEOUT")
 JMETER_CMD+=("-JLIMIT_RESULTSET=$LIMIT_RESULTSET")
 JMETER_CMD+=("-JMAX_CONCURRANCY=$MAX_CONCURRANCY")
 
-# Optional: threads_schedule for variable concurrency
-if [ -n "${THREADS_SCHEDULE:-}" ]; then
-    JMETER_CMD+=("-Jthreads_schedule=$THREADS_SCHEDULE")
-fi
-
 echo -e "${DIM}${JMETER_CMD[*]}${NC}"
 echo ""
+# The QPM plan uses Unit=M on its thread group, which governs BOTH the arrival rate
+# (QPM = per minute) and the hold duration - so HOLD_PERIOD is MINUTES there, unlike
+# every other plan where it is seconds. The two cannot be separated: setting Unit=S
+# would make QPM mean per-second. Warn rather than silently run 60x too long.
+if grep -q '<stringProp name="Unit">M</stringProp>' "$TEST_PLAN" 2>/dev/null; then
+    echo -e "${YELLOW}  Note: this plan measures time in MINUTES.${NC}"
+    echo -e "${YELLOW}  HOLD_PERIOD=${HOLD_PERIOD:-?} means ${HOLD_PERIOD:-?} minute(s), not seconds.${NC}"
+    echo ""
+fi
+
 echo -e "${BLUE}Running JMeter...${NC}"
 echo ""
 
-# Run JMeter
+# Run JMeter. Preserve its status but continue through report capture and output
+# normalization so failed starts/runs leave useful diagnostics behind.
+set +e
 "${JMETER_CMD[@]}"
+JMETER_RC=$?
+set -e
+RUN_FAILED=0
+if [ "$JMETER_RC" -ne 0 ]; then
+    RUN_FAILED=1
+    echo -e "${RED}JMeter exited with status ${JMETER_RC}; finalizing available artifacts.${NC}"
+fi
+
+# Capture a standard run report alongside the raw results, so every run is
+# self-describing and the analysis does not depend on anyone remembering to run
+# it. Writes run_summary.json + run_report.md into the run directory.
+if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
+    CAPTURE_ARGS=("$REPORT_DIR")
+    # Only compare against a load profile when the plan is actually profile-driven.
+    # LOAD_PROFILE defaults to an existing file, so passing it unconditionally made
+    # every non-profile run report a bogus "SHORTFALL" against a schedule it never used.
+    if grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null \
+       && [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ]; then
+        CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
+    fi
+    CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
+    CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}" --meta "run_type=${RUN_TYPE}")
+    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    [ -n "${GENERATED_PLAN:-}" ] && CAPTURE_ARGS+=(--meta "generated_plan=$(basename "$GENERATED_PLAN")")
+    QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field sha256)
+    CAPTURE_ARGS+=(--meta "query_sha256=${QUERY_SHA}" --meta "requested_concurrency=${CONCURRENT_QUERY_COUNT}")
+    CAPTURE_ARGS+=(--meta "requested_qps=${QPS}" --meta "requested_qpm=${QPM}")
+    CAPTURE_ARGS+=(--meta "hold_period=${HOLD_PERIOD}" --meta "ramp_up_time=${RAMP_UP_TIME}" --meta "ramp_up_steps=${RAMP_UP_STEPS}")
+    CAPTURE_ARGS+=(--meta "max_concurrency=${MAX_CONCURRANCY}" --meta "recycle_on_eof=${RECYCLE_ON_EOF}" --meta "random_order=${RANDOM_ORDER}")
+    CAPTURE_ARGS+=(--meta "jmeter_version=$(basename "$JMETER_HOME")" --meta "java_version=$(java -version 2>&1 | head -1)")
+    CAPTURE_ARGS+=(--meta "git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)")
+    if [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] \
+       && grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+        CAPTURE_ARGS+=(--meta "profile=$(basename "$LOAD_PROFILE")" --meta "profile_sha256=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$LOAD_PROFILE" --field sha256)")
+    fi
+    # Exit 2 from the report means the run itself failed (no samples, or an error
+    # rate above MAX_ERROR_PCT). Propagate it: a run where the queries did not
+    # succeed must not report success, or callers and CI treat it as a result.
+    set +e
+    python3 "${PROJECT_ROOT}/utilities/capture_run_report.py" "${CAPTURE_ARGS[@]}"
+    CAPTURE_RC=$?
+    set -e
+    if [ "$CAPTURE_RC" -eq 2 ]; then
+        RUN_FAILED=1
+    elif [ "$CAPTURE_RC" -ne 0 ]; then
+        echo -e "  ${YELLOW}run report capture failed (results are unaffected)${NC}"
+    fi
+fi
+
+# The plan stamps these with JMeter's own START_TIME, which differs from run_id by
+# a few seconds. Normalise to the names the analysis and Athena scripts expect.
+for _f in "${REPORT_DIR}"/AggregateReport_*.csv; do
+    [ -e "$_f" ] && mv -f "$_f" "${REPORT_DIR}/AggregateReport.csv" && break
+done
+for _f in "${REPORT_DIR}"/SummaryReport_*.csv; do
+    [ -e "$_f" ] && mv -f "$_f" "${REPORT_DIR}/SummaryReport.csv" && break
+done
+
+# JMeter writes statistics.json under dashboard/; downstream analysis and Athena
+# scripts look for it at the run root, so publish a copy there.
+[ -f "${REPORT_DIR}/dashboard/statistics.json" ] && \
+    cp "${REPORT_DIR}/dashboard/statistics.json" "${REPORT_DIR}/statistics.json"
 
 echo ""
-echo -e "${GREEN}=========================================="
-echo " Test Complete!"
-echo -e "==========================================${NC}"
+if [ "${RUN_FAILED:-0}" -eq 1 ]; then
+    echo -e "${RED}=========================================="
+    echo " Test FAILED"
+    echo -e "==========================================${NC}"
+else
+    echo -e "${GREEN}=========================================="
+    echo " Test Complete!"
+    echo -e "==========================================${NC}"
+fi
 echo ""
 echo "  Results:   ${REPORT_DIR}/"
-echo "  Dashboard: ${REPORT_DIR}/dashboard/index.html"
+echo "  Report:    ${REPORT_DIR}/run_report.md"
+if [ "${GENERATE_DASHBOARD:-true}" != "false" ]; then
+    echo "  Dashboard: ${REPORT_DIR}/dashboard/index.html"
+else
+    echo "  Dashboard: disabled"
+fi
 
 # Copy to S3 if enabled
-if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_BASE_PATH:-}" ]; then
+if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_UPLOAD_ROOT:-}" ]; then
     ENGINE_VAL="${ENGINE:-unknown}"
     CLUSTER_SIZE_VAL="${CLUSTER_SIZE:-unknown}"
     BENCHMARK_VAL="${BENCHMARK_TYPE:-unknown}"
-    S3_DEST="${S3_BASE_PATH}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/run_id=${TIMESTAMP}/"
+    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/run_type=${RUN_TYPE}/run_id=${TIMESTAMP}/"
 
     echo ""
     echo "Uploading results to S3..."
     echo "  ${S3_DEST}"
-    aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive
+    # The JMeter HTML dashboard vendors jQuery/Bootstrap/font-awesome/flot -
+    # ~120 files and ~3.5MB per run, byte-identical every time and read by
+    # nothing downstream. Upload the data and the dashboard pages, skip the
+    # vendored assets. Set S3_UPLOAD_DASHBOARD_ASSETS=true to include them.
+    if [ "${S3_UPLOAD_DASHBOARD_ASSETS:-false}" = "true" ]; then
+        aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive
+    else
+        aws s3 cp "${REPORT_DIR}/" "${S3_DEST}" --recursive \
+            --exclude "dashboard/sbadmin2-1.0.7/*" \
+            --exclude "dashboard/content/css/*" \
+            --exclude "dashboard/content/js/*"
+    fi
     echo -e "  ${GREEN}Uploaded to S3${NC}"
 fi
 
 echo ""
+# Exit non-zero when the run produced no usable result, so callers and CI can
+# tell a real benchmark from one where every query failed.
+exit "${RUN_FAILED:-0}"

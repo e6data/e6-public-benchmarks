@@ -1,64 +1,97 @@
-## Here are the python scripts for benchmarking data analytics engines you are using with e6data within minutes
+# Python Benchmark Runners
 
-### Please follow the format of <em>sample.csv</em> file and populate your own queries before starting benchmark scripts.
+These scripts run the same CSV workload against e6data, Trino, or Amazon Athena. They support sequential execution and batched concurrent execution, log a run summary, and write a timestamped result CSV beside the script.
 
-## 1. Dependencies
-### Make sure to install below dependencies and wheel before install e6data-python-connector.
-Amazon Linux / CentOS dependencies
+## Requirements
+
+- Python 3
+- Network access and credentials for the selected engine
+- A C/C++ compiler and Python development headers if installation of the e6data connector requires a local build
+- AWS credentials discoverable by the AWS SDK when running Athena
+
+From this directory, create an isolated environment and install the pinned connector plus the remaining dependencies:
+
 ```bash
-yum install python3-devel gcc-c++ -y
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip wheel
+python -m pip install -r requirements.txt
 ```
-Ubuntu/Debian dependencies
+
+On Debian/Ubuntu, build prerequisites can be installed with `apt install python3-dev g++`; on Amazon Linux/CentOS, use `yum install python3-devel gcc-c++`.
+
+## Query CSV
+
+Use the exact headers `QUERY_ALIAS` and `QUERY`. The database is supplied by the run-level `DB_NAME` variable for every row.
+
+```csv
+QUERY_ALIAS,QUERY
+q1,"SELECT COUNT(*) FROM store_sales"
+q2,"SELECT COUNT(*) FROM catalog_sales"
+```
+
+See [sample.csv](sample.csv). `QUERY_CSV_COLUMN_NAME` can select a differently named query-text column, but the alias column remains `QUERY_ALIAS`.
+
+## Common configuration
+
+Shell assignments must not contain spaces around `=`.
+
 ```bash
-apt install python3-dev g++ -y
+export DB_NAME=tpcds_1000
+export INPUT_CSV_PATH="$PWD/sample.csv"
+export QUERYING_MODE=SEQUENTIAL
+export SHUFFLE_QUERY=false
 ```
-Pip dependencies
+
+| Variable | Required | Default | Meaning |
+|---|---:|---|---|
+| `DB_NAME` | yes | — | Default database/schema for the workload |
+| `INPUT_CSV_PATH` | yes | — | Path to the query CSV |
+| `QUERYING_MODE` | no | `SEQUENTIAL` | Use exactly `CONCURRENT` for batched concurrency |
+| `CONCURRENT_QUERY_COUNT` | concurrent only | `5` | Processes in each submitted batch |
+| `CONCURRENCY_INTERVAL` | concurrent only | `5` | Seconds between batch submissions |
+| `SHUFFLE_QUERY` | no | `false` | Shuffle only when the value is exactly `true` |
+
+Concurrent mode submits the CSV in batches; it is not a fixed-duration load generator. Use the JMeter framework for sustained concurrency or a target arrival rate.
+
+## Run against e6data
+
 ```bash
-pip install wheel
+export ENGINE_IP=cluster.example.com
+export E6_USER=user@example.com
+export E6_TOKEN='<personal-access-token>'
+export CATALOG_NAME=my_catalog
+python e6_benchmark.py
 ```
 
-### 2. Install the python dependent libraries.
-```
-pip install --no-cache-dir -r requirements.txt
-```
-### 3. Set the environment variables.
+The connector uses port 80. The report includes query ID, planner parsing/queue/execution time, and output row count when exposed by `explain_analyse`.
+
+## Run against Trino
+
 ```bash
-export ENGINE_IP=127.0.0.1 # Replace the value with your engine host IP
-export DB_NAME=tpcds_1000 # Replace with your preferred Database
-export INPUT_CSV_PATH=/Users/dummyuser/folder/query_file.csv # Replace the value with your local file path
-export QUERYING_MODE=SEQUENTIAL # for concurrency runs, change the value to CONCURRENT
-export E6_USER=<USER_EMAIL> #Replace the value with your email
-export E6_TOKEN=<USER_ACCESS_TOKEN> # Replace the value with your access token
-export CATALOG_NAME=<CATALOG_NAME> # Replace the value with attached catalog.
-export SHUFFLE_QUERY="true" #If Query Running needs to be shuffled before execution.Default Value is False
-
-
-# In the case of concurrent benchmarking, ensure below variables are set to your requirements
-# The number of queries to be fired at t1 second
-export CONCURRENT_QUERY_COUNT = 20 # Default Value is 5
-
-# The interval between subsequent set of concurrent queries to be fired 
-export CONCURRENCY_INTERVAL = 10 # Default Value is 5
-
-# Example: If your benchmarking needs 50 queries to fire every 2 seconds,
-# export CONCURRENT_QUERY_COUNT = 50
-# export CONCURRENCY_INTERVAL = 2
-
-#Additional environment variables in Athena Benchmarking
-export RESULT_BUCKET=testbucketname # Query results of Athena will be stored in this bucket
-export GLUE_REGION=us-east-1 # Region of AWS Glue. Default Value is us-east-1
+export ENGINE_IP=trino.example.com
+export ENGINE_PORT=8889
+export TRINO_USER=test
+export TRINO_CATALOG=test
+python trino_benchmark.py
 ```
 
-### 4. Run the python script.
-For <em>e6data</em>:
+`ENGINE_PORT`, `TRINO_USER`, and `TRINO_CATALOG` use the defaults shown above when omitted.
+
+## Run against Amazon Athena
+
 ```bash
-python3 e6_benchmark.py
+export RESULT_BUCKET=my-athena-results-bucket
+export GLUE_REGION=us-east-1
+python athena_benchmark.py
 ```
-For <em>Trino</em>:
-```bash
-python3 trino_benchmark.py
-```
-For <em>Athena</em>:
-```bash
-python3 athena_benchmark.py
-```
+
+`RESULT_BUCKET` must be a bucket name, not an `s3://` URL. Results are staged under `s3://<bucket>/Athena/<timestamp>`. Standard AWS credential resolution is used.
+
+## Output and exit behavior
+
+- e6data: `e6data_results_<timestamp>.csv`
+- Trino: `trino_results_<timestamp>.csv`
+- Athena: `athena_results_<timestamp>.csv`
+
+The scripts raise an error after writing the report if any query failed, which makes them suitable for CI smoke checks. Result files may contain query text and error details; review them before sharing or committing.

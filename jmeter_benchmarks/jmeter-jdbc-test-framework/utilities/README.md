@@ -4,7 +4,7 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 
 ## Script Inventory
 
-**43 scripts total** (22 top-level + 21 athena)
+The inventory below is grouped by purpose. Counts are intentionally omitted because this directory evolves frequently; use `find utilities -type f` for the current file list.
 
 ### Analysis & Comparison (9)
 
@@ -35,7 +35,87 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 | `convert_queries_for_jmeter_http.py` | Convert multiline SQL to single-line for JMeter HTTP API (no quote escaping) |
 | `convert_queries_for_json_api.py` | Convert multiline SQL to single-line with JSON/e6data fixes (backticks, keywords, CTEs) |
 
-### Testing & Diagnostics (4)
+### Load Profile
+
+| Script | Purpose |
+|--------|---------|
+| `apply_load_profile.py` | Inject a load-profile CSV into a plan's thread-group schedule before JMeter starts |
+| `capture_run_report.py` | Write `run_summary.json` + `run_report.md` into a run dir (called automatically by both runners) |
+| `verify_load_profile.py` | Confirm arrivals matched the profile, per second |
+| `analyze_queue_buildup.py` | Queue depth / drain reconstruction for arrivals runs |
+
+Called automatically by `run_jmeter_tests_interactive.sh` and `run_test.sh` whenever the
+selected plan contains a `FreeFormArrivalsThreadGroup` or an `UltimateThreadGroup`. Point
+`LOAD_PROFILE` at any CSV — no per-profile test plan is needed.
+
+Two formats, chosen from the plan rather than a flag (header optional, times in seconds):
+
+| Plan controls | Thread group | Block rewritten | CSV columns |
+|---|---|---|---|
+| arrival rate | `FreeFormArrivalsThreadGroup` | `Schedule` | `StartValue,EndValue,Duration` |
+| concurrency | `UltimateThreadGroup` | `ultimatethreadgroupdata` | `Threads,StartTime,StartupTime,HoldTime,ShutdownTime` |
+
+Concurrency rows **stack** — each wave adds its threads on top of any still running — and
+ramp linearly over `StartupTime` / `ShutdownTime`. Set both to `0` for a flat step.
+
+```properties
+LOAD_PROFILE=test_properties/my_profile.csv
+RECYCLE_ON_EOF=true      # required for both: without it threads hit EOF and vanish
+MAX_CONCURRANCY=200      # arrivals plan only; must exceed peak_qps x avg_latency_sec
+HOLD_PERIOD=60           # arrivals plan only; >= the profile's total duration
+```
+
+The concurrency plan ignores `MAX_CONCURRANCY` and `HOLD_PERIOD` — its CSV sets both the
+concurrency and the run length.
+
+**You do not need a properties file per profile.** Environment values override the file, so one
+config serves every profile:
+
+```bash
+LOAD_PROFILE=test_properties/spike.csv ./run_jmeter_tests_interactive.sh
+LOAD_PROFILE=test_properties/spike.csv ./run_test.sh test_configs/my.env
+```
+
+Both runners print what was overridden. Also overridable this way: `HOLD_PERIOD`,
+`MAX_CONCURRANCY`, `COPY_TO_S3`, `RECYCLE_ON_EOF`, `RANDOM_ORDER`, `QPS`, `QPM`,
+`CONCURRENT_QUERY_COUNT`, `RAMP_UP_TIME`, `RAMP_UP_STEPS`, `QUERY_TIMEOUT`.
+
+**Why this is needed:** the plan ships a JSR223 PreProcessor that tries to apply the profile
+via `ctx.getThreadGroup().setData()`. A PreProcessor runs when a sampler fires, by which point
+the thread group has already read its `Schedule` — so the CSV was silently ignored and the
+plan's hardcoded schedule (25 arrivals over 15s) was used instead. The schedule is now
+injected before JMeter launches. The generated plan is written into the run's own
+`reports/<timestamp>/` directory as a per-run artifact.
+
+Verify the queries actually fired at the requested rate:
+
+```bash
+python3 utilities/verify_load_profile.py \
+  reports/<timestamp>/JmeterResultFile.csv test_properties/my_profile.csv
+```
+
+JMeter's `timeStamp` column is each sample's *start* time, so bucketing it per second
+reconstructs the true arrival curve — unaffected by how long queries took to finish, which
+matters because a saturated cluster stretches completions well past the profile window.
+
+```
+ sec | expected | actual |
+   8 |       56 |     56 | ########################################################
+...
+expected : 482
+actual   : 480  (99.6%)
+```
+
+Confirm what was applied — the line is printed on every run:
+
+```
+load profile applied: 15 steps, 17s, peak 56/s, ~482 expected samples
+```
+
+If actual samples fall well short of expected, the cluster is saturating and arrivals are
+being throttled by `MAX_CONCURRANCY`. That is a capacity result, not a tooling failure.
+
+### Testing & Diagnostics
 
 | Script | Purpose |
 |--------|---------|
@@ -43,12 +123,16 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 | `test_dbr_connectivity.sh` | Diagnose DBR connectivity issues with repeated DNS/HTTPS tests |
 | `test_queries_http.py` | Test SQL queries via e6data HTTP API (bypasses JMeter) |
 | `fix_jmeter_jar_conflicts.sh` | Quarantine duplicate e6 JDBC drivers and zero-byte jars (`--dry-run` supported) |
+| `run_premerge_checks.sh` | Run unit, Python, shell, JMX, and profile-injection checks used by CI |
+| `run_smoke_suite.sh` | Run a bounded five-plan JDBC smoke suite against a real target |
 
 **When to run `fix_jmeter_jar_conflicts.sh`:** if every query fails instantly with
 `UNIMPLEMENTED: No cluster-name header or unknown cluster`, more than one
 `e6-jdbc-driver-*.jar` is probably on the classpath and an old one is winning.
 Load order depends on the filesystem, so this can reproduce on Linux but not macOS.
 Check with `find apache-jmeter-5.6.3 -name "e6-jdbc-driver-*.jar"` — more than one line means ambiguity.
+
+The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. Those are informational because removing individual classes from a signed/vendor artifact is unsafe; prefer a vendor-approved thin or correctly shaded driver when one becomes available.
 
 ### Housekeeping (3)
 

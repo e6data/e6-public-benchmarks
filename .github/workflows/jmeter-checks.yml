@@ -1,0 +1,25 @@
+name: JMeter framework checks
+
+on:
+  pull_request:
+    paths:
+      - "jmeter_benchmarks/**"
+      - ".github/workflows/jmeter-checks.yml"
+  push:
+    paths:
+      - "jmeter_benchmarks/**"
+      - ".github/workflows/jmeter-checks.yml"
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: jmeter_benchmarks/jmeter-jdbc-test-framework
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run pre-merge checks
+        run: ./utilities/run_premerge_checks.sh

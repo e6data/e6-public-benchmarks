@@ -377,17 +377,33 @@ fi
 # Copy custom JDBC drivers from jdbc_drivers/ directory
 JDBC_DRIVERS_DIR="${SCRIPT_DIR}/jdbc_drivers"
 if [ -d "${JDBC_DRIVERS_DIR}" ]; then
-    # Remove any existing e6 driver first. Copying without this leaves several
-    # versions in lib/ext/ and the JVM loads whichever it finds first, which
-    # fails as "UNIMPLEMENTED: No cluster-name header or unknown cluster".
+    # Remove any existing e6 driver first. Leaving several versions in lib/ext/
+    # makes the JVM load whichever it finds first, which fails as
+    # "UNIMPLEMENTED: No cluster-name header or unknown cluster".
     if ls "${JDBC_DRIVERS_DIR}"/e6-jdbc-driver-*.jar >/dev/null 2>&1; then
         rm -f "${JMETER_DIR}"/lib/ext/e6-jdbc-driver-*.jar
         rm -f "${JMETER_DIR}"/lib/e6-jdbc-driver-*.jar
     fi
 
-    cp -v "${JDBC_DRIVERS_DIR}"/*.jar "${JMETER_DIR}/lib/ext/" 2>/dev/null || {
-        echo "  No custom JDBC drivers found in jdbc_drivers/"
-    }
+    # Copy every jar EXCEPT the e6 driver, then add back only the newest e6 one.
+    # Copying jdbc_drivers/*.jar wholesale re-creates the collision above the
+    # moment two e6 versions sit side by side in the directory.
+    for jar in "${JDBC_DRIVERS_DIR}"/*.jar; do
+        [ -e "$jar" ] || continue
+        case "$(basename "$jar")" in
+            e6-jdbc-driver-*.jar) continue ;;
+        esac
+        cp -v "$jar" "${JMETER_DIR}/lib/ext/"
+    done
+
+    E6_LATEST=$(ls -1 "${JDBC_DRIVERS_DIR}"/e6-jdbc-driver-*.jar 2>/dev/null | sort -V | tail -1)
+    if [ -n "${E6_LATEST}" ]; then
+        E6_COUNT=$(ls -1 "${JDBC_DRIVERS_DIR}"/e6-jdbc-driver-*.jar 2>/dev/null | wc -l | tr -d ' ')
+        if [ "${E6_COUNT}" -gt 1 ]; then
+            echo "  NOTE: ${E6_COUNT} e6 driver versions present; installing only $(basename "${E6_LATEST}")"
+        fi
+        cp -v "${E6_LATEST}" "${JMETER_DIR}/lib/ext/"
+    fi
 
     # Resolve Netty/gRPC collisions introduced by fat "-with-dependencies" jars
     if [ -x "${SCRIPT_DIR}/utilities/fix_jmeter_jar_conflicts.sh" ]; then

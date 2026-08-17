@@ -51,6 +51,7 @@ $DRY_RUN && echo -e "${YELLOW}DRY RUN - nothing will be moved${NC}"
 echo ""
 
 MOVED=0
+WARNINGS=0
 
 quarantine() {
     local f="$1" why="$2"
@@ -89,16 +90,37 @@ echo ""
 echo "2. Zero-byte or corrupt jars"
 FOUND_BAD=false
 while IFS= read -r j; do
-    FOUND_BAD=true
-    quarantine "$j" "zero bytes"
-done < <(find "$JMETER_DIR" -name "*.jar" -size 0 2>/dev/null)
+    if [ ! -s "$j" ]; then
+        FOUND_BAD=true
+        quarantine "$j" "zero bytes"
+    elif ! unzip -tq "$j" >/dev/null 2>&1; then
+        FOUND_BAD=true
+        quarantine "$j" "invalid zip archive"
+    fi
+done < <(find "$JMETER_DIR" -name "*.jar" -type f 2>/dev/null)
 $FOUND_BAD || echo -e "  ${GREEN}ok${NC} - none"
+echo ""
+
+# --- 3. Embedded dependency diagnostics ----------------------------------
+echo "3. Embedded logging / Netty dependencies"
+for j in "${E6_JARS[@]}"; do
+    [ -f "$j" ] || continue
+    if unzip -l "$j" 2>/dev/null | grep -q 'org/slf4j/impl/StaticLoggerBinder.class'; then
+        echo -e "  ${YELLOW}warning${NC} - $(basename "$j") embeds an SLF4J 1.x binding; JMeter may report multiple bindings"
+        WARNINGS=$((WARNINGS + 1))
+    fi
+    if unzip -l "$j" 2>/dev/null | grep -q 'io/netty/'; then
+        echo -e "  ${YELLOW}warning${NC} - $(basename "$j") embeds Netty classes; JMeter class scanning may log ignored IllegalAccessError messages"
+        WARNINGS=$((WARNINGS + 1))
+    fi
+done
+[ "$WARNINGS" -eq 0 ] && echo -e "  ${GREEN}ok${NC} - no embedded conflicts detected"
 echo ""
 
 # --- Result ---------------------------------------------------------------
 echo "=========================================="
 if [ "$MOVED" -eq 0 ]; then
-    echo -e "${GREEN}Classpath is clean - nothing to do.${NC}"
+    echo -e "${GREEN}No actionable duplicate or corrupt jars found.${NC}"
 else
     if $DRY_RUN; then
         echo -e "${YELLOW}${MOVED} jar(s) would be quarantined. Re-run without --dry-run.${NC}"
@@ -107,6 +129,7 @@ else
         echo "Restore with: mv ${QUARANTINE}/<jar> ${JMETER_DIR}/lib/ext/"
     fi
 fi
+[ "$WARNINGS" -gt 0 ] && echo -e "${YELLOW}${WARNINGS} non-actionable fat-jar warning(s); prefer a vendor-approved thin/shaded driver when available.${NC}"
 echo "=========================================="
 echo ""
 echo "e6 driver(s) now on the classpath:"

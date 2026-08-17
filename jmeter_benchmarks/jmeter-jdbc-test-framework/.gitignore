@@ -49,6 +49,13 @@ test_configs/*.txt
 
 # Test properties CSV files (environment-specific data)
 test_properties/*.csv
+# ...except the load-profile examples. The two profile-driven plans fall back to
+# load_profile.csv / utg_load_profile.csv when LOAD_PROFILE is unset, so without
+# these a fresh clone cannot run either plan. They hold only shape numbers.
+!test_properties/load_profile.csv
+!test_properties/utg_load_profile.csv
+!test_properties/load_profile_5min.csv
+!test_properties/utg_load_profile_5min.csv
 
 # JDBC driver JARs
 jdbc_drivers/*.jar
