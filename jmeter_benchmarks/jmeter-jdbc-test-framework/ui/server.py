@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import errno
 import json
 import logging
 import os
@@ -364,7 +365,17 @@ def main() -> None:
     )
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         LOGGER.warning("Remote binding has no built-in authentication; use a secured reverse proxy")
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    try:
+        server = ThreadingHTTPServer((args.host, args.port), Handler)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            parser.exit(
+                2,
+                f"Benchmark UI could not start: {args.host}:{args.port} is already in use.\n"
+                f"Open http://{args.host}:{args.port} if the UI is already running, or use:\n"
+                f"  ./run_ui.sh --port {args.port + 1}\n",
+            )
+        raise
     LOGGER.info("JMeter Benchmark UI listening at http://%s:%s", args.host, args.port)
     LOGGER.info("CLI runners remain available and unchanged")
     try:
