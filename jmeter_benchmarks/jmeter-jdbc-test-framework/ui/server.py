@@ -66,14 +66,21 @@ PUBLIC_RUN_FIELDS = {
     "plan", "engine", "connection", "query_file", "load_profile", "CONCURRENT_QUERY_COUNT",
     "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME", "RAMP_UP_STEPS",
     "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET", "MAX_ERROR_PCT",
-    "RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD",
+    "RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD", "execution_mode", "metadata",
+}
+METADATA_FIELDS = {
+    "CLUSTER_SIZE": 80, "BENCHMARK_TYPE": 100, "DATA_SIZE": 40,
+    "DATA_TYPE": 40, "RUN_MODE": 40, "CUSTOMER": 100, "CONFIG": 120,
+    "TAGS": 300, "COMMENTS": 1000, "ESTIMATED_CORES": 20, "MEMORY_GB": 20,
+    "INSTANCE_TYPE": 100, "EXECUTORS": 20, "CORES_PER_EXECUTOR": 20,
+    "SERVERLESS": 20, "ENGINE_BUILD": 120,
 }
 DISPLAY_ENV_FIELDS = (
     "ENGINE", "CONNECTION_FILE", "TEST_PLAN", "QUERY_FILE", "LOAD_PROFILE",
     "CONCURRENT_QUERY_COUNT", "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME",
     "RAMP_UP_STEPS", "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET",
     "MAX_ERROR_PCT", "RECYCLE_ON_EOF", "RANDOM_ORDER", "REPORT_PATH",
-    "RUN_TYPE", "COPY_TO_S3", "GENERATE_DASHBOARD",
+    "RUN_TYPE", "COPY_TO_S3", "GENERATE_DASHBOARD", *METADATA_FIELDS,
 )
 
 
@@ -239,6 +246,15 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", engine):
         raise ValueError("ENGINE contains invalid characters")
     env["ENGINE"] = engine
+    metadata = config.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata must be an object")
+    for key, limit in METADATA_FIELDS.items():
+        value = _property_value(metadata.get(key), key)
+        if len(value) > limit:
+            raise ValueError(f"{key} must not exceed {limit} characters")
+        if value:
+            env[key] = value
     defaults = {
         "CONCURRENT_QUERY_COUNT": 2, "QPS": 1, "QPM": 60, "HOLD_PERIOD": 60,
         "RAMP_UP_TIME": 1, "RAMP_UP_STEPS": 1, "MAX_CONCURRANCY": 100,
@@ -310,11 +326,21 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         in_flight.append(current)
     latency_series = [round(total / count) if count else 0 for total, count in zip(latency_sum, latency_count)]
     top_failure = max(failures.items(), key=lambda item: item[1]) if failures else None
+    series = {"arrivals": arrivals, "in_flight": in_flight, "latency_ms": latency_series}
+    bucket = max(1, (len(arrivals) + 599) // 600)
+    if bucket > 1:
+        def chunks(values: list[int]) -> list[list[int]]:
+            return [values[index:index + bucket] for index in range(0, len(values), bucket)]
+        series = {
+            "arrivals": [sum(chunk) for chunk in chunks(arrivals)],
+            "in_flight": [max(chunk) for chunk in chunks(in_flight)],
+            "latency_ms": [round(sum(value for value in chunk if value) / max(1, sum(1 for value in chunk if value))) for chunk in chunks(latency_series)],
+        }
     return {
         "samples": len(rows), "successful": len(elapsed), "failed": len(rows) - len(elapsed),
         "throughput": round(len(rows) / window, 2), "p50": percentile(50), "p95": percentile(95),
         "active": max((int(row.get("allThreads") or 0) for row in rows), default=0),
-        "series": {"arrivals": arrivals, "in_flight": in_flight, "latency_ms": latency_series},
+        "series": series, "chart_bucket_s": bucket,
         "top_failure": {"message": top_failure[0], "count": top_failure[1]} if top_failure else None,
     }
 
@@ -327,6 +353,31 @@ def find_summary(report_root: Path) -> dict[str, Any] | None:
         return json.loads(summaries[-1].read_text())
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def compact_summary(summary: dict[str, Any] | None, points: int = 600) -> dict[str, Any] | None:
+    """Bound API chart payloads without changing the report stored on disk."""
+    if summary is None:
+        return None
+    compact = dict(summary)
+    longest = max(len(summary.get("arrivals_per_s", [])), len(summary.get("in_flight_per_s", [])))
+    bucket = max(1, (longest + points - 1) // points)
+
+    def aggregate(values: list[Any], mode: str) -> list[Any]:
+        if bucket == 1:
+            return values
+        chunks = [values[index:index + bucket] for index in range(0, len(values), bucket)]
+        return [sum(chunk) if mode == "sum" else max(chunk) for chunk in chunks if chunk]
+
+    if "arrivals_per_s" in summary:
+        compact["arrivals_per_s"] = aggregate(summary["arrivals_per_s"], "sum")
+    if "in_flight_per_s" in summary:
+        compact["in_flight_per_s"] = aggregate(summary["in_flight_per_s"], "max")
+    if bucket > 1:
+        compact["chart_bucket_s"] = bucket
+    if isinstance(compact.get("load_profile"), dict):
+        compact["load_profile"] = {key: value for key, value in compact["load_profile"].items() if key != "expected_per_s"}
+    return compact
 
 
 @dataclass
@@ -350,7 +401,7 @@ class Run:
             "id": self.run_id, "label": self.label, "status": self.status,
             "started_at": self.started_at, "finished_at": self.finished_at,
             "return_code": self.return_code, "config": self.config,
-            "metrics": live_metrics(self.report_root), "summary": summary,
+            "metrics": live_metrics(self.report_root), "summary": compact_summary(summary),
             "logs": list(self.logs), "report_path": str(self.report_root.relative_to(ROOT)), "report_id": report_id,
         }
 
@@ -388,7 +439,7 @@ def _execute(run: Run, env: dict[str, str]) -> None:
         LOGGER.info("run=%s status=%s return_code=%s report=%s", run.run_id, run.status, run.return_code, run.report_root)
 
 
-def start_run(config: dict[str, Any], label: str = "Benchmark") -> Run:
+def prepare_run(config: dict[str, Any], label: str = "Benchmark") -> tuple[Run, dict[str, str]]:
     run_id = uuid.uuid4().hex[:10]
     env = build_environment(config, run_id)
     public_config = {key: value for key, value in config.items() if key in PUBLIC_RUN_FIELDS}
@@ -396,8 +447,20 @@ def start_run(config: dict[str, Any], label: str = "Benchmark") -> Run:
     run = Run(run_id, label[:80], public_config, REPORTS / f"ui-{run_id}")
     with RUN_LOCK:
         RUNS[run_id] = run
-    threading.Thread(target=_execute, args=(run, env), daemon=True).start()
-    return run
+    return run, env
+
+
+def start_runs(configs: list[dict[str, Any]], sequential: bool = False) -> list[Run]:
+    prepared = [prepare_run(item, str(item.get("label") or f"Engine {index + 1}")) for index, item in enumerate(configs)]
+    if sequential:
+        def execute_in_order() -> None:
+            for run, env in prepared:
+                _execute(run, env)
+        threading.Thread(target=execute_in_order, daemon=True).start()
+    else:
+        for run, env in prepared:
+            threading.Thread(target=_execute, args=(run, env), daemon=True).start()
+    return [run for run, _ in prepared]
 
 
 def completed_reports() -> list[dict[str, Any]]:
@@ -405,7 +468,7 @@ def completed_reports() -> list[dict[str, Any]]:
     for path in REPORTS.glob("**/run_summary.json"):
         try:
             summary = json.loads(path.read_text())
-            found.append({"id": str(path.parent.relative_to(REPORTS)), "mtime": path.stat().st_mtime, "summary": summary})
+            found.append({"id": str(path.parent.relative_to(REPORTS)), "mtime": path.stat().st_mtime, "summary": compact_summary(summary)})
         except (OSError, json.JSONDecodeError):
             continue
     return sorted(found, key=lambda item: item["mtime"], reverse=True)[:200]
@@ -502,7 +565,7 @@ def comparison(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
         a, b = value(left, *path), value(right, *path)
         pct = round((b - a) / a * 100, 2) if a else None
         delta[name] = {"left": a, "right": b, "change_pct": pct, "higher_is_better": higher_better}
-    return {"left": left, "right": right, "metrics": delta}
+    return {"left": compact_summary(left), "right": compact_summary(right), "metrics": delta}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -598,7 +661,10 @@ class Handler(SimpleHTTPRequestHandler):
                     if not isinstance(item, dict):
                         raise ValueError("Each run must be an object")
                     build_environment(item, "validation")
-                runs = [start_run(item, str(item.get("label") or f"Engine {i + 1}")) for i, item in enumerate(configs)]
+                execution_mode = str(body.get("execution_mode", "parallel"))
+                if execution_mode not in {"parallel", "sequential"}:
+                    raise ValueError("execution_mode must be parallel or sequential")
+                runs = start_runs(configs, sequential=execution_mode == "sequential")
                 self._json({"runs": [run.public() for run in runs]}, HTTPStatus.ACCEPTED)
             elif self.path == "/api/connections":
                 connection = create_connection_profile(body)

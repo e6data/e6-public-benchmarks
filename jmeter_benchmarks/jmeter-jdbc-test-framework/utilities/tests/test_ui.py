@@ -1,5 +1,6 @@
 import stat
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -166,6 +167,55 @@ class UiTests(unittest.TestCase):
         self.assertEqual(env["COPY_TO_S3"], "false")
         self.assertEqual(env["GENERATE_DASHBOARD"], "true")
         self.assertEqual(env["REPORT_PATH"], "reports/ui-abc")
+
+    def test_build_environment_keeps_metadata_descriptive(self):
+        connection = server.ROOT / "connection_properties" / "ui_meta_test.properties"
+        query = server.ROOT / "data_files" / "ui_meta_test.csv"
+        try:
+            connection.write_text("CONNECTION_STRING=jdbc:test\n")
+            query.write_text('query_alias,query_string\nq1,"select 1"\n')
+            env = server.build_environment({
+                "plan": "jdbc_concurrency", "engine": "e6data",
+                "connection": "connection_properties/ui_meta_test.properties",
+                "query_file": "data_files/ui_meta_test.csv",
+                "metadata": {"CLUSTER_SIZE": "S-2x2", "ESTIMATED_CORES": "60", "COMMENTS": "comparison"},
+            }, "meta")
+        finally:
+            connection.unlink(missing_ok=True)
+            query.unlink(missing_ok=True)
+        self.assertEqual(env["CLUSTER_SIZE"], "S-2x2")
+        self.assertEqual(env["ESTIMATED_CORES"], "60")
+        self.assertEqual(env["COPY_TO_S3"], "false")
+
+    def test_sequential_runs_execute_in_order(self):
+        calls = []
+
+        def fake_prepare(config, label):
+            run = server.Run(config["id"], label, config, server.REPORTS / f"ui-{config['id']}")
+            return run, {"id": config["id"]}
+
+        def fake_execute(run, _env):
+            calls.append(run.run_id)
+
+        with mock.patch.object(server, "prepare_run", side_effect=fake_prepare), mock.patch.object(server, "_execute", side_effect=fake_execute):
+            server.start_runs([{"id": "first"}, {"id": "second"}], sequential=True)
+            deadline = time.time() + 1
+            while len(calls) < 2 and time.time() < deadline:
+                time.sleep(0.01)
+        self.assertEqual(calls, ["first", "second"])
+
+    def test_compact_summary_bounds_only_api_series(self):
+        original = {
+            "samples": 1000, "arrivals_per_s": [1] * 1000,
+            "in_flight_per_s": list(range(1000)),
+            "load_profile": {"expected": 1000, "expected_per_s": [1] * 1000},
+        }
+        compact = server.compact_summary(original, points=100)
+        self.assertEqual(len(compact["arrivals_per_s"]), 100)
+        self.assertEqual(sum(compact["arrivals_per_s"]), 1000)
+        self.assertEqual(compact["chart_bucket_s"], 10)
+        self.assertNotIn("expected_per_s", compact["load_profile"])
+        self.assertEqual(len(original["arrivals_per_s"]), 1000)
 
     def test_run_once_always_disables_recycling(self):
         connection = server.ROOT / "connection_properties" / "ui_test.properties"

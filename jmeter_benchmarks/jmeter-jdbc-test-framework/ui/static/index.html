@@ -29,7 +29,7 @@
     <section id="launch" class="panel active">
       <div class="hero">
         <div><span class="eyebrow">NEW BENCHMARK</span><h2>Shape the load. Watch the engine respond.</h2><p>Configure one engine, or launch the same workload against two engines in parallel.</p></div>
-        <label class="switch"><input id="parallel" type="checkbox"><span></span> Compare two engines live</label>
+        <div class="hero-actions"><label class="switch"><input id="parallel" type="checkbox"><span></span> Compare two engines</label><label id="executionModeWrap" class="compact-select hidden">Execution mode<select id="execution_mode"><option value="sequential">Sequential — cleanest comparison</option><option value="parallel">Parallel — live demo</option></select></label></div>
       </div>
       <form id="runForm">
         <div id="engines" class="engine-grid"></div>
@@ -48,6 +48,39 @@
           </div>
           <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> RECYCLE_ON_EOF</label><label><input id="RANDOM_ORDER" type="checkbox"> RANDOM_ORDER</label><label><input id="GENERATE_DASHBOARD" type="checkbox" checked> GENERATE_DASHBOARD</label></div>
         </div>
+        <details class="card advanced-card">
+          <summary><strong>Advanced runner settings</strong><span>Exact optional run_test.sh variables</span></summary>
+          <div class="fields details-fields">
+            <label>RAMP_UP_TIME<input id="RAMP_UP_TIME" type="number" value="1" min="0"></label>
+            <label>RAMP_UP_STEPS<input id="RAMP_UP_STEPS" type="number" value="1" min="1"></label>
+            <label>QUERY_TIMEOUT<input id="QUERY_TIMEOUT" type="number" value="300" min="1"></label>
+            <label>LIMIT_RESULTSET<input id="LIMIT_RESULTSET" type="number" value="1000" min="1"></label>
+          </div>
+        </details>
+        <details class="card metadata-card" open>
+          <summary><strong>Run metadata</strong><span>Descriptive only · does not change JMeter execution</span></summary>
+          <div class="fields details-fields">
+            <label>CLUSTER_SIZE<input id="CLUSTER_SIZE" placeholder="S-2x2"></label>
+            <label>ESTIMATED_CORES<input id="ESTIMATED_CORES" type="number" min="1" placeholder="60"></label>
+            <label>MEMORY_GB<input id="MEMORY_GB" type="number" min="1" placeholder="512"></label>
+            <label>EXECUTORS<input id="EXECUTORS" type="number" min="1" placeholder="2"></label>
+            <label>CORES_PER_EXECUTOR<input id="CORES_PER_EXECUTOR" type="number" min="1" placeholder="30"></label>
+            <label>INSTANCE_TYPE<input id="INSTANCE_TYPE" placeholder="r6id.8xlarge"></label>
+            <label>ENGINE_BUILD<input id="ENGINE_BUILD" placeholder="release/build version"></label>
+            <label>BENCHMARK_TYPE<input id="BENCHMARK_TYPE" placeholder="tpcds_25_1tb"></label>
+            <label>DATA_SIZE<input id="DATA_SIZE" placeholder="1TB"></label>
+            <label>DATA_TYPE<input id="DATA_TYPE" placeholder="TPCDS"></label>
+            <label>RUN_MODE<select id="RUN_MODE"><option value="">Not specified</option><option>benchmark</option><option>test</option><option>prod</option></select></label>
+            <label>CONFIG<input id="CONFIG" placeholder="default"></label>
+            <label>TAGS<input id="TAGS" placeholder="tpcds,1tb,release"></label>
+            <label class="wide">COMMENTS<input id="COMMENTS" placeholder="Purpose or context for this run"></label>
+          </div>
+        </details>
+        <details class="card preview-card">
+          <summary><strong>Resolved configuration preview</strong><span>No passwords</span></summary>
+          <pre id="configPreview"></pre>
+          <div class="config-actions"><button id="exportConfig" type="button" class="secondary">Export .env</button><label class="secondary import-label">Import .env<input id="importConfig" type="file" accept=".env,.txt"></label></div>
+        </details>
         <div class="actions"><p id="formError" class="error"></p><button class="primary" type="submit">Launch benchmark <span>→</span></button></div>
       </form>
     </section>
@@ -59,6 +92,7 @@
 
     <section id="compare" class="panel">
       <div class="section-heading"><div><span class="eyebrow">RUN ANALYSIS</span><h2>Compare completed results</h2><p>Local report storage · <code>reports/**/run_summary.json</code> · no database required</p></div></div>
+      <div class="report-filters card"><label>Engine<select id="filterEngine"><option value="">All engines</option></select></label><label>Cluster size<select id="filterCluster"><option value="">All sizes</option></select></label><label>Engine build<select id="filterBuild"><option value="">All builds</option></select></label></div>
       <div class="compare-picker card">
         <label>Baseline run<select id="leftReport"></select></label><span>versus</span><label>Candidate run<select id="rightReport"></select></label><button id="compareButton" class="primary">Compare</button>
       </div>

@@ -164,12 +164,40 @@ Then open <http://127.0.0.1:8765>. The UI supports:
   rate, duration, and safety variables accepted by `run_test.sh`;
 - choosing an already-local CSV, uploading a CSV from the browser, or importing
   one from S3 using the UI host's configured AWS CLI credentials;
-- starting one engine or the same workload on two engines in parallel;
+- starting one engine or the same workload on two engines;
+- running two engines sequentially for cleaner measurements (the default) or
+  in parallel for a live side-by-side demonstration;
 - live samples, throughput, errors, active threads, latency, and runner logs;
 - opening JMeter's standard HTML dashboard after a run when
   `GENERATE_DASHBOARD` is enabled;
 - cancelling only the selected UI-started process;
 - comparing any two completed `run_summary.json` reports graphically.
+
+The **Advanced runner settings** section exposes `RAMP_UP_TIME`,
+`RAMP_UP_STEPS`, `QUERY_TIMEOUT`, and `LIMIT_RESULTSET`. The resolved preview
+shows the exact non-secret values that will be passed to `run_test.sh`, and can
+export or import a reusable `.env` file. Importing a configuration never imports
+connection secrets; it references the local `CONNECTION_FILE`, just like CLI
+configuration.
+
+### Run metadata
+
+The UI can annotate a run with cluster size, estimated cores, memory, executor
+count, cores per executor, instance type, engine build, benchmark/data labels,
+run mode, configuration, tags, and comments. These values are descriptive only:
+they are added to `run_summary.json` and `run_report.md` but do not participate
+in JMeter load generation, connection configuration, or SQL execution.
+
+The Compare page can filter reports by engine, cluster size, and engine build.
+This makes it possible to compare the same workload across differently sized
+clusters while keeping the sizing context visible. CLI runs receive the same
+metadata when their corresponding environment variables are set, for example:
+
+```bash
+CLUSTER_SIZE=S-2x2 ESTIMATED_CORES=60 MEMORY_GB=512 \
+ENGINE_BUILD=2026.08.18 BENCHMARK_TYPE=tpcds_25_1tb \
+  ./run_test.sh test_configs/my_benchmark.env
+```
 
 When the UI creates a profile, it writes the same format as
 `create_connection.sh` under the git-ignored `connection_properties/` directory

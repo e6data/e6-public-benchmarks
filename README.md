@@ -50,8 +50,10 @@ TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.j
 See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) for run-once, QPM, HTTP, custom profiles, reports, S3/Athena analysis, and metric definitions.
 
 An optional local UI can create the local connection properties file, configure
-the exact environment variables accepted by the unchanged CLI runner, show live
-runs, start the same workload on two engines, and compare completed reports:
+the exact environment variables accepted by the unchanged CLI runner, annotate
+runs with cluster/build sizing metadata, show live runs, start the same workload
+on two engines sequentially or in parallel, and filter or compare completed
+reports:
 
 ```bash
 ./run_ui.sh
