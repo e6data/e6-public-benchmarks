@@ -36,17 +36,17 @@
         <div class="card workload">
           <div class="card-title"><span>02</span><div><h3>Workload</h3><p>Shared by both engines for a fair comparison</p></div></div>
           <div class="fields">
-            <label>Test pattern<select id="plan"></select></label>
-            <label>Query dataset<select id="query_file" required></select></label>
-            <label class="profile-field">Load profile<select id="load_profile"></select></label>
-            <label class="param concurrency">Concurrency<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
-            <label class="param qps">Queries / second<input id="QPS" type="number" value="1" min="1"></label>
-            <label class="param qpm">Queries / minute<input id="QPM" type="number" value="60" min="1"></label>
-            <label>Duration <small id="durationUnit">seconds</small><input id="HOLD_PERIOD" type="number" value="60" min="1"></label>
-            <label>Max concurrency<input id="MAX_CONCURRANCY" type="number" value="100" min="1"></label>
-            <label>Error threshold %<input id="MAX_ERROR_PCT" type="number" value="5" min="0" max="100"></label>
+            <label>TEST_PLAN <small>test pattern</small><select id="plan"></select></label>
+            <label>QUERY_FILE <small>query dataset</small><select id="query_file" required></select></label>
+            <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select></label>
+            <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
+            <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>
+            <label class="param qpm">QPM <small>queries / minute</small><input id="QPM" type="number" value="60" min="1"></label>
+            <label>HOLD_PERIOD <small id="durationUnit">seconds</small><input id="HOLD_PERIOD" type="number" value="60" min="1"></label>
+            <label>MAX_CONCURRANCY <small>runner spelling</small><input id="MAX_CONCURRANCY" type="number" value="100" min="1"></label>
+            <label>MAX_ERROR_PCT<input id="MAX_ERROR_PCT" type="number" value="5" min="0" max="100"></label>
           </div>
-          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> Repeat query file</label><label><input id="RANDOM_ORDER" type="checkbox"> Random query order</label></div>
+          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> RECYCLE_ON_EOF</label><label><input id="RANDOM_ORDER" type="checkbox"> RANDOM_ORDER</label></div>
         </div>
         <div class="actions"><p id="formError" class="error"></p><button class="primary" type="submit">Launch benchmark <span>→</span></button></div>
       </form>

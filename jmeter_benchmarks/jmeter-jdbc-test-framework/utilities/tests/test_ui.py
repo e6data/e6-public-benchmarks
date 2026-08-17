@@ -1,11 +1,61 @@
 import tempfile
 import unittest
+import stat
 from pathlib import Path
 
 from ui import server
 
 
 class UiTests(unittest.TestCase):
+    def test_create_jdbc_connection_profile_uses_runner_format_and_private_permissions(self):
+        name = "ui_unit_profile"
+        target = server.ROOT / "connection_properties" / f"{name}_connection.properties"
+        try:
+            relative = server.create_connection_profile({
+                "name": name, "transport": "jdbc", "engine": "e6data",
+                "connection_string": "jdbc:e6data://example:443/secure=true",
+                "user": "tester", "password": "secret",
+            })
+            contents = target.read_text()
+            self.assertEqual(relative, f"connection_properties/{target.name}")
+            self.assertIn("CONNECTION_STRING=jdbc:e6data://example:443/secure=true", contents)
+            self.assertIn("DRIVER_CLASS=io.e6.jdbc.driver.E6Driver", contents)
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+        finally:
+            target.unlink(missing_ok=True)
+
+    def test_create_connection_profile_rejects_injection_and_overwrite(self):
+        with self.assertRaisesRegex(ValueError, "invalid character"):
+            server.create_connection_profile({
+                "name": "ui_bad", "transport": "jdbc",
+                "connection_string": "jdbc:test\nPASSWORD=changed", "driver_class": "driver",
+            })
+        target = server.ROOT / "connection_properties" / "ui_existing_connection.properties"
+        try:
+            target.write_text("sentinel=true\n")
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                server.create_connection_profile({
+                    "name": "ui_existing", "transport": "jdbc",
+                    "connection_string": "jdbc:test", "driver_class": "driver",
+                })
+            self.assertEqual(target.read_text(), "sentinel=true\n")
+        finally:
+            target.unlink(missing_ok=True)
+
+    def test_create_http_connection_profile_uses_expected_keys(self):
+        target = server.ROOT / "connection_properties" / "ui_http_unit_connection.properties"
+        try:
+            server.create_connection_profile({
+                "name": "ui_http_unit", "transport": "http", "mainhost": "example.test",
+                "scheme": "https", "cluster_name": "demo", "catalog": "glue", "schema": "tpch",
+            })
+            contents = target.read_text()
+            self.assertIn("mainhost=example.test", contents)
+            self.assertIn("cluster_name=demo", contents)
+            self.assertIn("SCHEMA=tpch", contents)
+        finally:
+            target.unlink(missing_ok=True)
+
     def test_comparison_calculates_regression_direction_inputs(self):
         left = {"throughput_per_s": 10, "error_pct": 1, "latency_ms": {"p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "drain_s": 2}
         right = {"throughput_per_s": 12, "error_pct": 2, "latency_ms": {"p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "drain_s": 3}

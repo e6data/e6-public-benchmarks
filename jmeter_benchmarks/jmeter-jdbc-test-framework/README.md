@@ -158,16 +158,23 @@ Start it from the framework directory:
 
 Then open <http://127.0.0.1:8765>. The UI supports:
 
-- selecting a local connection profile, query file, test plan, and core load parameters;
+- creating a private local JDBC or HTTP connection properties file, or selecting
+  an existing one;
+- selecting the same `TEST_PLAN`, `QUERY_FILE`, `LOAD_PROFILE`, concurrency,
+  rate, duration, and safety variables accepted by `run_test.sh`;
 - starting one engine or the same workload on two engines in parallel;
 - live samples, throughput, errors, active threads, latency, and runner logs;
 - cancelling only the selected UI-started process;
 - comparing any two completed `run_summary.json` reports graphically.
 
-Connection secrets are never returned to the browser. Inputs are restricted to
-known test plans and files in `connection_properties/`, `data_files/`, and
-`test_properties/`. S3 upload and the JMeter HTML dashboard are disabled for UI
-runs; the UI produces normal reports under `reports/ui-<run-id>/`.
+When the UI creates a profile, it writes the same format as
+`create_connection.sh` under the git-ignored `connection_properties/` directory
+with owner-only (`0600`) permissions. Connection secrets are never returned to
+the browser or stored in run metadata. Existing-profile selection is available
+through `CONNECTION_FILE mode`. Inputs are restricted to known test plans and
+files in `connection_properties/`, `data_files/`, and `test_properties/`. S3
+upload and the JMeter HTML dashboard are disabled for UI runs; the UI produces
+normal reports under `reports/ui-<run-id>/`.
 
 The server binds to localhost by default. On EC2, prefer SSH port forwarding:
 

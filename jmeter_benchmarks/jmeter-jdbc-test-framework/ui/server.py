@@ -14,6 +14,7 @@ import errno
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -52,6 +53,89 @@ NUMERIC_LIMITS = {
     "MAX_CONCURRANCY": (1, 100000), "QUERY_TIMEOUT": (1, 86400),
     "LIMIT_RESULTSET": (1, 10000000), "MAX_ERROR_PCT": (0, 100),
 }
+
+PROFILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+JDBC_DRIVERS = {
+    "e6data": "io.e6.jdbc.driver.E6Driver",
+    "databricks": "com.databricks.client.jdbc.Driver",
+    "trino": "io.trino.jdbc.TrinoDriver",
+}
+PUBLIC_RUN_FIELDS = {
+    "plan", "connection", "query_file", "load_profile", "CONCURRENT_QUERY_COUNT",
+    "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME", "RAMP_UP_STEPS",
+    "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET", "MAX_ERROR_PCT",
+    "RECYCLE_ON_EOF", "RANDOM_ORDER",
+}
+DISPLAY_ENV_FIELDS = (
+    "CONNECTION_FILE", "TEST_PLAN", "QUERY_FILE", "LOAD_PROFILE",
+    "CONCURRENT_QUERY_COUNT", "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME",
+    "RAMP_UP_STEPS", "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET",
+    "MAX_ERROR_PCT", "RECYCLE_ON_EOF", "RANDOM_ORDER", "REPORT_PATH",
+    "RUN_TYPE", "COPY_TO_S3", "GENERATE_DASHBOARD",
+)
+
+
+def _property_value(value: Any, field: str, required: bool = False) -> str:
+    text = str(value or "").strip()
+    if required and not text:
+        raise ValueError(f"{field} is required")
+    if "\n" in text or "\r" in text or "\x00" in text:
+        raise ValueError(f"{field} contains an invalid character")
+    return text
+
+
+def create_connection_profile(config: dict[str, Any]) -> str:
+    """Create a local properties file compatible with run_test.sh.
+
+    The returned value is only the repo-relative filename. Credentials are
+    never included in API responses or retained in the in-memory run config.
+    """
+    name = _property_value(config.get("name"), "Profile name", required=True)
+    if not PROFILE_NAME.fullmatch(name):
+        raise ValueError("Profile name may contain only letters, numbers, dot, dash, and underscore")
+    if not name.endswith("_connection"):
+        name += "_connection"
+    target = ROOT / "connection_properties" / f"{name}.properties"
+    if target.exists():
+        raise ValueError("A connection profile with this name already exists")
+
+    transport = _property_value(config.get("transport"), "Transport", required=True).lower()
+    if transport == "jdbc":
+        engine = _property_value(config.get("engine"), "Engine").lower() or "e6data"
+        driver = _property_value(config.get("driver_class"), "DRIVER_CLASS") or JDBC_DRIVERS.get(engine, "")
+        values = {
+            "CONNECTION_STRING": _property_value(config.get("connection_string"), "CONNECTION_STRING", required=True),
+            "USER": _property_value(config.get("user"), "USER"),
+            "PASSWORD": _property_value(config.get("password"), "PASSWORD"),
+            "DRIVER_CLASS": _property_value(driver, "DRIVER_CLASS", required=True),
+        }
+        heading = "# JDBC Connection Properties"
+    elif transport == "http":
+        values = {
+            "mainhost": _property_value(config.get("mainhost"), "mainhost", required=True),
+            "scheme": _property_value(config.get("scheme"), "scheme") or "https",
+            "cluster_name": _property_value(config.get("cluster_name"), "cluster_name", required=True),
+            "USER": _property_value(config.get("user"), "USER"),
+            "PASSWORD": _property_value(config.get("password"), "PASSWORD"),
+            "CATALOG": _property_value(config.get("catalog"), "CATALOG"),
+            "SCHEMA": _property_value(config.get("schema"), "SCHEMA"),
+        }
+        if values["scheme"] not in {"http", "https"}:
+            raise ValueError("scheme must be http or https")
+        heading = "# HTTP Connection Properties"
+    else:
+        raise ValueError("Transport must be jdbc or http")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp.write_text(heading + "\n" + "\n".join(f"{key}={value}" for key, value in values.items()) + "\n")
+        temp.chmod(0o600)
+        os.replace(temp, target)
+    finally:
+        temp.unlink(missing_ok=True)
+    LOGGER.info("created local connection profile=%s transport=%s", target.name, transport)
+    return target.relative_to(ROOT).as_posix()
 
 
 def _inside(relative: str, directory: str, suffix: str) -> str:
@@ -251,7 +335,9 @@ def _execute(run: Run, env: dict[str, str]) -> None:
 def start_run(config: dict[str, Any], label: str = "Benchmark") -> Run:
     run_id = uuid.uuid4().hex[:10]
     env = build_environment(config, run_id)
-    run = Run(run_id, label[:80], config, REPORTS / f"ui-{run_id}")
+    public_config = {key: value for key, value in config.items() if key in PUBLIC_RUN_FIELDS}
+    public_config["environment"] = {key: env[key] for key in DISPLAY_ENV_FIELDS if key in env}
+    run = Run(run_id, label[:80], public_config, REPORTS / f"ui-{run_id}")
     with RUN_LOCK:
         RUNS[run_id] = run
     threading.Thread(target=_execute, args=(run, env), daemon=True).start()
@@ -369,7 +455,7 @@ class Handler(SimpleHTTPRequestHandler):
                 connections = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "connection_properties").glob("*.properties"))
                 queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").glob("*.csv"))
                 profiles = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "test_properties").glob("*.csv"))
-                self._json({"plans": [{"id": k, "label": v[0], "transport": v[2]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles})
+                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles})
             elif parsed.path == "/api/runs":
                 with RUN_LOCK:
                     self._json([run.public() for run in RUNS.values()])
@@ -408,6 +494,9 @@ class Handler(SimpleHTTPRequestHandler):
                     build_environment(item, "validation")
                 runs = [start_run(item, str(item.get("label") or f"Engine {i + 1}")) for i, item in enumerate(configs)]
                 self._json({"runs": [run.public() for run in runs]}, HTTPStatus.ACCEPTED)
+            elif self.path == "/api/connections":
+                connection = create_connection_profile(body)
+                self._json({"connection": connection}, HTTPStatus.CREATED)
             elif self.path.endswith("/cancel") and self.path.startswith("/api/runs/"):
                 run_id = self.path.split("/")[3]
                 with RUN_LOCK:
