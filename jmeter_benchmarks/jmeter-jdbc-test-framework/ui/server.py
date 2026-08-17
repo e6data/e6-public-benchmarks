@@ -423,6 +423,27 @@ def report_details(report_id: str) -> dict[str, Any]:
     if REPORTS.resolve() not in directory.parents or not directory.is_dir():
         raise ValueError("Unknown report")
     summary = report_by_id(report_id)
+    statistics_file = directory / "statistics.json"
+    if not statistics_file.is_file():
+        statistics_file = directory / "dashboard" / "statistics.json"
+    if statistics_file.is_file():
+        statistics = json.loads(statistics_file.read_text())
+        per_query = []
+        for label, item in sorted(statistics.items()):
+            if label == "Total" or label.startswith(("Setup-", "Control-")) or not isinstance(item, dict):
+                continue
+            per_query.append({key: item.get(key) for key in (
+                "transaction", "sampleCount", "errorCount", "errorPct", "meanResTime",
+                "medianResTime", "minResTime", "maxResTime", "pct1ResTime",
+                "pct2ResTime", "pct3ResTime", "throughput",
+            )})
+        artifacts = [path.name for path in directory.iterdir() if path.is_file()]
+        return {
+            "id": report_id, "summary": summary, "per_query": per_query,
+            "per_query_source": "JMeter statistics.json", "artifacts": sorted(artifacts),
+            "dashboard": (directory / "dashboard" / "index.html").is_file(),
+        }
+
     result_file = directory / "JmeterResultFile.csv"
     grouped: dict[str, list[dict[str, str]]] = {}
     if result_file.is_file():
@@ -442,8 +463,8 @@ def report_details(report_id: str) -> dict[str, Any]:
 
     per_query = []
     for label, rows in sorted(grouped.items()):
-        successes = [int(row["elapsed"]) for row in rows if row["success"] == "true"]
-        failures = len(rows) - len(successes)
+        elapsed_values = [int(row["elapsed"]) for row in rows]
+        failures = sum(row["success"] == "false" for row in rows)
         messages: dict[str, int] = {}
         for row in rows:
             if row["success"] == "false":
@@ -451,15 +472,17 @@ def report_details(report_id: str) -> dict[str, Any]:
                 messages[message] = messages.get(message, 0) + 1
         top_error = max(messages.items(), key=lambda item: item[1])[0] if messages else None
         per_query.append({
-            "label": label, "samples": len(rows), "successful": len(successes), "failed": failures,
-            "min_ms": min(successes) if successes else None,
-            "mean_ms": round(sum(successes) / len(successes)) if successes else None,
-            "p50_ms": percentile(successes, 50), "p95_ms": percentile(successes, 95),
-            "p99_ms": percentile(successes, 99), "max_ms": max(successes) if successes else None,
-            "top_error": top_error,
+            "transaction": label, "sampleCount": len(rows), "errorCount": failures,
+            "errorPct": round(failures / len(rows) * 100, 3),
+            "minResTime": min(elapsed_values),
+            "meanResTime": round(sum(elapsed_values) / len(elapsed_values)),
+            "medianResTime": percentile(elapsed_values, 50), "pct1ResTime": percentile(elapsed_values, 90),
+            "pct2ResTime": percentile(elapsed_values, 95), "pct3ResTime": percentile(elapsed_values, 99),
+            "maxResTime": max(elapsed_values), "throughput": None,
+            "topError": top_error,
         })
     artifacts = [path.name for path in directory.iterdir() if path.is_file()]
-    return {"id": report_id, "summary": summary, "per_query": per_query, "artifacts": sorted(artifacts), "dashboard": (directory / "dashboard" / "index.html").is_file()}
+    return {"id": report_id, "summary": summary, "per_query": per_query, "per_query_source": "JmeterResultFile.csv fallback", "artifacts": sorted(artifacts), "dashboard": (directory / "dashboard" / "index.html").is_file()}
 
 
 def comparison(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:

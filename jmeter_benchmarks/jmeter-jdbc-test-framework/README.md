@@ -340,10 +340,13 @@ Each test run generates results in the `reports/` directory:
 Each run gets its own directory, `reports/<run_id>/`, containing:
 
 - **`JmeterResultFile.csv`** — raw CSV with per-query timing (timestamp, elapsed ms, label, success)
-- **`AggregateReport.csv`** / **`SummaryReport.csv`** — per-query and summary statistics
+- **`AggregateReport.csv`** / **`SummaryReport.csv`** — listener-named sample
+  exports retained for compatibility; in the current plans these contain raw
+  sample rows rather than pre-aggregated tables
 - **`run_report.md`** — human-readable summary, generated automatically after every run
 - **`run_summary.json`** — the same metrics in machine-readable form
-- **`statistics.json`** and **`dashboard/`** — JMeter's aggregate stats and HTML dashboard
+- **`statistics.json`** and **`dashboard/`** — JMeter's authoritative per-label
+  aggregate statistics and HTML dashboard; the UI displays these fields directly
 
 Set `GENERATE_DASHBOARD=false` to skip the HTML dashboard (~3.5 MB per run).
 

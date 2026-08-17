@@ -88,6 +88,21 @@ class UiTests(unittest.TestCase):
         finally:
             target.unlink(missing_ok=True)
 
+    def test_report_details_reuses_jmeter_statistics(self):
+        with tempfile.TemporaryDirectory(dir=server.REPORTS, prefix="ui-stats-test-") as temp:
+            directory = Path(temp)
+            (directory / "run_summary.json").write_text("{}")
+            (directory / "statistics.json").write_text(
+                '{"Q1":{"transaction":"Q1","sampleCount":4,"errorCount":1,'
+                '"errorPct":25.0,"meanResTime":120.5,"medianResTime":100.0,'
+                '"minResTime":80.0,"maxResTime":200.0,"pct1ResTime":180.0,'
+                '"pct2ResTime":190.0,"pct3ResTime":200.0,"throughput":2.5}}'
+            )
+            details = server.report_details(directory.name)
+        self.assertEqual(details["per_query_source"], "JMeter statistics.json")
+        self.assertEqual(details["per_query"][0]["pct2ResTime"], 190.0)
+        self.assertEqual(details["per_query"][0]["sampleCount"], 4)
+
     def test_comparison_calculates_regression_direction_inputs(self):
         left = {"throughput_per_s": 10, "error_pct": 1, "latency_ms": {"p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "drain_s": 2}
         right = {"throughput_per_s": 12, "error_pct": 2, "latency_ms": {"p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "drain_s": 3}
