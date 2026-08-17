@@ -1,7 +1,7 @@
 const state={config:null,runs:[],poll:null};
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(path,options={}){const r=await fetch(path,{headers:{'Content-Type':'application/json'},...options});const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
+async function api(path,options={}){let r;try{r=await fetch(path,{headers:{'Content-Type':'application/json'},...options})}catch(e){throw new Error('UI backend unavailable. Check that ./run_ui.sh is still running; see logs/ui.log.')}const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
 function options(items,label=x=>x,value=x=>x){return items.map(x=>`<option value="${esc(value(x))}">${esc(label(x))}</option>`).join('')}
 function engineCard(i){return `<div class="card engine"><div class="card-title"><span>0${i+1}</span><div><h3>${i?'Comparison engine':'Primary engine'}</h3><p>Credentials remain in the selected local file</p></div></div><div class="fields"><label>Display label<input class="engine-label" value="${i?'Engine B':'Engine A'}"></label><label>Connection profile<select class="connection">${options(state.config.connections,x=>x.split('/').pop())}</select></label></div></div>`}
 function renderEngines(){const count=$('parallel').checked?2:1;$('engines').className='engine-grid'+(count===2?' parallel':'');$('engines').innerHTML=Array.from({length:count},(_,i)=>engineCard(i)).join('')}

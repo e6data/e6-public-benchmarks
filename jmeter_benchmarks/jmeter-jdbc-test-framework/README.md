@@ -178,6 +178,11 @@ ssh -L 8765:127.0.0.1:8765 user@your-ec2-host
 Then open `http://127.0.0.1:8765` locally. Binding to a public interface has no
 built-in authentication and should only be done behind authenticated HTTPS.
 
+UI diagnostics are written to `logs/ui.log`. Each UI-started benchmark also
+writes its complete runner output to `reports/ui-<run-id>/ui_runner.log`, while
+JMeter errors and final metrics remain in the timestamped child directory's
+`JmeterResultFile.csv`, `run_report.md`, and `run_summary.json`.
+
 ## Test Plans
 
 ### JDBC Test Plans

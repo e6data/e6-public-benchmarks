@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -29,6 +30,8 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = Path(__file__).resolve().parent / "static"
 REPORTS = ROOT / "reports"
+LOG_DIR = ROOT / "logs"
+LOGGER = logging.getLogger("benchmark-ui")
 
 PLANS = {
     "jdbc_run_once": ("Run once", "Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "jdbc"),
@@ -170,23 +173,31 @@ RUN_LOCK = threading.Lock()
 
 def _execute(run: Run, env: dict[str, str]) -> None:
     run.status, run.started_at = "running", time.time()
+    LOGGER.info("run=%s status=running label=%s plan=%s", run.run_id, run.label, run.config.get("plan"))
     try:
         run.report_root.mkdir(parents=True, exist_ok=True)
+        runner_log = run.report_root / "ui_runner.log"
         run.process = subprocess.Popen(
             [str(ROOT / "run_test.sh")], cwd=ROOT, env=env, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True,
         )
         assert run.process.stdout
-        for line in run.process.stdout:
-            run.logs.append(line.rstrip())
+        with runner_log.open("a") as log_handle:
+            for line in run.process.stdout:
+                clean = line.rstrip()
+                run.logs.append(clean)
+                log_handle.write(line)
+                log_handle.flush()
         run.return_code = run.process.wait()
         if run.status != "cancelled":
             run.status = "completed" if run.return_code == 0 else "failed"
     except Exception as exc:  # keep API alive and surface process failures
         run.logs.append(f"UI runner error: {exc}")
+        LOGGER.exception("run=%s runner failure", run.run_id)
         run.return_code, run.status = 1, "failed"
     finally:
         run.finished_at = time.time()
+        LOGGER.info("run=%s status=%s return_code=%s report=%s", run.run_id, run.status, run.return_code, run.report_root)
 
 
 def start_run(config: dict[str, Any], label: str = "Benchmark") -> Run:
@@ -242,7 +253,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(STATIC), **kwargs)
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        print(f"[ui] {self.address_string()} {fmt % args}")
+        LOGGER.info("client=%s %s", self.address_string(), fmt % args)
 
     def _json(self, payload: Any, status: int = 200) -> None:
         body = json.dumps(payload).encode()
@@ -307,6 +318,7 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ValueError("Run is not active")
                 os.killpg(run.process.pid, signal.SIGTERM)
                 run.status = "cancelled"
+                LOGGER.info("run=%s cancellation requested", run.run_id)
                 self._json(run.public())
             elif self.path == "/api/compare":
                 self._json(comparison(report_by_id(str(body.get("left", ""))), report_by_id(str(body.get("right", "")))))
@@ -321,11 +333,17 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Bind address; localhost by default")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[logging.FileHandler(LOG_DIR / "ui.log"), logging.StreamHandler()],
+    )
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
-        print("WARNING: remote binding has no built-in authentication; use a secured reverse proxy.")
+        LOGGER.warning("Remote binding has no built-in authentication; use a secured reverse proxy")
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"JMeter Benchmark UI: http://{args.host}:{args.port}")
-    print("CLI runners remain available and unchanged.")
+    LOGGER.info("JMeter Benchmark UI listening at http://%s:%s", args.host, args.port)
+    LOGGER.info("CLI runners remain available and unchanged")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
