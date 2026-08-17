@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>e6data Benchmark Studio</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">JMETER CONTROL PLANE</span><h1>Benchmark Studio</h1></div>
+    <div class="connection"><span class="dot"></span> Local runner <code>127.0.0.1</code></div>
+  </header>
+  <nav>
+    <button class="tab active" data-tab="launch">Launch</button>
+    <button class="tab" data-tab="live">Live runs <span id="liveCount">0</span></button>
+    <button class="tab" data-tab="compare">Compare</button>
+  </nav>
+  <main>
+    <section id="launch" class="panel active">
+      <div class="hero">
+        <div><span class="eyebrow">NEW BENCHMARK</span><h2>Shape the load. Watch the engine respond.</h2><p>Configure one engine, or launch the same workload against two engines in parallel.</p></div>
+        <label class="switch"><input id="parallel" type="checkbox"><span></span> Compare two engines live</label>
+      </div>
+      <form id="runForm">
+        <div id="engines" class="engine-grid"></div>
+        <div class="card workload">
+          <div class="card-title"><span>02</span><div><h3>Workload</h3><p>Shared by both engines for a fair comparison</p></div></div>
+          <div class="fields">
+            <label>Test pattern<select id="plan"></select></label>
+            <label>Query dataset<select id="query_file"></select></label>
+            <label class="profile-field">Load profile<select id="load_profile"></select></label>
+            <label class="param concurrency">Concurrency<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
+            <label class="param qps">Queries / second<input id="QPS" type="number" value="1" min="1"></label>
+            <label class="param qpm">Queries / minute<input id="QPM" type="number" value="60" min="1"></label>
+            <label>Duration <small id="durationUnit">seconds</small><input id="HOLD_PERIOD" type="number" value="60" min="1"></label>
+            <label>Max concurrency<input id="MAX_CONCURRANCY" type="number" value="100" min="1"></label>
+            <label>Error threshold %<input id="MAX_ERROR_PCT" type="number" value="5" min="0" max="100"></label>
+          </div>
+          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> Repeat query file</label><label><input id="RANDOM_ORDER" type="checkbox"> Random query order</label></div>
+        </div>
+        <div class="actions"><p id="formError" class="error"></p><button class="primary" type="submit">Launch benchmark <span>→</span></button></div>
+      </form>
+    </section>
+
+    <section id="live" class="panel">
+      <div class="section-heading"><div><span class="eyebrow">LIVE TELEMETRY</span><h2>Active benchmark runs</h2></div><button id="refreshRuns" class="secondary">Refresh</button></div>
+      <div id="liveRuns" class="run-grid empty">No runs launched in this UI session.</div>
+    </section>
+
+    <section id="compare" class="panel">
+      <div class="section-heading"><div><span class="eyebrow">RUN ANALYSIS</span><h2>Compare completed results</h2><p>Compare engines, builds, cluster sizes, or before-and-after runs.</p></div></div>
+      <div class="compare-picker card">
+        <label>Baseline run<select id="leftReport"></select></label><span>versus</span><label>Candidate run<select id="rightReport"></select></label><button id="compareButton" class="primary">Compare</button>
+      </div>
+      <div id="comparison" class="comparison empty">Choose two completed runs.</div>
+    </section>
+  </main>
+  <footer>Optional UI layer · Existing CLI execution remains unchanged · Credentials stay on this host</footer>
+  <script src="/app.js"></script>
+</body>
+</html>

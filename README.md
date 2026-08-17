@@ -49,6 +49,16 @@ TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.j
 
 See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) for run-once, QPM, HTTP, custom profiles, reports, S3/Athena analysis, and metric definitions.
 
+An optional local UI can launch the same unchanged CLI runner, show live runs,
+start the same workload on two engines, and compare completed reports:
+
+```bash
+./run_ui.sh
+```
+
+Open <http://127.0.0.1:8765>. The CLI remains fully supported and has no UI
+dependency.
+
 ## Repository layout
 
 ```text
@@ -58,6 +68,8 @@ See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/REA
 │   ├── test_properties/     # runtime and load-profile examples
 │   ├── test_configs/        # runner configuration examples
 │   ├── utilities/           # local, S3, and Athena analysis tools
+│   ├── ui/                  # optional local control and visualization layer
+│   ├── run_ui.sh            # optional UI launcher
 │   └── run_test.sh          # non-interactive runner
 ├── python_benchmarks/       # one Python runner per supported engine
 └── pov/                     # Docker Compose deployment wrapper

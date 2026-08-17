@@ -144,6 +144,40 @@ vi test_configs/my_test.env
 
 Guides you through selecting connection, test plan, query file, and parameters.
 
+## Optional local web UI
+
+The CLI remains the primary execution interface. The optional UI calls the same
+`run_test.sh` runner and reads the same `JmeterResultFile.csv` and
+`run_summary.json` artifacts; it does not replace or modify any JMX plan.
+
+Start it from the framework directory:
+
+```bash
+./run_ui.sh
+```
+
+Then open <http://127.0.0.1:8765>. The UI supports:
+
+- selecting a local connection profile, query file, test plan, and core load parameters;
+- starting one engine or the same workload on two engines in parallel;
+- live samples, throughput, errors, active threads, latency, and runner logs;
+- cancelling only the selected UI-started process;
+- comparing any two completed `run_summary.json` reports graphically.
+
+Connection secrets are never returned to the browser. Inputs are restricted to
+known test plans and files in `connection_properties/`, `data_files/`, and
+`test_properties/`. S3 upload and the JMeter HTML dashboard are disabled for UI
+runs; the UI produces normal reports under `reports/ui-<run-id>/`.
+
+The server binds to localhost by default. On EC2, prefer SSH port forwarding:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 user@your-ec2-host
+```
+
+Then open `http://127.0.0.1:8765` locally. Binding to a public interface has no
+built-in authentication and should only be done behind authenticated HTTPS.
+
 ## Test Plans
 
 ### JDBC Test Plans
