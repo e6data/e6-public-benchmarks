@@ -120,12 +120,25 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
     rows: list[dict[str, str]] = []
     try:
         with files[-1].open(newline="", errors="replace") as handle:
-            rows = [row for row in csv.DictReader(handle) if not row.get("label", "").startswith(("Setup-", "Control-"))]
+            parsed = csv.DictReader(handle)
+            rows = []
+            for row in parsed:
+                # JMeter may be midway through appending the final row while
+                # the UI polls. Ignore incomplete/malformed rows until the
+                # next poll instead of failing the entire API response.
+                success = row.get("success")
+                if success not in {"true", "false"}:
+                    continue
+                if not (row.get("timeStamp") or "").isdigit() or not (row.get("elapsed") or "").isdigit():
+                    continue
+                if (row.get("label") or "").startswith(("Setup-", "Control-")):
+                    continue
+                rows.append(row)
     except (OSError, csv.Error):
         pass
     if not rows:
         return {"samples": 0, "successful": 0, "failed": 0, "throughput": 0, "p50": None, "p95": None, "active": 0, "series": {"arrivals": [], "in_flight": [], "latency_ms": []}}
-    elapsed = sorted(int(row.get("elapsed") or 0) for row in rows if row.get("success", "").lower() == "true")
+    elapsed = sorted(int(row["elapsed"]) for row in rows if row["success"] == "true")
     started = [int(row["timeStamp"]) for row in rows]
     window = max(1, (max(started) - min(started)) / 1000)
     percentile = lambda pct: elapsed[min(len(elapsed) - 1, max(0, (len(elapsed) * pct + 99) // 100 - 1))] if elapsed else None
@@ -147,7 +160,7 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         in_flight_delta[min(end + 1, len(in_flight_delta) - 1)] -= 1
         latency_sum[end] += duration
         latency_count[end] += 1
-        if row.get("success", "").lower() != "true":
+        if row["success"] != "true":
             message = (row.get("responseMessage") or row.get("failureMessage") or "Unknown error").strip()
             failures[message[:240]] = failures.get(message[:240], 0) + 1
     in_flight: list[int] = []
@@ -328,6 +341,9 @@ class Handler(SimpleHTTPRequestHandler):
                 super().do_GET()
         except (ValueError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, 400)
+        except Exception:
+            LOGGER.exception("Unhandled GET error path=%s", self.path)
+            self._json({"error": "UI backend error; see logs/ui.log"}, 500)
 
     def do_POST(self) -> None:
         try:
@@ -359,6 +375,9 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"error": "Not found"}, 404)
         except (ValueError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, 400)
+        except Exception:
+            LOGGER.exception("Unhandled POST error path=%s", self.path)
+            self._json({"error": "UI backend error; see logs/ui.log"}, 500)
 
 
 def main() -> None:

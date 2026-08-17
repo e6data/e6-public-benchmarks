@@ -34,6 +34,19 @@ class UiTests(unittest.TestCase):
         self.assertEqual(metrics["series"]["in_flight"], [2])
         self.assertEqual(metrics["top_failure"]["count"], 1)
 
+    def test_live_metrics_ignores_partially_written_row(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "child"
+            run.mkdir()
+            (run / "JmeterResultFile.csv").write_text(
+                "timeStamp,elapsed,label,success,allThreads\n"
+                "1000,100,q1,true,1\n"
+                "1100,200,q2"
+            )
+            metrics = server.live_metrics(Path(temp))
+        self.assertEqual(metrics["samples"], 1)
+        self.assertEqual(metrics["successful"], 1)
+
     def test_path_validation_blocks_traversal(self):
         with self.assertRaises(ValueError):
             server._inside("../../etc/passwd", "connection_properties", ".properties")
