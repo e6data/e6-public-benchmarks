@@ -1394,7 +1394,7 @@ def main() -> None:
                 2,
                 f"Benchmark UI could not start: {args.host}:{args.port} is already in use.\n"
                 f"Open http://{args.host}:{args.port} if the UI is already running, or use:\n"
-                f"  ./run_ui.sh --port {args.port + 1}\n",
+            f"  ./start_ui.sh --port {args.port + 1}\n",
             )
         raise
     LOGGER.info("JMeter Benchmark UI listening at http://%s:%s", args.host, args.port)

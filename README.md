@@ -25,6 +25,10 @@ cp /path/to/my_queries.csv data_files/my_queries.csv
 cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
 ```
 
+`setup_jmeter.sh` installs JMeter, required plugins and JDBC drivers, plus the
+isolated Benchmark Studio Python environment. It uses SQLite by default. For a
+local PostgreSQL registry, use `./setup_jmeter.sh --with-postgres` instead.
+
 Edit only `CONNECTION_FILE` and `QUERY_FILE` in `my_benchmark.env`, then choose a load model with command-line overrides:
 
 ```bash
@@ -56,11 +60,12 @@ on two engines sequentially or in parallel, and filter or compare completed
 reports:
 
 ```bash
-./run_ui.sh
+./start_ui.sh
 ```
 
 Open <http://127.0.0.1:8765>. The CLI remains fully supported and has no UI
-dependency.
+dependency. Stop only the UI with `./stop_ui.sh`; `run_ui.sh` remains a
+backwards-compatible alias.
 
 ## Repository layout
 
@@ -72,7 +77,10 @@ dependency.
 │   ├── test_configs/        # runner configuration examples
 │   ├── utilities/           # local, S3, and Athena analysis tools
 │   ├── ui/                  # optional local control and visualization layer
-│   ├── run_ui.sh            # optional UI launcher
+│   ├── setup_ui.sh          # UI-only setup + optional local PostgreSQL
+│   ├── start_ui.sh          # optional UI launcher
+│   ├── stop_ui.sh           # stop this checkout's UI process
+│   ├── run_ui.sh            # backwards-compatible start_ui.sh alias
 │   └── run_test.sh          # non-interactive runner
 ├── python_benchmarks/       # one Python runner per supported engine
 └── pov/                     # Docker Compose deployment wrapper

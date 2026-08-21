@@ -35,9 +35,20 @@ JMeter measures the workload from the client. Its `elapsed` value includes drive
 git clone https://github.com/e6data/e6-public-benchmarks.git
 cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
 
-# Installs Java 17, JMeter 5.6.3, plugins, and Groovy 4.0.29
+# Installs Java 17, JMeter 5.6.3, thread-group/Prometheus plugins, JDBC drivers, Groovy 4.0.29,
+# and the isolated Benchmark Studio Python environment.
 ./setup_jmeter.sh
 ```
+
+The default uses the built-in local SQLite registry and does not require
+Docker. To provision the supplied local PostgreSQL registry as part of setup:
+
+```bash
+./setup_jmeter.sh --with-postgres
+```
+
+Both setup modes are safe to rerun. PostgreSQL credentials are generated into
+the ignored, permission-protected `.benchmark-ui.env`; they are not committed.
 
 If any dependency fails to install automatically, install it manually: Java 17+, jq 1.5+, git 2.x+.
 
@@ -169,10 +180,10 @@ The CLI remains the primary execution interface. The optional UI calls the same
 Start it from the framework directory:
 
 ```bash
-./run_ui.sh
+./start_ui.sh
 ```
 
-Stop a UI started by `run_ui.sh` without affecting JMeter runs:
+Stop a UI started by `start_ui.sh` without affecting JMeter runs:
 
 ```bash
 ./stop_ui.sh
@@ -181,6 +192,8 @@ Stop a UI started by `run_ui.sh` without affecting JMeter runs:
 The scripts use `logs/ui.pid` by default. Set `BENCHMARK_UI_PID_FILE` on both
 commands to use a different PID-file location. For a systemd deployment, use
 `systemctl stop e6-benchmark-ui` instead.
+
+`run_ui.sh` remains as a backwards-compatible alias for `start_ui.sh`.
 
 Then open <http://127.0.0.1:8765>. The UI supports:
 
@@ -228,16 +241,23 @@ settings that require a restart and are never exposed by the browser.
 
 ### Optional PostgreSQL registry and S3 artifact storage
 
-SQLite remains the zero-dependency default. For a shared production registry,
-install the optional driver and set a PostgreSQL URL before starting the UI:
+SQLite remains the default. For a local PostgreSQL registry, the setup script
+installs the Python driver, generates a protected password, starts the supplied
+container, and configures `start_ui.sh` automatically:
 
 ```bash
-python3 -m pip install -r requirements-ui.txt
-export BENCHMARK_POSTGRES_PASSWORD='<local-or-secret value>'
-docker compose -f deploy/docker-compose.postgres.yml up -d
-export BENCHMARK_UI_DATABASE_URL='postgresql://benchmark_ui:<password>@127.0.0.1:5433/benchmark_ui'
-./run_ui.sh
+./setup_ui.sh --with-postgres
+./start_ui.sh
 ```
+
+The same option is available during full first-time setup:
+
+```bash
+./setup_jmeter.sh --with-postgres
+```
+
+For production, supply `BENCHMARK_UI_DATABASE_URL` and its password through the
+service environment/secret manager instead of using the local Docker helper.
 
 Migrate existing local run cards idempotently:
 
@@ -486,7 +506,9 @@ See `CLAUDE.md` for the full reference.
 
 | Script | What it does |
 |--------|-------------|
-| `setup_jmeter.sh` | Install JMeter, plugins, Groovy, drivers |
+| `setup_jmeter.sh` | Install JMeter, plugins, Groovy, drivers, and UI runtime |
+| `setup_ui.sh` | Install only the UI runtime; optionally start local PostgreSQL |
+| `start_ui.sh` / `stop_ui.sh` | Start or stop the optional Benchmark Studio UI |
 | `create_connection.sh` | Create a connection properties file (interactive) |
 | `create_test_config.sh` | Create a full test config file (interactive) |
 | `run_test.sh` | Run a test (config file or env vars) |
@@ -509,6 +531,8 @@ cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 ```
 .
 ├── setup_jmeter.sh                  # Install JMeter + dependencies
+├── setup_ui.sh                      # Install UI runtime + optional PostgreSQL
+├── start_ui.sh / stop_ui.sh         # Start/stop Benchmark Studio
 ├── create_connection.sh             # Create connection properties (interactive)
 ├── create_test_config.sh            # Create test config (interactive)
 ├── run_test.sh                      # Run test (config file or env vars)

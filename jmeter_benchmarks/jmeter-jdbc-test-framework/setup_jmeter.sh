@@ -8,8 +8,10 @@
 # 3. Install custom JDBC drivers
 # 4. Create necessary directories
 # 5. Configure JAVA_HOME
+# 6. Install the optional Benchmark Studio Python environment
+# 7. Optionally start its local PostgreSQL registry
 #
-# Usage: ./setup_jmeter.sh
+# Usage: ./setup_jmeter.sh [--with-postgres]
 #
 
 set -e  # Exit on error
@@ -19,6 +21,19 @@ JMETER_DIR="apache-jmeter-${JMETER_VERSION}"
 JMETER_ARCHIVE="apache-jmeter-${JMETER_VERSION}.tgz"
 JMETER_URL="https://archive.apache.org/dist/jmeter/binaries/${JMETER_ARCHIVE}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WITH_POSTGRES=false
+for arg in "$@"; do
+    case "$arg" in
+        --with-postgres) WITH_POSTGRES=true ;;
+        -h|--help)
+            echo "Usage: ./setup_jmeter.sh [--with-postgres]"
+            echo "  Installs JMeter, plugins, JDBC drivers, and Benchmark Studio."
+            echo "  --with-postgres also starts the supplied local PostgreSQL container."
+            exit 0
+            ;;
+        *) echo "Unknown option: $arg"; exit 2 ;;
+    esac
+done
 
 echo "=================================================="
 echo "JMeter JDBC Test Framework Setup"
@@ -227,6 +242,17 @@ else
     echo "=================================================="
     echo ""
 
+    # This repository retains a small set of customized JMeter text/config
+    # files but not the full binary distribution. Preserve those files while
+    # extracting the upstream archive so first-time setup leaves Git clean.
+    JMETER_PRESERVE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/jmeter-preserve.XXXXXX")
+    for relative_path in README.md bin/jmeter.properties bin/log4j2.xml; do
+        if [ -f "${SCRIPT_DIR}/${JMETER_DIR}/${relative_path}" ]; then
+            mkdir -p "${JMETER_PRESERVE_DIR}/$(dirname "${relative_path}")"
+            cp "${SCRIPT_DIR}/${JMETER_DIR}/${relative_path}" "${JMETER_PRESERVE_DIR}/${relative_path}"
+        fi
+    done
+
     echo "Step 2: Downloading Apache JMeter ${JMETER_VERSION}..."
     echo "URL: ${JMETER_URL}"
     echo ""
@@ -244,6 +270,12 @@ else
     echo "Step 3: Extracting JMeter..."
     tar -xzf "${JMETER_ARCHIVE}"
     rm "${JMETER_ARCHIVE}"
+    for relative_path in README.md bin/jmeter.properties bin/log4j2.xml; do
+        if [ -f "${JMETER_PRESERVE_DIR}/${relative_path}" ]; then
+            cp "${JMETER_PRESERVE_DIR}/${relative_path}" "${SCRIPT_DIR}/${JMETER_DIR}/${relative_path}"
+        fi
+    done
+    rm -rf "${JMETER_PRESERVE_DIR}"
 fi
 
 echo ""
@@ -345,6 +377,29 @@ else
     echo "  ✓ JMeter Plugins Common library already installed"
 fi
 
+# Prometheus listener used when PROMETHEUS_ENABLED=true. The Maven Central
+# artifact is the plugin's shaded distribution and belongs in lib/ext.
+PROMETHEUS_PLUGIN_VERSION="0.6.0"
+PROMETHEUS_PLUGIN_URL="https://repo1.maven.org/maven2/com/github/johrstrom/jmeter-prometheus-plugin/${PROMETHEUS_PLUGIN_VERSION}/jmeter-prometheus-plugin-${PROMETHEUS_PLUGIN_VERSION}.jar"
+PROMETHEUS_PLUGIN_JAR="${JMETER_DIR}/lib/ext/jmeter-prometheus-plugin-${PROMETHEUS_PLUGIN_VERSION}.jar"
+
+if [ ! -f "${PROMETHEUS_PLUGIN_JAR}" ]; then
+    echo "  Downloading JMeter Prometheus listener ${PROMETHEUS_PLUGIN_VERSION}..."
+    if command_exists wget; then
+        wget -O "${PROMETHEUS_PLUGIN_JAR}" "${PROMETHEUS_PLUGIN_URL}" || {
+            echo "  WARNING: Failed to download Prometheus listener"
+            rm -f "${PROMETHEUS_PLUGIN_JAR}"
+        }
+    elif command_exists curl; then
+        curl -L -o "${PROMETHEUS_PLUGIN_JAR}" "${PROMETHEUS_PLUGIN_URL}" || {
+            echo "  WARNING: Failed to download Prometheus listener"
+            rm -f "${PROMETHEUS_PLUGIN_JAR}"
+        }
+    fi
+else
+    echo "  ✓ JMeter Prometheus listener already installed"
+fi
+
 echo "  ✓ JMeter plugins check complete"
 
 echo ""
@@ -443,16 +498,29 @@ fi
 # Configure jmeter.properties for minimal dashboard generation
 JMETER_PROPS="${JMETER_DIR}/bin/jmeter.properties"
 if [ -f "$JMETER_PROPS" ]; then
-    # Add comment about dashboard generation
-    echo "" >> "$JMETER_PROPS"
-    echo "# Dashboard generation disabled by default (can be enabled via -e -o flags)" >> "$JMETER_PROPS"
-    echo "# To enable: add '-e -o /path/to/dashboard' to jmeter command" >> "$JMETER_PROPS"
-    echo "  ✓ Added dashboard generation notes to jmeter.properties"
+    # Add the note once; setup must be safe to rerun without modifying tracked
+    # installation files on every invocation.
+    if ! grep -qF "# Dashboard generation disabled by default (can be enabled via -e -o flags)" "$JMETER_PROPS"; then
+        echo "" >> "$JMETER_PROPS"
+        echo "# Dashboard generation disabled by default (can be enabled via -e -o flags)" >> "$JMETER_PROPS"
+        echo "# To enable: add '-e -o /path/to/dashboard' to jmeter command" >> "$JMETER_PROPS"
+        echo "  ✓ Added dashboard generation notes to jmeter.properties"
+    else
+        echo "  ✓ Dashboard generation notes already configured"
+    fi
 fi
 
 echo ""
 echo "Step 8: Creating reports directory..."
 mkdir -p "${SCRIPT_DIR}/reports"
+
+echo ""
+echo "Step 9: Installing Benchmark Studio runtime..."
+if [ "$WITH_POSTGRES" = true ]; then
+    "${SCRIPT_DIR}/setup_ui.sh" --with-postgres
+else
+    "${SCRIPT_DIR}/setup_ui.sh"
+fi
 
 echo ""
 echo "=================================================="
@@ -475,9 +543,10 @@ if [ -n "$JAVA_HOME" ]; then
 fi
 echo "Next steps:"
 echo "  1. Copy your JDBC drivers to jdbc_drivers/ (if not already there)"
-echo "  2. Create connection: ./create_connection.sh"
-echo "  3. Create test config: ./create_test_config.sh"
-echo "  4. Run test: ./run_test.sh test_configs/<your_config>.env"
+echo "  2. Create connection: ./create_connection.sh (or create it in the UI)"
+echo "  3. Start the UI: ./start_ui.sh"
+echo "  4. Open http://127.0.0.1:8765 and launch a test"
+echo "  5. CLI alternative: ./run_test.sh test_configs/<your_config>.env"
 echo ""
 echo "To verify installation:"
 echo "  ./${JMETER_DIR}/bin/jmeter --version"

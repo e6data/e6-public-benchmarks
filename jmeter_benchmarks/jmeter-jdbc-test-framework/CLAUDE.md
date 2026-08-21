@@ -106,9 +106,14 @@ These files enable automated batch testing without needing separate input files 
 ### Prerequisites Setup
 
 ```bash
-# Run setup script once to install JMeter 5.6.3, Java 17, and dependencies
+# Install JMeter 5.6.3, Java 17, plugins, JDBC drivers, and Benchmark Studio
 ./setup_jmeter.sh
 ```
+
+The default UI registry is SQLite. To provision the supplied local PostgreSQL
+container during setup, use `./setup_jmeter.sh --with-postgres`. Start and stop
+the optional UI with `./start_ui.sh` and `./stop_ui.sh`; the CLI runner remains
+independent of the UI.
 
 **Critical**: Java 17 is required. The interactive script validates this before running.
 

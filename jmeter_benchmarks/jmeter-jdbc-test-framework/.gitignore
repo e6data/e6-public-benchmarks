@@ -41,6 +41,8 @@ ui/*.db
 ui/*.db-shm
 ui/*.db-wal
 ui/system_settings.json
+.venv/
+.benchmark-ui.env
 
 # Test config files (user-created, may reference real connections)
 test_configs/*.env

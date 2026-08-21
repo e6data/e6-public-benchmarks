@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stop only the UI process recorded by this checkout's run_ui.sh.
+# Stop only the UI process recorded by this checkout's start_ui.sh.
 set -e
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
