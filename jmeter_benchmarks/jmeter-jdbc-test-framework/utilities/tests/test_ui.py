@@ -213,6 +213,24 @@ class UiTests(unittest.TestCase):
         self.assertEqual(server.benchmark_status(1, None, 5), "failed")
         self.assertEqual(server.benchmark_status(0, {"error_pct": 100}, 5), "failed")
 
+    def test_report_status_defaults_legacy_reports_to_zero_error_only(self):
+        self.assertEqual(server.report_status({"failed": 0, "meta": {}}), "completed")
+        self.assertEqual(server.report_status({"failed": 1, "meta": {}}), "failed")
+
+    def test_report_status_reuses_persisted_cancelled_state(self):
+        run = server.Run("cancelled-report", "test", {}, server.REPORTS, status="cancelled")
+        with server.RUN_LOCK:
+            old = server.RUNS.get(run.run_id)
+            server.RUNS[run.run_id] = run
+        try:
+            self.assertEqual(server.report_status({"failed": 0, "meta": {"run_id": run.run_id}}), "cancelled")
+        finally:
+            with server.RUN_LOCK:
+                if old is None:
+                    server.RUNS.pop(run.run_id, None)
+                else:
+                    server.RUNS[run.run_id] = old
+
     def test_per_query_comparison_joins_labels_and_calculates_p95_ratio(self):
         left = {"per_query": [{"transaction": "Q1", "pct2ResTime": 100}, {"transaction": "Q2", "pct2ResTime": 50}]}
         right = {"per_query": [{"transaction": "Q1", "pct2ResTime": 125}, {"transaction": "Q3", "pct2ResTime": 75}]}

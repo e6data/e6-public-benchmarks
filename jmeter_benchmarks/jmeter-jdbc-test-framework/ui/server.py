@@ -1036,10 +1036,21 @@ def completed_reports() -> list[dict[str, Any]]:
     for path in REPORTS.glob("**/run_summary.json"):
         try:
             summary = json.loads(path.read_text())
-            found.append({"id": str(path.parent.relative_to(REPORTS)), "mtime": path.stat().st_mtime, "summary": compact_summary(summary)})
+            found.append({"id": str(path.parent.relative_to(REPORTS)), "mtime": path.stat().st_mtime,
+                          "status": report_status(summary), "summary": compact_summary(summary)})
         except (OSError, json.JSONDecodeError):
             continue
     return sorted(found, key=lambda item: item["mtime"], reverse=True)[:200]
+
+
+def report_status(summary: dict[str, Any]) -> str:
+    """Resolve the UI run status, with a safe fallback for imported/legacy reports."""
+    run_id = str(summary.get("meta", {}).get("run_id") or "")
+    with RUN_LOCK:
+        run = RUNS.get(run_id)
+    if run and run.status not in {"queued", "running"}:
+        return run.status
+    return "completed" if int(summary.get("failed") or 0) == 0 else "failed"
 
 
 def report_by_id(report_id: str) -> dict[str, Any]:
@@ -1359,7 +1370,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(run.public())
             elif self.path == "/api/compare":
                 left_id, right_id = str(body.get("left", "")), str(body.get("right", ""))
-                result = comparison(report_by_id(left_id), report_by_id(right_id))
+                left, right = report_by_id(left_id), report_by_id(right_id)
+                result = comparison(left, right)
+                result["report_identity"] = {
+                    "left": {"id": left_id, "status": report_status(left)},
+                    "right": {"id": right_id, "status": report_status(right)},
+                }
                 result["per_query"] = per_query_comparison(left_id, right_id)
                 self._json(result)
             else:

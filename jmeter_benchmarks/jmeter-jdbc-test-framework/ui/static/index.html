@@ -104,7 +104,7 @@
 
     <section id="compare" class="panel">
       <div class="section-heading"><div><span class="eyebrow">RUN ANALYSIS</span><h2>Compare completed results</h2><p>Local report storage · <code>reports/**/run_summary.json</code> · no database required</p></div></div>
-      <div class="report-filters card"><label>Baseline engine<select id="filterLeftEngine"><option value="">All engines</option></select></label><label>Candidate engine<select id="filterRightEngine"><option value="">All engines</option></select></label><label>Cluster size<select id="filterCluster"><option value="">All sizes</option></select></label><label>Engine build<select id="filterBuild"><option value="">All builds</option></select></label></div>
+      <div class="report-filters card"><label>Baseline engine<select id="filterLeftEngine"><option value="">All engines</option></select></label><label>Candidate engine<select id="filterRightEngine"><option value="">All engines</option></select></label><label>Cluster size<select id="filterCluster"><option value="">All sizes</option></select></label><label>Engine build<select id="filterBuild"><option value="">All builds</option></select></label><label class="compare-status-filter"><input id="includeInvalidReports" type="checkbox"> Include failed, cancelled, or interrupted runs</label></div>
       <div class="compare-picker card">
         <label>Baseline run<select id="leftReport"></select></label><span>versus</span><label>Candidate run<select id="rightReport"></select></label><button id="compareButton" class="primary">Compare</button>
       </div>
