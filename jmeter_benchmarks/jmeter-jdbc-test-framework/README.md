@@ -213,7 +213,8 @@ Then open <http://127.0.0.1:8765>. The UI supports:
 - comparing completed `run_summary.json` reports with query-file/test-plan
   candidate matching, run identity cards, quality warnings, rich workload/date filters,
   visual deltas, cross-engine per-query JMeter statistics, and JSON/CSV/print
-  export. Failed or cancelled runs stay hidden unless explicitly included;
+  export. Candidate compatibility restriction is opt-in; failed or cancelled
+  runs stay hidden unless explicitly included;
 - previewing the backend-resolved planned workload before launch and comparing
   it with actual arrivals/in-flight behavior read from JMeter's result CSV;
 - applying tracked or locally-created workload and metadata presets through the
