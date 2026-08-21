@@ -31,6 +31,13 @@
 #   JMETER_HOME               - JMeter installation path (auto-detected if not set)
 #   MAX_ERROR_PCT             - fail the run above this error rate (default: 5)
 #   RUN_TYPE                  - S3 partition label (inferred from the plan if omitted)
+#   PROMETHEUS_ENABLED        - expose live JMeter metrics for Prometheus (default: false)
+#   JMETER_RESULT_AUTOFLUSH   - flush each result row for live readers (default: false)
+#   PROMETHEUS_IP             - metrics listener bind address (default: 127.0.0.1)
+#   PROMETHEUS_PORT           - metrics listener port (default: 9270)
+#   PROMETHEUS_DELAY          - seconds to keep endpoint after the test (default: 15)
+#   PROMETHEUS_URL            - informational Prometheus UI URL (default: empty)
+#   GRAFANA_URL               - informational dashboard URL (default: empty)
 #
 # Exit codes:
 #   0  the run completed and the error rate was within MAX_ERROR_PCT
@@ -106,6 +113,12 @@ if [ -n "$1" ]; then
     _SAVE_MAX_ERROR_PCT="${MAX_ERROR_PCT:-}"
     _SAVE_GENERATE_DASHBOARD="${GENERATE_DASHBOARD:-}"
     _SAVE_RUN_TYPE="${RUN_TYPE:-}"
+    _SAVE_PROMETHEUS_ENABLED="${PROMETHEUS_ENABLED:-}"
+    _SAVE_PROMETHEUS_IP="${PROMETHEUS_IP:-}"
+    _SAVE_PROMETHEUS_PORT="${PROMETHEUS_PORT:-}"
+    _SAVE_PROMETHEUS_DELAY="${PROMETHEUS_DELAY:-}"
+    _SAVE_PROMETHEUS_URL="${PROMETHEUS_URL:-}"
+    _SAVE_GRAFANA_URL="${GRAFANA_URL:-}"
 
     source "$SUITE_FILE"
 
@@ -133,6 +146,12 @@ if [ -n "$1" ]; then
     [ -n "$_SAVE_MAX_ERROR_PCT" ] && MAX_ERROR_PCT="$_SAVE_MAX_ERROR_PCT"
     [ -n "$_SAVE_GENERATE_DASHBOARD" ] && GENERATE_DASHBOARD="$_SAVE_GENERATE_DASHBOARD"
     [ -n "$_SAVE_RUN_TYPE" ] && RUN_TYPE="$_SAVE_RUN_TYPE"
+    [ -n "$_SAVE_PROMETHEUS_ENABLED" ] && PROMETHEUS_ENABLED="$_SAVE_PROMETHEUS_ENABLED"
+    [ -n "$_SAVE_PROMETHEUS_IP" ] && PROMETHEUS_IP="$_SAVE_PROMETHEUS_IP"
+    [ -n "$_SAVE_PROMETHEUS_PORT" ] && PROMETHEUS_PORT="$_SAVE_PROMETHEUS_PORT"
+    [ -n "$_SAVE_PROMETHEUS_DELAY" ] && PROMETHEUS_DELAY="$_SAVE_PROMETHEUS_DELAY"
+    [ -n "$_SAVE_PROMETHEUS_URL" ] && PROMETHEUS_URL="$_SAVE_PROMETHEUS_URL"
+    [ -n "$_SAVE_GRAFANA_URL" ] && GRAFANA_URL="$_SAVE_GRAFANA_URL"
 fi
 
 # ============================================================================
@@ -179,6 +198,14 @@ for var in CONNECTION_FILE TEST_PLAN QUERY_FILE; do
     fi
 done
 
+# Use the same strict query-file validation as the UI before creating a run or
+# starting JMeter. This prevents unresolved ${QUERY} samples from malformed,
+# blank, or duplicate CSV records.
+if ! python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --validate; then
+    echo -e "${RED}Error: QUERY_FILE preflight validation failed.${NC}"
+    exit 1
+fi
+
 ORIGINAL_TEST_PLAN="$TEST_PLAN"
 
 if [ -n "${METADATA_FILE:-}" ] && [ ! -f "$METADATA_FILE" ]; then
@@ -212,6 +239,24 @@ REPORT_PATH="${REPORT_PATH:-reports}"
 QUERY_TIMEOUT="${QUERY_TIMEOUT:-300}"
 LIMIT_RESULTSET="${LIMIT_RESULTSET:-1000}"
 MAX_CONCURRANCY="${MAX_CONCURRANCY:-900}"
+JMETER_RESULT_AUTOFLUSH="${JMETER_RESULT_AUTOFLUSH:-false}"
+PROMETHEUS_ENABLED="${PROMETHEUS_ENABLED:-false}"
+PROMETHEUS_IP="${PROMETHEUS_IP:-127.0.0.1}"
+PROMETHEUS_PORT="${PROMETHEUS_PORT:-9270}"
+PROMETHEUS_DELAY="${PROMETHEUS_DELAY:-15}"
+
+if [ "$PROMETHEUS_ENABLED" != "true" ] && [ "$PROMETHEUS_ENABLED" != "false" ]; then
+    echo -e "${RED}Error: PROMETHEUS_ENABLED must be true or false.${NC}"
+    exit 1
+fi
+if ! [[ "$PROMETHEUS_PORT" =~ ^[0-9]+$ ]] || [ "$PROMETHEUS_PORT" -lt 1 ] || [ "$PROMETHEUS_PORT" -gt 65535 ]; then
+    echo -e "${RED}Error: PROMETHEUS_PORT must be between 1 and 65535.${NC}"
+    exit 1
+fi
+if ! [[ "$PROMETHEUS_DELAY" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: PROMETHEUS_DELAY must be a non-negative integer.${NC}"
+    exit 1
+fi
 
 # Source metadata if present (may override COPY_TO_S3, ENGINE, etc.)
 if [ -n "${METADATA_FILE:-}" ]; then
@@ -254,6 +299,8 @@ fi
 # ============================================================================
 
 TIMESTAMP=$(python3 -c 'from datetime import datetime; print(datetime.now().strftime("%Y%m%d-%H%M%S-%f"))')
+RUN_ID="${RUN_ID:-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')}"
+RUN_DATE="${TIMESTAMP:0:4}-${TIMESTAMP:4:2}-${TIMESTAMP:6:2}"
 REPORT_DIR="${REPORT_PATH}/${TIMESTAMP}"
 mkdir -p "$REPORT_PATH"
 if ! mkdir "$REPORT_DIR"; then
@@ -363,6 +410,8 @@ echo ""
 echo -e "  ${BOLD}Output${NC}"
 echo "    JMeter:  ${JMETER_HOME}"
 echo "    Results: ${REPORT_DIR}/"
+[ "$PROMETHEUS_ENABLED" = "true" ] && echo "    Metrics: http://${PROMETHEUS_IP}:${PROMETHEUS_PORT}/metrics"
+[ -n "${GRAFANA_URL:-}" ] && echo "    Grafana: ${GRAFANA_URL}"
 echo ""
 
 # ============================================================================
@@ -390,6 +439,58 @@ if grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/de
         echo ""
         TEST_PLAN="$GENERATED_PLAN"
     fi
+fi
+
+# JMeter's DBCP pool does not expose its generic password in the form expected
+# by Databricks Driver 3 PAT auth. Engine selection already determines the
+# driver, so adapt this internally without adding another user-facing input.
+JDBC_DRIVER=$(grep -E '^DRIVER_CLASS=' "$CONNECTION_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+if [ "$JDBC_DRIVER" = "com.databricks.client.jdbc.Driver" ]; then
+    JDBC_PLAN="${REPORT_DIR}/$(basename "${TEST_PLAN%.jmx}")-jdbc-configured.jmx"
+    python3 "${PROJECT_ROOT}/utilities/configure_jdbc_connection.py" \
+        "$TEST_PLAN" "$JDBC_PLAN" 'PWD=${PASSWORD}' || exit 1
+    TEST_PLAN="$JDBC_PLAN"
+    echo "  Databricks Driver 3: PAT authentication configured"
+    echo ""
+fi
+
+# Opt-in only: derive another run-local plan containing the upstream listener.
+# Source JMX files and the normal CLI path remain untouched when disabled.
+if [ "$PROMETHEUS_ENABLED" = "true" ]; then
+    PROMETHEUS_PLUGIN=""
+    for _plugin in "$JMETER_HOME/lib/ext/jmeter-prometheus-plugin-0.6.0.jar" \
+        "$PROJECT_ROOT/apache-jmeter-5.6.3/lib/ext/jmeter-prometheus-plugin-0.6.0.jar"; do
+        [ -f "$_plugin" ] && PROMETHEUS_PLUGIN="$_plugin" && break
+    done
+    if [ -z "$PROMETHEUS_PLUGIN" ]; then
+        echo -e "${RED}Error: PROMETHEUS_ENABLED=true but jmeter-prometheus-plugin-0.6.0.jar was not found.${NC}"
+        exit 1
+    fi
+    # The plugin releases its server asynchronously after prometheus.delay.
+    # Allow a bounded grace period so sequential suites can safely reuse a port.
+    if ! python3 - "$PROMETHEUS_IP" "$PROMETHEUS_PORT" "$PROMETHEUS_DELAY" <<'PY'
+import socket, sys, time
+host, port = sys.argv[1], int(sys.argv[2])
+deadline = time.monotonic() + max(30, int(sys.argv[3]) + 10)
+while True:
+    s = socket.socket()
+    try:
+        s.bind((host, port))
+        break
+    except OSError:
+        if time.monotonic() >= deadline:
+            raise
+        time.sleep(0.25)
+    finally:
+        s.close()
+PY
+    then
+        echo -e "${RED}Error: Prometheus metrics address ${PROMETHEUS_IP}:${PROMETHEUS_PORT} is unavailable.${NC}"
+        exit 1
+    fi
+    PROMETHEUS_PLAN="${REPORT_DIR}/$(basename "${TEST_PLAN%.jmx}")-prometheus.jmx"
+    python3 "${PROJECT_ROOT}/utilities/enable_prometheus_listener.py" "$TEST_PLAN" "$PROMETHEUS_PLAN"
+    TEST_PLAN="$PROMETHEUS_PLAN"
 fi
 
 # Built as an array so values containing spaces or shell metacharacters
@@ -425,6 +526,13 @@ JMETER_CMD+=("-JRECYCLE_ON_EOF=$RECYCLE_ON_EOF")
 JMETER_CMD+=("-JQUERY_TIMEOUT=$QUERY_TIMEOUT")
 JMETER_CMD+=("-JLIMIT_RESULTSET=$LIMIT_RESULTSET")
 JMETER_CMD+=("-JMAX_CONCURRANCY=$MAX_CONCURRANCY")
+JMETER_CMD+=("-Jjmeter.save.saveservice.autoflush=$JMETER_RESULT_AUTOFLUSH")
+if [ "$PROMETHEUS_ENABLED" = "true" ]; then
+    JMETER_CMD+=("-Jprometheus.ip=$PROMETHEUS_IP" "-Jprometheus.port=$PROMETHEUS_PORT" "-Jprometheus.delay=$PROMETHEUS_DELAY")
+    if [ "$(dirname "$PROMETHEUS_PLUGIN")" != "$JMETER_HOME/lib/ext" ]; then
+        JMETER_CMD+=("-Jsearch_paths=$(dirname "$PROMETHEUS_PLUGIN")")
+    fi
+fi
 
 echo -e "${DIM}${JMETER_CMD[*]}${NC}"
 echo ""
@@ -465,6 +573,7 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
        && [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ]; then
         CAPTURE_ARGS+=(--profile "$LOAD_PROFILE")
     fi
+    CAPTURE_ARGS+=(--meta "run_id=${RUN_ID}" --meta "run_date=${RUN_DATE}")
     CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
     CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}" --meta "run_type=${RUN_TYPE}")
     # Optional descriptive metadata. These values annotate reports only; none
@@ -482,6 +591,11 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     CAPTURE_ARGS+=(--meta "requested_qps=${QPS}" --meta "requested_qpm=${QPM}")
     CAPTURE_ARGS+=(--meta "hold_period=${HOLD_PERIOD}" --meta "ramp_up_time=${RAMP_UP_TIME}" --meta "ramp_up_steps=${RAMP_UP_STEPS}")
     CAPTURE_ARGS+=(--meta "max_concurrency=${MAX_CONCURRANCY}" --meta "recycle_on_eof=${RECYCLE_ON_EOF}" --meta "random_order=${RANDOM_ORDER}")
+    CAPTURE_ARGS+=(--meta "jmeter_result_autoflush=${JMETER_RESULT_AUTOFLUSH}")
+    CAPTURE_ARGS+=(--meta "prometheus_enabled=${PROMETHEUS_ENABLED}")
+    [ "$PROMETHEUS_ENABLED" = "true" ] && CAPTURE_ARGS+=(--meta "prometheus_endpoint=http://${PROMETHEUS_IP}:${PROMETHEUS_PORT}/metrics")
+    [ -n "${PROMETHEUS_URL:-}" ] && CAPTURE_ARGS+=(--meta "prometheus_url=${PROMETHEUS_URL}")
+    [ -n "${GRAFANA_URL:-}" ] && CAPTURE_ARGS+=(--meta "grafana_url=${GRAFANA_URL}")
     CAPTURE_ARGS+=(--meta "jmeter_version=$(basename "$JMETER_HOME")" --meta "java_version=$(java -version 2>&1 | head -1)")
     CAPTURE_ARGS+=(--meta "git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)")
     if [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] \
@@ -540,7 +654,7 @@ if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_UPLOAD_ROOT:-}" ]; then
     ENGINE_VAL="${ENGINE:-unknown}"
     CLUSTER_SIZE_VAL="${CLUSTER_SIZE:-unknown}"
     BENCHMARK_VAL="${BENCHMARK_TYPE:-unknown}"
-    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/run_type=${RUN_TYPE}/run_id=${TIMESTAMP}/"
+    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/run_type=${RUN_TYPE}/run_date=${RUN_DATE}/run_id=${TIMESTAMP}-${RUN_ID}/"
 
     echo ""
     echo "Uploading results to S3..."
@@ -557,6 +671,9 @@ if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_UPLOAD_ROOT:-}" ]; then
             --exclude "dashboard/content/css/*" \
             --exclude "dashboard/content/js/*"
     fi
+    jq -n --arg uri "${S3_DEST}" --arg uploaded_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        '{status:"verified",uri:$uri,uploaded_at:$uploaded_at}' > "${REPORT_DIR}/s3_upload.json"
+    aws s3 cp "${REPORT_DIR}/s3_upload.json" "${S3_DEST}s3_upload.json" --only-show-errors
     echo -e "  ${GREEN}Uploaded to S3${NC}"
 fi
 

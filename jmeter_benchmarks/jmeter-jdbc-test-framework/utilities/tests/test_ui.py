@@ -1,3 +1,4 @@
+import json
 import stat
 import tempfile
 import time
@@ -10,6 +11,44 @@ from ui import server
 
 
 class UiTests(unittest.TestCase):
+    def test_system_settings_are_read_only_by_default(self):
+        with mock.patch.object(server, "ALLOW_SETTINGS_WRITE", False):
+            with self.assertRaisesRegex(ValueError, "writes are disabled"):
+                server.update_system_settings({})
+
+    def test_system_settings_validate_persist_and_update_runtime_defaults(self):
+        original = {
+            name: getattr(server, name) for name in (
+                "PROMETHEUS_DEFAULT_ENABLED", "PROMETHEUS_DEFAULT_PORT",
+                "PROMETHEUS_URL", "GRAFANA_URL", "SYSTEM_COPY_TO_S3",
+                "SYSTEM_S3_REPORT_PATH", "SYSTEM_GENERATE_DASHBOARD",
+                "REPORT_RETENTION_DAYS", "MAX_LOCAL_REPORT_GB",
+            )
+        }
+        try:
+            with tempfile.TemporaryDirectory() as temp, \
+                    mock.patch.object(server, "ALLOW_SETTINGS_WRITE", True), \
+                    mock.patch.object(server, "SETTINGS_PATH", Path(temp) / "settings.json"):
+                values = {
+                    "prometheus_enabled": True, "prometheus_port": 9123,
+                    "prometheus_url": "http://prometheus:9090",
+                    "grafana_url": "http://grafana:3000/d/jmeter",
+                    "copy_to_s3": True, "s3_report_path": "s3://bucket/results",
+                    "generate_dashboard": False, "retention_days": 45,
+                    "max_local_report_gb": 250,
+                }
+                saved = server.update_system_settings(values)
+                self.assertEqual(saved, values)
+                self.assertEqual(json.loads(server.SETTINGS_PATH.read_text()), values)
+                self.assertEqual(server.PROMETHEUS_DEFAULT_PORT, "9123")
+                self.assertTrue(server.SYSTEM_COPY_TO_S3)
+                self.assertFalse(server.SYSTEM_GENERATE_DASHBOARD)
+                with self.assertRaisesRegex(ValueError, "must start with s3://"):
+                    server.update_system_settings({**values, "s3_report_path": "https://bucket/results"})
+        finally:
+            for name, value in original.items():
+                setattr(server, name, value)
+
     def test_create_jdbc_connection_profile_uses_runner_format_and_private_permissions(self):
         name = "ui_unit_profile"
         target = server.ROOT / "connection_properties" / f"{name}_connection.properties"
@@ -24,6 +63,21 @@ class UiTests(unittest.TestCase):
             self.assertIn("CONNECTION_STRING=jdbc:e6data://example:443/secure=true", contents)
             self.assertIn("DRIVER_CLASS=io.e6.jdbc.driver.E6Driver", contents)
             self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+        finally:
+            target.unlink(missing_ok=True)
+
+    def test_databricks_profile_uses_selected_driver_without_extra_inputs(self):
+        target = server.ROOT / "connection_properties" / "ui_dbr_unit_connection.properties"
+        try:
+            server.create_connection_profile({
+                "name": "ui_dbr_unit", "transport": "jdbc", "engine": "databricks",
+                "connection_string": "jdbc:databricks://example:443;HttpPath=/sql/warehouse",
+                "password": "secret",
+            })
+            contents = target.read_text()
+            self.assertIn("PASSWORD=secret", contents)
+            self.assertIn("DRIVER_CLASS=com.databricks.client.jdbc.Driver", contents)
+            self.assertNotIn("JDBC_CONNECTION_PROPERTIES", contents)
         finally:
             target.unlink(missing_ok=True)
 
@@ -89,6 +143,41 @@ class UiTests(unittest.TestCase):
         finally:
             target.unlink(missing_ok=True)
 
+    def test_s3_import_selects_existing_local_file(self):
+        target = server.ROOT / "data_files" / "ui_s3_existing.csv"
+        try:
+            target.parent.mkdir(exist_ok=True)
+            target.write_text("query_alias,query_string\nq1,select 1\n")
+            with mock.patch.object(server.subprocess, "run") as download:
+                relative = server.import_s3_input(
+                    "query", "s3://example-bucket/folder/ui_s3_existing.csv"
+                )
+            self.assertEqual(relative, "data_files/ui_s3_existing.csv")
+            download.assert_not_called()
+        finally:
+            target.unlink(missing_ok=True)
+
+    def test_s3_import_retries_public_object_when_session_expired(self):
+        target = server.ROOT / "test_properties" / "ui_s3_public.csv"
+        calls = []
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            if "--no-sign-request" not in command:
+                return SimpleNamespace(returncode=1, stdout="", stderr="ExpiredToken")
+            Path(command[4]).write_text("StartValue,EndValue,Duration\n1,1,1\n")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        try:
+            with mock.patch.object(server.subprocess, "run", side_effect=fake_run):
+                relative = server.import_s3_input(
+                    "profile", "s3://example-bucket/folder/ui_s3_public.csv"
+                )
+            self.assertEqual(relative, "test_properties/ui_s3_public.csv")
+            self.assertIn("--no-sign-request", calls[1])
+        finally:
+            target.unlink(missing_ok=True)
+
     def test_report_details_reuses_jmeter_statistics(self):
         with tempfile.TemporaryDirectory(dir=server.REPORTS, prefix="ui-stats-test-") as temp:
             directory = Path(temp)
@@ -105,14 +194,59 @@ class UiTests(unittest.TestCase):
         self.assertEqual(details["per_query"][0]["sampleCount"], 4)
 
     def test_comparison_calculates_regression_direction_inputs(self):
-        left = {"throughput_per_s": 10, "error_pct": 1, "latency_ms": {"p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "drain_s": 2, "meta": {"query_sha256": "a"}}
-        right = {"throughput_per_s": 12, "error_pct": 2, "latency_ms": {"p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "drain_s": 3, "meta": {"query_sha256": "b"}}
+        left = {"samples": 100, "successful": 99, "failed": 1, "throughput_per_s": 10, "error_pct": 1, "latency_ms": {"mean": 150, "p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "arrival_window_s": 60, "drain_s": 2, "wall_clock_s": 62, "load_profile": {"expected": 100, "delivered_pct": 100}, "failure_messages": [{"count": 1, "message": "timeout"}], "meta": {"query_sha256": "a"}}
+        right = {"samples": 80, "successful": 60, "failed": 20, "throughput_per_s": 12, "error_pct": 25, "latency_ms": {"mean": 140, "p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "arrival_window_s": 60, "drain_s": 3, "wall_clock_s": 63, "load_profile": {"expected": 100, "delivered_pct": 80}, "meta": {"query_sha256": "b"}}
         result = server.comparison(left, right)
         self.assertEqual(result["metrics"]["throughput_per_s"]["change_pct"], 20)
+        self.assertEqual(result["metrics"]["throughput_per_s"]["ratio"], 1.2)
         self.assertEqual(result["metrics"]["p95_ms"]["change_pct"], -10)
+        self.assertEqual(result["metrics"]["accepted_load_pct"]["right"], 80)
         self.assertTrue(result["metrics"]["throughput_per_s"]["higher_is_better"])
         self.assertFalse(result["metrics"]["p95_ms"]["higher_is_better"])
         self.assertEqual(result["compatibility"][0]["severity"], "workload")
+        self.assertIn("60/80", result["survivor_bias"])
+        self.assertEqual(result["failure_reasons"]["left"][0]["message"], "timeout")
+
+    def test_benchmark_status_separates_jmeter_result_from_artifact_failure(self):
+        self.assertEqual(server.benchmark_status(1, {"error_pct": 0}, 5), "completed")
+        self.assertEqual(server.benchmark_status(1, {"error_pct": 6}, 5), "failed")
+        self.assertEqual(server.benchmark_status(1, None, 5), "failed")
+        self.assertEqual(server.benchmark_status(0, {"error_pct": 100}, 5), "failed")
+
+    def test_per_query_comparison_joins_labels_and_calculates_p95_ratio(self):
+        left = {"per_query": [{"transaction": "Q1", "pct2ResTime": 100}, {"transaction": "Q2", "pct2ResTime": 50}]}
+        right = {"per_query": [{"transaction": "Q1", "pct2ResTime": 125}, {"transaction": "Q3", "pct2ResTime": 75}]}
+        with mock.patch.object(server, "report_details", side_effect=[left, right]):
+            rows = server.per_query_comparison("left", "right")
+        self.assertEqual([row["label"] for row in rows], ["Q1", "Q2", "Q3"])
+        self.assertEqual(rows[0]["p95_ratio"], 1.25)
+        self.assertIsNone(rows[1]["right"])
+        self.assertIsNone(rows[2]["left"])
+
+    def test_read_preset_parses_inline_comments_and_cluster_config(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "metadata.txt"
+            path.write_text(
+                'RUN_MODE="prod" # comment\n'
+                "CLUSTER_CONFIG='{\n"
+                '  "estimated_cores": 60, "serverless": "N"\n'
+                "}'\n"
+            )
+            values = server.read_preset(path)
+        self.assertEqual(values["RUN_MODE"], "prod")
+        self.assertEqual(values["ESTIMATED_CORES"], "60")
+        self.assertEqual(values["SERVERLESS"], "N")
+
+    def test_only_ui_presets_can_be_overwritten_and_deleted(self):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(server, "ROOT", Path(temp)):
+            (Path(temp) / "test_properties").mkdir()
+            saved = server.create_preset("workload", {"name": "smoke", "values": {"QPS": 2}})
+            self.assertEqual(saved, "test_properties/ui_smoke.properties")
+            server.create_preset("workload", {"name": "ui_smoke", "values": {"QPS": 3}}, overwrite=True)
+            self.assertEqual(server.read_preset(Path(temp) / saved)["QPS"], "3")
+            self.assertEqual(server.delete_preset("workload", "ui_smoke"), saved)
+            with self.assertRaises(ValueError):
+                server.delete_preset("workload", "repository_example")
 
     def test_live_metrics_ignores_setup_samples(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -130,7 +264,15 @@ class UiTests(unittest.TestCase):
         self.assertEqual(metrics["failed"], 1)
         self.assertEqual(metrics["active"], 2)
         self.assertEqual(metrics["series"]["arrivals"], [2])
-        self.assertEqual(metrics["series"]["in_flight"], [2])
+        self.assertEqual(metrics["series"]["successful"], [1])
+        self.assertEqual(metrics["series"]["failed"], [1])
+        self.assertEqual(metrics["series"]["in_flight"], [1])
+        self.assertEqual(metrics["series"]["latency_ms"], [100])
+        self.assertEqual(metrics["duration_s"], 0.4)
+        self.assertEqual(metrics["arrival_rate"], 20.0)
+        self.assertEqual(metrics["completion_throughput"], 5.0)
+        self.assertEqual(metrics["arrival_window_s"], 0.1)
+        self.assertEqual(metrics["drain_s"], 0.3)
         self.assertEqual(metrics["top_failure"]["count"], 1)
 
     def test_live_metrics_ignores_partially_written_row(self):
@@ -144,7 +286,25 @@ class UiTests(unittest.TestCase):
             )
             metrics = server.live_metrics(Path(temp))
         self.assertEqual(metrics["samples"], 1)
-        self.assertEqual(metrics["successful"], 1)
+
+    def test_live_metrics_does_not_invent_overlap_within_a_second(self):
+        report = server.ROOT / "reports" / "ui-test-live-overlap"
+        result_dir = report / "20260819-000000-000000"
+        result_dir.mkdir(parents=True, exist_ok=True)
+        result = result_dir / "JmeterResultFile.csv"
+        try:
+            result.write_text(
+                "timeStamp,elapsed,label,success,responseMessage,allThreads\n"
+                "1000,200,Q1,true,OK,1\n"
+                "1800,100,Q2,true,OK,1\n"
+            )
+            metrics = server.live_metrics(report)
+        finally:
+            result.unlink(missing_ok=True)
+            result_dir.rmdir()
+            report.rmdir()
+        self.assertEqual(metrics["series"]["in_flight"], [1])
+        self.assertEqual(metrics["successful"], 2)
 
     def test_path_validation_blocks_traversal(self):
         with self.assertRaises(ValueError):
@@ -161,13 +321,55 @@ class UiTests(unittest.TestCase):
                 "connection": "connection_properties/ui_test.properties",
                 "query_file": "data_files/ui_test.csv",
             }
-            env = server.build_environment(config, "abc")
+            with mock.patch.object(server, "SYSTEM_COPY_TO_S3", False), \
+                    mock.patch.object(server, "SYSTEM_GENERATE_DASHBOARD", True), \
+                    mock.patch.object(server, "PROMETHEUS_DEFAULT_ENABLED", False), \
+                    mock.patch.object(server, "PROMETHEUS_DEFAULT_PORT", "9270"):
+                env = server.build_environment(config, "abc")
         finally:
             connection.unlink(missing_ok=True)
             query.unlink(missing_ok=True)
         self.assertEqual(env["COPY_TO_S3"], "false")
         self.assertEqual(env["GENERATE_DASHBOARD"], "true")
         self.assertEqual(env["REPORT_PATH"], "reports/ui-abc")
+        self.assertEqual(env["PROMETHEUS_ENABLED"], "false")
+        self.assertEqual(env["PROMETHEUS_PORT"], "9270")
+
+    def test_preflight_accepts_runner_query_header_variants(self):
+        connection = server.ROOT / "connection_properties" / "ui_header_test.properties"
+        query = server.ROOT / "data_files" / "ui_header_test.csv"
+        try:
+            connection.write_text("CONNECTION_STRING=jdbc:test\n")
+            query.write_text('QUERY_ALIAS,QUERY\nq1,"select 1"\nq2,"select 2"\n')
+            result = server.preflight({
+                "plan": "jdbc_run_once",
+                "connection": "connection_properties/ui_header_test.properties",
+                "query_file": "data_files/ui_header_test.csv",
+            })
+        finally:
+            connection.unlink(missing_ok=True)
+            query.unlink(missing_ok=True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["query_count"], 2)
+
+    def test_preflight_rejects_blank_incomplete_and_duplicate_query_rows(self):
+        connection = server.ROOT / "connection_properties" / "ui_invalid_csv_test.properties"
+        query = server.ROOT / "data_files" / "ui_invalid_csv_test.csv"
+        try:
+            connection.write_text("CONNECTION_STRING=jdbc:test\n")
+            query.write_text(
+                'QUERY_ALIAS,QUERY\nq1,"select 1"\n\n'
+                'q1,"select 2"\nq3,""\n'
+            )
+            with self.assertRaisesRegex(ValueError, "line 3 is blank.*duplicate query alias.*empty SQL"):
+                server.preflight({
+                    "plan": "jdbc_run_once",
+                    "connection": "connection_properties/ui_invalid_csv_test.properties",
+                    "query_file": "data_files/ui_invalid_csv_test.csv",
+                })
+        finally:
+            connection.unlink(missing_ok=True)
+            query.unlink(missing_ok=True)
 
     def test_build_environment_keeps_metadata_descriptive(self):
         connection = server.ROOT / "connection_properties" / "ui_meta_test.properties"
@@ -175,12 +377,13 @@ class UiTests(unittest.TestCase):
         try:
             connection.write_text("CONNECTION_STRING=jdbc:test\n")
             query.write_text('query_alias,query_string\nq1,"select 1"\n')
-            env = server.build_environment({
-                "plan": "jdbc_concurrency", "engine": "e6data",
-                "connection": "connection_properties/ui_meta_test.properties",
-                "query_file": "data_files/ui_meta_test.csv",
-                "metadata": {"CLUSTER_SIZE": "S-2x2", "ESTIMATED_CORES": "60", "COMMENTS": "comparison"},
-            }, "meta")
+            with mock.patch.object(server, "SYSTEM_COPY_TO_S3", False):
+                env = server.build_environment({
+                    "plan": "jdbc_concurrency", "engine": "e6data",
+                    "connection": "connection_properties/ui_meta_test.properties",
+                    "query_file": "data_files/ui_meta_test.csv",
+                    "metadata": {"CLUSTER_SIZE": "S-2x2", "ESTIMATED_CORES": "60", "COMMENTS": "comparison"},
+                }, "meta")
         finally:
             connection.unlink(missing_ok=True)
             query.unlink(missing_ok=True)
@@ -275,6 +478,78 @@ class UiTests(unittest.TestCase):
         finally:
             for path in (jdbc, http, query, arrivals, concurrency):
                 path.unlink(missing_ok=True)
+
+    def test_workload_preview_uses_shared_arrival_profile_model(self):
+        profile = server.ROOT / "test_properties" / "ui_preview_arrivals.csv"
+        try:
+            profile.write_text("StartValue,EndValue,Duration\n1,3,3\n3,3,2\n")
+            preview = server.workload_preview({
+                "plan": "jdbc_arrivals",
+                "load_profile": "test_properties/ui_preview_arrivals.csv",
+            })
+        finally:
+            profile.unlink(missing_ok=True)
+        self.assertEqual(preview["pattern"], "Variable arrival rate")
+        self.assertEqual(preview["kind"], "arrivals")
+        self.assertEqual(preview["values"], [1.0, 2.0, 3.0, 3.0, 3.0])
+        self.assertEqual(preview["duration_s"], 5)
+        self.assertEqual(preview["expected_total"], 12)
+
+    def test_workload_preview_uses_shared_concurrency_profile_model(self):
+        profile = server.ROOT / "test_properties" / "ui_preview_concurrency.csv"
+        try:
+            profile.write_text("Threads,StartTime,StartupTime,HoldTime,ShutdownTime\n4,0,2,2,2\n")
+            preview = server.workload_preview({
+                "plan": "jdbc_variable_concurrency",
+                "load_profile": "test_properties/ui_preview_concurrency.csv",
+            })
+        finally:
+            profile.unlink(missing_ok=True)
+        self.assertEqual(preview["pattern"], "Variable concurrency")
+        self.assertEqual(preview["kind"], "concurrency")
+        self.assertEqual(preview["peak"], 4)
+        self.assertEqual(preview["duration_s"], 6)
+
+    def test_qpm_preview_converts_minutes_to_per_second_rate(self):
+        preview = server.workload_preview({
+            "plan": "jdbc_qpm", "QPM": 120, "RAMP_UP_TIME": 0, "HOLD_PERIOD": 2,
+        })
+        self.assertEqual(preview["unit"], "queries/sec")
+        self.assertEqual(preview["duration_s"], 120)
+        self.assertEqual(preview["peak"], 2)
+        self.assertEqual(preview["expected_total"], 242)
+
+    def test_run_once_preview_reports_query_file_total(self):
+        preview = server.workload_preview({
+            "plan": "jdbc_run_once", "query_file": "data_files/simple_queries.csv",
+            "CONCURRENT_QUERY_COUNT": 2, "RAMP_UP_TIME": 1,
+            "RAMP_UP_STEPS": 1, "HOLD_PERIOD": 1,
+        })
+        self.assertEqual(preview["expected_total"], 2)
+
+    def test_qps_preview_matches_arrivals_thread_group_step_ramp(self):
+        preview = server.workload_preview({
+            "plan": "jdbc_qps", "QPS": 4, "RAMP_UP_TIME": 4,
+            "RAMP_UP_STEPS": 2, "HOLD_PERIOD": 2,
+        })
+        self.assertEqual(preview["pattern"], "Constant QPS")
+        self.assertEqual(preview["values"], [2.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0])
+        self.assertEqual(preview["duration_s"], 6)
+        self.assertEqual(preview["expected_total"], 24)
+
+    def test_workload_preview_pattern_matches_selected_plan(self):
+        base = {
+            "query_file": "data_files/simple_queries.csv", "CONCURRENT_QUERY_COUNT": 2,
+            "QPS": 2, "QPM": 60, "RAMP_UP_TIME": 1, "RAMP_UP_STEPS": 1,
+            "HOLD_PERIOD": 1,
+        }
+        expected = {
+            "jdbc_run_once": "Run once", "jdbc_concurrency": "Fixed concurrency",
+            "jdbc_qps": "Constant QPS", "jdbc_qpm": "Constant QPM",
+        }
+        for plan, label in expected.items():
+            with self.subTest(plan=plan):
+                self.assertEqual(server.workload_preview({**base, "plan": plan})["pattern"], label)
 
 
 if __name__ == "__main__":

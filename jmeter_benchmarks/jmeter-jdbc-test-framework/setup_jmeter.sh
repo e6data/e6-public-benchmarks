@@ -351,7 +351,7 @@ echo ""
 echo "Step 6: Installing custom JDBC drivers..."
 
 # Download Databricks JDBC driver from Maven Central
-DBR_JDBC_VERSION="3.0.3"
+DBR_JDBC_VERSION="3.3.3"
 DBR_JDBC_URL="https://repo1.maven.org/maven2/com/databricks/databricks-jdbc/${DBR_JDBC_VERSION}/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
 DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
 

@@ -15,4 +15,3 @@ CONNECTION_STRING=
 
 #Change below to your JDBC Driver class
 DRIVER_CLASS=io.e6.jdbc.driver.E6Driver
-
