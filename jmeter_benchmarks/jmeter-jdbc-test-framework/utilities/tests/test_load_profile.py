@@ -87,6 +87,26 @@ class ReportMetricTests(unittest.TestCase):
         self.assertEqual(report["failed"], 1)
         self.assertEqual(report["error_pct"], 50.0)
 
+    def test_failure_breakdown_classifies_every_failed_sample(self):
+        rows = [
+            self.row(1000, 100), self.row(1100, 100, "false"),
+            self.row(1200, 100, "false"), self.row(1300, 100, "false"),
+        ]
+        rows[1]["responseMessage"] = "Query cancelled: kill"
+        rows[2]["responseMessage"] = "SocketTimeoutException: timed out"
+        rows[3]["responseMessage"] = "SQL syntax error"
+        report = capture_run_report.analyse(rows)
+        self.assertEqual(report["failure_breakdown"], {
+            "cancelled": 1, "timed_out": 1, "other": 1,
+        })
+
+    def test_completion_rate_reports_active_one_second_buckets(self):
+        rows = [self.row(1000, 100), self.row(1100, 200), self.row(2200, 100)]
+        report = capture_run_report.analyse(rows)
+        self.assertEqual(report["completion_rate_per_s"]["min_active"], 1)
+        self.assertEqual(report["completion_rate_per_s"]["mean_active"], 1.5)
+        self.assertEqual(report["completion_rate_per_s"]["max"], 2)
+
     def test_control_sampler_can_be_excluded_from_query_metrics(self):
         rows = [self.row(1000, 0), self.row(1000, 250)]
         rows[0]["label"] = "Setup-Query-Loader-Trigger"

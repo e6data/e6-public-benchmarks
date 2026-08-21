@@ -25,6 +25,10 @@ cp /path/to/my_queries.csv data_files/my_queries.csv
 cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
 ```
 
+`setup_jmeter.sh` installs JMeter, required plugins and JDBC drivers, plus the
+isolated Benchmark Studio Python environment. It uses SQLite by default. For a
+local PostgreSQL registry, use `./setup_jmeter.sh --with-postgres` instead.
+
 Edit only `CONNECTION_FILE` and `QUERY_FILE` in `my_benchmark.env`, then choose a load model with command-line overrides:
 
 ```bash
@@ -49,6 +53,20 @@ TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.j
 
 See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) for run-once, QPM, HTTP, custom profiles, reports, S3/Athena analysis, and metric definitions.
 
+An optional local UI can create the local connection properties file, configure
+the exact environment variables accepted by the unchanged CLI runner, annotate
+runs with cluster/build sizing metadata, show live runs, start the same workload
+on two engines sequentially or in parallel, and filter or compare completed
+reports:
+
+```bash
+./start_ui.sh
+```
+
+Open <http://127.0.0.1:8765>. The CLI remains fully supported and has no UI
+dependency. Stop only the UI with `./stop_ui.sh`; `run_ui.sh` remains a
+backwards-compatible alias.
+
 ## Repository layout
 
 ```text
@@ -58,6 +76,11 @@ See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/REA
 │   ├── test_properties/     # runtime and load-profile examples
 │   ├── test_configs/        # runner configuration examples
 │   ├── utilities/           # local, S3, and Athena analysis tools
+│   ├── ui/                  # optional local control and visualization layer
+│   ├── setup_ui.sh          # UI-only setup + optional local PostgreSQL
+│   ├── start_ui.sh          # optional UI launcher
+│   ├── stop_ui.sh           # stop this checkout's UI process
+│   ├── run_ui.sh            # backwards-compatible start_ui.sh alias
 │   └── run_test.sh          # non-interactive runner
 ├── python_benchmarks/       # one Python runner per supported engine
 └── pov/                     # Docker Compose deployment wrapper

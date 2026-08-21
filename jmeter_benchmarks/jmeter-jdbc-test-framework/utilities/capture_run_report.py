@@ -91,6 +91,7 @@ def peak_inflight_per_second(starts, ends, t0, buckets):
 
 def analyse(rows, profile_steps=None, profile_kind="arrivals"):
     ok = [r for r in rows if r["success"] == "true"]
+    failed_rows = [r for r in rows if r["success"] != "true"]
     lat = sorted(int(r["elapsed"]) for r in ok)
     starts = [int(r["timeStamp"]) for r in rows]
     ends = [int(r["timeStamp"]) + int(r["elapsed"]) for r in rows]
@@ -101,10 +102,28 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
     n = int(wall) + 2
     arr = [0] * n
     comp = [0] * n
+    successful_comp = [0] * n
     for s, e in zip(starts, ends):
         arr[(s - t0) // 1000] += 1
         comp[(e - t0) // 1000] += 1
+    for row in ok:
+        end = int(row["timeStamp"]) + int(row["elapsed"])
+        successful_comp[(end - t0) // 1000] += 1
     inflight = peak_inflight_per_second(starts, ends, t0, n)
+
+    active_completion_buckets = [value for value in comp if value > 0]
+
+    def failure_kind(row):
+        message = (row.get("responseMessage") or "").lower()
+        if any(token in message for token in ("timeout", "timed out", "time out")):
+            return "timed_out"
+        if any(token in message for token in ("cancelled", "canceled", "killed", "query cancelled", "query canceled")):
+            return "cancelled"
+        return "other"
+
+    failure_breakdown = {"cancelled": 0, "timed_out": 0, "other": 0}
+    for row in failed_rows:
+        failure_breakdown[failure_kind(row)] += 1
 
     def p(q):
         return lat[math.ceil(q * len(lat)) - 1] if lat else None
@@ -115,6 +134,13 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
         "failed": len(rows) - len(ok),
         "error_pct": round(100 * (len(rows) - len(ok)) / len(rows), 2),
         "throughput_per_s": round(len(rows) / wall, 2) if wall else None,
+        "completion_rate_per_s": {
+            "bucket_s": 1,
+            "min_active": min(active_completion_buckets) if active_completion_buckets else None,
+            "mean_active": round(statistics.mean(active_completion_buckets), 2) if active_completion_buckets else None,
+            "max": max(comp) if comp else None,
+            "successful_max": max(successful_comp) if successful_comp else None,
+        },
         "wall_clock_s": round(wall, 1),
         "arrival_window_s": round(arrival_window, 1),
         "drain_s": round(wall - arrival_window, 1),
@@ -127,7 +153,10 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
             "mean": round(statistics.mean(lat)) if lat else None,
         },
         "arrivals_per_s": arr,
+        "completions_per_s": comp,
+        "successful_completions_per_s": successful_comp,
         "in_flight_per_s": inflight,
+        "failure_breakdown": failure_breakdown,
     }
 
     if profile_steps and profile_kind == "arrivals":

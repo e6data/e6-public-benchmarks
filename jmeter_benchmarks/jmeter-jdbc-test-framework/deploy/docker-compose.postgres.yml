@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: e6-benchmark-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: benchmark_ui
+      POSTGRES_USER: benchmark_ui
+      POSTGRES_PASSWORD: ${BENCHMARK_POSTGRES_PASSWORD:?set BENCHMARK_POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:${BENCHMARK_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - e6-benchmark-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U benchmark_ui -d benchmark_ui"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  e6-benchmark-postgres-data:

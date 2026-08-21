@@ -37,6 +37,12 @@ backups/
 __pycache__/
 *.pyc
 *.pyo
+ui/*.db
+ui/*.db-shm
+ui/*.db-wal
+ui/system_settings.json
+.venv/
+.benchmark-ui.env
 
 # Test config files (user-created, may reference real connections)
 test_configs/*.env
@@ -49,6 +55,8 @@ test_configs/*.txt
 
 # Test properties CSV files (environment-specific data)
 test_properties/*.csv
+test_properties/ui_*.properties
+metadata_files/ui_*.txt
 # ...except the load-profile examples. The two profile-driven plans fall back to
 # load_profile.csv / utg_load_profile.csv when LOAD_PROFILE is unset, so without
 # these a fresh clone cannot run either plan. They hold only shape numbers.

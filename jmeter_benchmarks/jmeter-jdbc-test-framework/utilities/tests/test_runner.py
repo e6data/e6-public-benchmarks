@@ -4,6 +4,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -84,6 +85,51 @@ class RunnerIntegrationTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 1)
         self.assertIn("JMeter exited with status 7", completed.stdout)
         self.assertIn("Test FAILED", completed.stdout)
+
+    def test_query_preflight_rejects_blank_record_before_jmeter(self):
+        self.queries.write_text('query_alias,query_string\nq1,"select 1"\n\n')
+        completed = self.run_runner()
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("line 3 is blank", completed.stderr)
+        self.assertIn("QUERY_FILE preflight validation failed", completed.stdout)
+        self.assertFalse(self.reports.exists())
+
+    def test_prometheus_transform_adds_dashboard_compatible_metrics(self):
+        source = self.reports / "source.jmx"
+        destination = self.reports / "generated.jmx"
+        self.reports.mkdir()
+        source.write_text("<jmeterTestPlan><hashTree><TestPlan/><hashTree/></hashTree></jmeterTestPlan>")
+        completed = subprocess.run([
+            "python3", str(ROOT / "utilities" / "enable_prometheus_listener.py"),
+            str(source), str(destination),
+        ], text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        tree = ET.parse(destination)
+        listener = tree.find(".//com.github.johrstrom.listener.PrometheusListener")
+        self.assertIsNotNone(listener)
+        names = {node.text for node in listener.findall(".//stringProp[@name='collector.metric_name']")}
+        self.assertEqual(names, {
+            "jmeter_response_time", "jmeter_success_success_total",
+            "jmeter_success_failure_total",
+        })
+
+    def test_databricks_transform_uses_pwd_without_embedding_secret(self):
+        source = self.reports / "source.jmx"
+        destination = self.reports / "generated.jmx"
+        self.reports.mkdir()
+        source.write_text(
+            '<jmeterTestPlan><hashTree><JDBCDataSource>'
+            '<stringProp name="connectionProperties"></stringProp>'
+            '</JDBCDataSource></hashTree></jmeterTestPlan>'
+        )
+        completed = subprocess.run([
+            "python3", str(ROOT / "utilities" / "configure_jdbc_connection.py"),
+            str(source), str(destination), "PWD=${PASSWORD}",
+        ], text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        prop = ET.parse(destination).find(".//stringProp[@name='connectionProperties']")
+        self.assertEqual(prop.text, "PWD=${PASSWORD}")
+        self.assertNotIn("dapi", destination.read_text())
 
 
 if __name__ == "__main__":

@@ -35,9 +35,20 @@ JMeter measures the workload from the client. Its `elapsed` value includes drive
 git clone https://github.com/e6data/e6-public-benchmarks.git
 cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
 
-# Installs Java 17, JMeter 5.6.3, plugins, and Groovy 4.0.29
+# Installs Java 17, JMeter 5.6.3, thread-group/Prometheus plugins, JDBC drivers, Groovy 4.0.29,
+# and the isolated Benchmark Studio Python environment.
 ./setup_jmeter.sh
 ```
+
+The default uses the built-in local SQLite registry and does not require
+Docker. To provision the supplied local PostgreSQL registry as part of setup:
+
+```bash
+./setup_jmeter.sh --with-postgres
+```
+
+Both setup modes are safe to rerun. PostgreSQL credentials are generated into
+the ignored, permission-protected `.benchmark-ui.env`; they are not committed.
 
 If any dependency fails to install automatically, install it manually: Java 17+, jq 1.5+, git 2.x+.
 
@@ -50,6 +61,22 @@ If any dependency fails to install automatically, install it manually: Java 17+,
 Interactive prompts for JDBC URL, credentials, driver class. Supports e6data, Databricks, Trino, and HTTP endpoints.
 
 This creates a file in `connection_properties/` — e.g., `connection_properties/my_connection.properties`.
+
+For Databricks JDBC Driver 3, copy the short URL from the SQL warehouse
+connection page and leave `USER` empty. Store the PAT only as `PASSWORD`:
+
+```properties
+CONNECTION_STRING=jdbc:databricks://workspace-host:443;HttpPath=/sql/1.0/warehouses/warehouse-id;ConnCatalog=hive_metastore;ConnSchema=my_schema
+USER=
+PASSWORD=<access-token>
+DRIVER_CLASS=com.databricks.client.jdbc.Driver
+```
+
+Engine selection supplies the driver adapter. For Databricks Driver 3, the
+runner maps the protected PAT to the driver's required `PWD` property in a
+run-local JMX. No additional UI, interactive, or CLI input is required. The
+runner does not modify source plans or place the token in the command line or
+generated report metadata.
 
 ### Step 3: Create your queries CSV file
 
@@ -144,6 +171,253 @@ vi test_configs/my_test.env
 
 Guides you through selecting connection, test plan, query file, and parameters.
 
+## Optional local web UI
+
+The CLI remains the primary execution interface. The optional UI calls the same
+`run_test.sh` runner and reads the same `JmeterResultFile.csv` and
+`run_summary.json` artifacts; it does not replace or modify any JMX plan.
+
+Start it from the framework directory:
+
+```bash
+./start_ui.sh
+```
+
+Stop a UI started by `start_ui.sh` without affecting JMeter runs:
+
+```bash
+./stop_ui.sh
+```
+
+The scripts use `logs/ui.pid` by default. Set `BENCHMARK_UI_PID_FILE` on both
+commands to use a different PID-file location. For a systemd deployment, use
+`systemctl stop e6-benchmark-ui` instead.
+
+`run_ui.sh` remains as a backwards-compatible alias for `start_ui.sh`.
+
+Then open <http://127.0.0.1:8765>. The UI supports:
+
+- creating a private local JDBC or HTTP connection properties file, or selecting
+  an existing one;
+- selecting the same `TEST_PLAN`, `QUERY_FILE`, `LOAD_PROFILE`, concurrency,
+  rate, duration, and safety variables accepted by `run_test.sh`;
+- choosing an already-local CSV, uploading a CSV from the browser, or importing
+  one from S3 using the UI host's configured AWS CLI credentials;
+- starting one engine or the same workload on two engines;
+- running two engines sequentially for cleaner measurements (the default) or
+  in parallel for a live side-by-side demonstration;
+- live samples, throughput, errors, active threads, latency, and runner logs;
+- opening JMeter's standard HTML dashboard after a run when
+  `GENERATE_DASHBOARD` is enabled;
+- cancelling only the selected UI-started process;
+- comparing completed `run_summary.json` reports with query-file/test-plan
+  candidate matching, run identity cards, quality warnings, rich workload/date filters,
+  visual deltas, cross-engine per-query JMeter statistics, and JSON/CSV/print
+  export. Candidate compatibility restriction is opt-in; failed or cancelled
+  runs stay hidden unless explicitly included;
+- previewing the backend-resolved planned workload before launch and comparing
+  it with actual arrivals/in-flight behavior read from JMeter's result CSV;
+- applying tracked or locally-created workload and metadata presets through the
+  **Presets** tab. Presets populate visible Launch fields and never
+  bypass the resolved-configuration preview.
+
+The **Advanced runner settings** section exposes `RAMP_UP_TIME`,
+`RAMP_UP_STEPS`, `QUERY_TIMEOUT`, and `LIMIT_RESULTSET`. The resolved preview
+shows the exact non-secret values that will be passed to `run_test.sh`, and can
+export or import a reusable `.env` file. Importing a configuration never imports
+connection secrets; it references the local `CONNECTION_FILE`, just like CLI
+configuration.
+
+UI-created workload presets are stored as ignored
+`test_properties/ui_*.properties` files; metadata presets use ignored
+`metadata_files/ui_*.txt` files. Existing tracked examples remain available on
+a fresh clone. Administrator-owned defaults such as authentication, report
+storage, Prometheus/Grafana links, dashboard generation, and optional S3 upload
+are read from the UI server environment and shown in the **System settings**
+tab. They are read-only by default. An administrator can set
+`BENCHMARK_UI_ALLOW_SETTINGS_WRITE=true` to edit the non-secret defaults in the
+browser; changes persist to `ui/system_settings.json` (or
+`BENCHMARK_UI_SETTINGS_FILE`). Protect an enabled editor with
+`BENCHMARK_UI_TOKEN` and restricted network access. Database URLs, credentials,
+the authentication token, bind address, and AWS credentials remain service
+settings that require a restart and are never exposed by the browser.
+
+### Optional PostgreSQL registry and S3 artifact storage
+
+SQLite remains the default. For a local PostgreSQL registry, the setup script
+installs the Python driver, generates a protected password, starts the supplied
+container, and configures `start_ui.sh` automatically:
+
+```bash
+./setup_ui.sh --with-postgres
+./start_ui.sh
+```
+
+The same option is available during full first-time setup:
+
+```bash
+./setup_jmeter.sh --with-postgres
+```
+
+For production, supply `BENCHMARK_UI_DATABASE_URL` and its password through the
+service environment/secret manager instead of using the local Docker helper.
+
+Migrate existing local run cards idempotently:
+
+```bash
+python3 utilities/migrate_ui_registry.py \
+  --sqlite ui/benchmark_ui.db \
+  --database-url "$BENCHMARK_UI_DATABASE_URL"
+```
+
+Keep raw JMeter artifacts out of PostgreSQL. Enable the existing runner upload
+path with `BENCHMARK_UI_COPY_TO_S3=true` and `S3_REPORT_PATH=s3://...`; the
+registry stores run state while CSV/JSON/dashboard artifacts remain local and
+optionally in S3. Successful uploads create `s3_upload.json` locally and in S3.
+The browser never receives the database password or AWS credentials.
+
+PostgreSQL also maintains normalized `run_facts` and `query_results` tables for
+UI search, comparisons, and trend analysis. `run_facts` contains one compact
+summary per run (workload identity, engine/cluster context, percentiles,
+throughput, status, and verified S3 URI); `query_results` contains JMeter's
+per-label aggregate statistics. Raw JMeter samples and dashboard assets are not
+inserted into PostgreSQL.
+
+New S3 uploads are immutable and date partitioned:
+
+```text
+engine=<engine>/cluster_size=<size>/benchmark=<name>/run_type=<type>/
+run_date=YYYY-MM-DD/run_id=<timestamp>-<stable-run-id>/
+```
+
+The stable run ID is shared by the UI card, PostgreSQL facts, `run_summary.json`,
+and S3 prefix. This makes PostgreSQL the searchable catalog and S3 the durable
+artifact store; Athena is not required for normal operation.
+
+### Optional Prometheus and Grafana observability
+
+Prometheus support is opt-in and does not change the normal CLI/UI execution
+path. When enabled, the runner creates a run-local copy of the selected JMX,
+adds the bundled upstream Prometheus Listener, and exposes live metrics for
+Prometheus to scrape. Source JMX files are never modified.
+
+```bash
+PROMETHEUS_ENABLED=true \
+PROMETHEUS_IP=0.0.0.0 PROMETHEUS_PORT=9270 \
+PROMETHEUS_DELAY=15 \
+PROMETHEUS_URL=http://localhost:9090 \
+GRAFANA_URL='http://localhost:3000/d/jmeter-prom/jmeter-performance?orgId=1' \
+  ./run_test.sh test_configs/my_benchmark.env
+```
+
+`PROMETHEUS_URL` and `GRAFANA_URL` are informational links recorded with the
+run and displayed by the UI. JMeter does not send samples to those URLs; it
+exposes `http://PROMETHEUS_IP:PROMETHEUS_PORT/metrics`, which Prometheus must
+scrape. For the supplied local Docker stack, the target is
+`host.docker.internal:9270`. A production Prometheus server needs network
+access to the load generator, so bind to its private interface (or `0.0.0.0`)
+and restrict the port to Prometheus at the firewall/security-group level.
+
+The listener exports `jmeter_response_time`, `jmeter_success_success_total`,
+`jmeter_success_failure_total`, and the plugin's standard JVM/thread metrics.
+These names work with the live panels in the existing `jmeter-prom` dashboard.
+Its finalized `jmeter_run_*` panels belong to
+the other framework's Pushgateway reporting contract and are not duplicated
+here; use this framework's JMeter dashboard and `run_summary.json` for final
+results.
+
+One process owns one metrics port. Sequential comparison runs can reuse port
+9270. Parallel runs require distinct ports and matching Prometheus scrape
+targets. Prometheus collection is intended for live observability; the raw JTL,
+JMeter dashboard, and generated summary remain the benchmark evidence.
+
+### Run metadata
+
+The UI can annotate a run with cluster size, estimated cores, memory, executor
+count, cores per executor, instance type, engine build, benchmark/data labels,
+run mode, configuration, tags, and comments. These values are descriptive only:
+they are added to `run_summary.json` and `run_report.md` but do not participate
+in JMeter load generation, connection configuration, or SQL execution.
+
+The Compare page can filter reports by engine, cluster size, and engine build.
+This makes it possible to compare the same workload across differently sized
+clusters while keeping the sizing context visible. CLI runs receive the same
+metadata when their corresponding environment variables are set, for example:
+
+```bash
+CLUSTER_SIZE=S-2x2 ESTIMATED_CORES=60 MEMORY_GB=512 \
+ENGINE_BUILD=2026.08.18 BENCHMARK_TYPE=tpcds_25_1tb \
+  ./run_test.sh test_configs/my_benchmark.env
+```
+
+When the UI creates a profile, it writes the same format as
+`create_connection.sh` under the git-ignored `connection_properties/` directory
+with owner-only (`0600`) permissions. Connection secrets are never returned to
+the browser or stored in run metadata. Existing-profile selection is available
+through `CONNECTION_FILE mode`. Inputs are restricted to known test plans and
+files in `connection_properties/`, `data_files/`, and `test_properties/`. Local
+browser uploads and S3 imports are copied into those git-ignored input
+directories before the unchanged runner starts. Result upload to S3 remains
+disabled for UI runs. The UI produces normal reports under
+`reports/ui-<run-id>/`.
+
+The live workload chart is calculated from the actively growing
+`JmeterResultFile.csv`; JMeter does not produce its standard HTML graphs while a
+test is running. After completion, use **Per-query results → Open standard
+JMeter dashboard** for the standard report. Dashboard generation is enabled by
+default in the UI and can be disabled with `GENERATE_DASHBOARD` for lower disk
+usage.
+
+The server binds to localhost by default. On EC2, prefer SSH port forwarding:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 user@your-ec2-host
+```
+
+Then open `http://127.0.0.1:8765` locally. Binding to a public interface has no
+built-in authentication and should only be done behind authenticated HTTPS.
+
+UI diagnostics are written to `logs/ui.log`. Each UI-started benchmark also
+writes its complete runner output to `reports/ui-<run-id>/ui_runner.log`, while
+JMeter errors and final metrics remain in the timestamped child directory's
+`JmeterResultFile.csv`, `run_report.md`, and `run_summary.json`.
+
+### Persistent and production operation
+
+Localhost remains zero-configuration. The UI stores its run registry in
+`ui/benchmark_ui.db` by default, so completed/interrupted run records survive a
+UI restart; JMeter artifacts remain ordinary files under `reports/`.
+
+For a fixed production URL, run the service on localhost behind authenticated
+HTTPS. Remote binding is refused unless `BENCHMARK_UI_TOKEN` is set. The token
+is used as the password for HTTP Basic authentication (the username can be any
+value); TLS must be terminated by the reverse proxy.
+
+Deployment templates are provided under `deploy/`:
+
+```bash
+sudo install -d -o e6benchmark -g e6benchmark /var/lib/e6-benchmark-ui
+sudo install -m 600 deploy/benchmark-ui.env.example /etc/e6-benchmark-ui.env
+# Edit the token and paths/server name in the three deployment templates.
+sudo install deploy/e6-benchmark-ui.service /etc/systemd/system/
+sudo install deploy/nginx-benchmark-ui.conf /etc/nginx/conf.d/e6-benchmark-ui.conf
+sudo systemctl daemon-reload
+sudo systemctl enable --now e6-benchmark-ui
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Operational endpoints:
+
+- `GET /healthz` — process liveness;
+- `GET /readyz` — registry and runner readiness.
+
+Every UI launch performs a query/configuration preflight and writes
+`ui_manifest.json` with the resolved non-secret environment, query/JMX/profile
+hashes, and load-generator host snapshots. Comparisons warn when workload
+signatures differ. These checks improve trustworthiness but do not modify the
+JMeter result files or metric calculations.
+
 ## Test Plans
 
 ### JDBC Test Plans
@@ -199,6 +473,10 @@ export CONCURRENT_QUERY_COUNT=8
 | `S3_REPORT_PATH` | Root path for runner uploads; `S3_BASE_PATH` remains a legacy metadata alias | All plans |
 | `RUN_TYPE` | Optional S3 partition label; inferred from plan and concurrency/rate when omitted | All plans |
 | `MAX_ERROR_PCT` | Exit nonzero when sample error percentage exceeds this value | All plans |
+| `PROMETHEUS_ENABLED` | Expose live JMeter metrics for Prometheus; default `false` | All plans |
+| `PROMETHEUS_IP`, `PROMETHEUS_PORT` | Listener bind address and port; defaults `127.0.0.1:9270` | All plans |
+| `PROMETHEUS_DELAY` | Seconds to retain the endpoint after completion; default `15` | All plans |
+| `PROMETHEUS_URL`, `GRAFANA_URL` | Optional UI/report navigation links | All plans |
 
 ### Load profile CSV
 
@@ -231,7 +509,9 @@ See `CLAUDE.md` for the full reference.
 
 | Script | What it does |
 |--------|-------------|
-| `setup_jmeter.sh` | Install JMeter, plugins, Groovy, drivers |
+| `setup_jmeter.sh` | Install JMeter, plugins, Groovy, drivers, and UI runtime |
+| `setup_ui.sh` | Install only the UI runtime; optionally start local PostgreSQL |
+| `start_ui.sh` / `stop_ui.sh` | Start or stop the optional Benchmark Studio UI |
 | `create_connection.sh` | Create a connection properties file (interactive) |
 | `create_test_config.sh` | Create a full test config file (interactive) |
 | `run_test.sh` | Run a test (config file or env vars) |
@@ -254,6 +534,8 @@ cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 ```
 .
 ├── setup_jmeter.sh                  # Install JMeter + dependencies
+├── setup_ui.sh                      # Install UI runtime + optional PostgreSQL
+├── start_ui.sh / stop_ui.sh         # Start/stop Benchmark Studio
 ├── create_connection.sh             # Create connection properties (interactive)
 ├── create_test_config.sh            # Create test config (interactive)
 ├── run_test.sh                      # Run test (config file or env vars)
@@ -281,16 +563,29 @@ Each test run generates results in the `reports/` directory:
 Each run gets its own directory, `reports/<run_id>/`, containing:
 
 - **`JmeterResultFile.csv`** — raw CSV with per-query timing (timestamp, elapsed ms, label, success)
-- **`AggregateReport.csv`** / **`SummaryReport.csv`** — per-query and summary statistics
+- **`AggregateReport.csv`** / **`SummaryReport.csv`** — listener-named sample
+  exports retained for compatibility; in the current plans these contain raw
+  sample rows rather than pre-aggregated tables
 - **`run_report.md`** — human-readable summary, generated automatically after every run
 - **`run_summary.json`** — the same metrics in machine-readable form
-- **`statistics.json`** and **`dashboard/`** — JMeter's aggregate stats and HTML dashboard
+- **`statistics.json`** and **`dashboard/`** — JMeter's authoritative per-label
+  aggregate statistics and HTML dashboard; the UI displays these fields directly
 
 Set `GENERATE_DASHBOARD=false` to skip the HTML dashboard (~3.5 MB per run).
 
 These can be opened in spreadsheet tools or processed with the scripts in `utilities/`.
 
-`run_summary.json` distinguishes raw JMeter samples from query samples, records ignored framework-control samples, and captures the requested load settings, query/profile checksums, original/generated plan names, Java/JMeter versions, and Git commit. This metadata is intended to make historical runs reproducible.
+`run_summary.json` distinguishes raw JMeter samples from query samples, records
+ignored framework-control samples, and captures the requested load settings,
+query/profile checksums, original/generated plan names, Java/JMeter versions,
+and Git commit. It also records successful-query latency percentiles, complete
+failure classification (`cancelled`, `timed_out`, and `other`), and aggregate
+plus active-one-second-bucket completion rates. The UI organizes these JMeter
+results into outcome, workload delivery/throughput, timing/load, and latency
+sections; failure messages and raw runner inputs remain collapsible. Derived
+fields are labelled as such, and the CSV, `statistics.json`, and generated
+JMeter dashboard remain authoritative. This metadata is intended to make
+historical runs reproducible.
 
 For analysis and comparison tools, see [utilities/README.md](utilities/README.md).
 

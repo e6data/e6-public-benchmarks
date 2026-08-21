@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>e6data Benchmark Studio</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 42 38" aria-hidden="true">
+        <path d="M0 4 7 0h19l11 19-11 19H7l11-19L9 4Z" fill="currentColor" opacity=".55"/>
+        <path d="M13 0h19l10 19-10 19H13l11-19Z" fill="currentColor"/>
+        <path d="m24 8 6 11-6 11h-7l6-11-6-11Z" fill="#fff"/>
+      </svg>
+      <strong>e6data</strong><span class="product-name">Benchmark Studio</span>
+    </div>
+    <div class="connection"><span class="dot"></span> Local runner <code>127.0.0.1</code></div>
+  </header>
+  <nav>
+    <div class="nav-label">PERFORMANCE</div>
+    <button class="tab active" data-tab="launch"><b>＋</b> Launch test</button>
+    <button class="tab" data-tab="live"><b>◉</b> Live runs <span id="liveCount">0</span></button>
+    <button class="tab" data-tab="compare"><b>⇄</b> Compare runs</button>
+    <button class="tab" data-tab="presets"><b>◇</b> Presets</button>
+    <button class="tab" data-tab="settings"><b>⚙</b> System settings</button>
+    <div class="nav-note"><strong>CLI compatible</strong><small>Every UI run uses the existing runner and report format.</small></div>
+  </nav>
+  <main>
+    <section id="launch" class="panel active">
+      <div class="hero">
+        <div><span class="eyebrow">NEW BENCHMARK</span><h2>Shape the load. Watch the engine respond.</h2><p>Configure one engine, or launch the same workload against two engines in parallel.</p></div>
+        <div class="hero-actions"><label class="switch"><input id="parallel" type="checkbox"><span></span> Compare two engines</label><label id="executionModeWrap" class="compact-select hidden">Execution mode<select id="execution_mode"><option value="sequential">Sequential — cleanest comparison</option><option value="parallel">Parallel — live demo</option></select></label></div>
+      </div>
+      <form id="runForm">
+        <div id="engines" class="engine-grid"></div>
+        <div class="card workload">
+          <div class="card-title"><span>02</span><div><h3>Workload</h3><p>Shared by both engines for a fair comparison</p></div></div>
+          <div class="preset-strip"><label>Workload preset<select id="workloadPreset"><option value="">Custom configuration</option></select></label><span>Loads visible fields below; values remain editable.</span><button id="saveWorkloadFromLaunch" class="secondary" type="button">Save as preset</button></div>
+          <div class="fields">
+            <label>TEST_PLAN <small>test pattern</small><select id="plan"></select></label>
+            <label>QUERY_FILE <small>query dataset</small><select id="query_file" required></select><span class="source-actions"><input id="query_upload" type="file" accept=".csv"><button type="button" data-upload="query">Local CSV</button><button type="button" data-s3="query">S3 URI</button></span></label>
+            <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
+            <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
+            <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>
+            <label class="param qpm">QPM <small>queries / minute</small><input id="QPM" type="number" value="60" min="1"></label>
+            <label>HOLD_PERIOD <small id="durationUnit">seconds</small><input id="HOLD_PERIOD" type="number" value="60" min="1"></label>
+          </div>
+          <div id="plannedWorkload" class="planned-workload"><div class="chart-empty">Select a workload to preview its planned shape.</div></div>
+        </div>
+        <details class="card advanced-card">
+          <summary><strong>Advanced run settings</strong><span>Optional run_test.sh inputs</span></summary>
+          <div class="fields details-fields">
+            <label>RAMP_UP_TIME<input id="RAMP_UP_TIME" type="number" value="1" min="0"></label>
+            <label>RAMP_UP_STEPS<input id="RAMP_UP_STEPS" type="number" value="1" min="1"></label>
+            <label>MAX_CONCURRANCY <small>arrival safety cap</small><input id="MAX_CONCURRANCY" type="number" value="100" min="1"></label>
+            <label>MAX_ERROR_PCT<input id="MAX_ERROR_PCT" type="number" value="5" min="0" max="100"></label>
+            <label>QUERY_TIMEOUT<input id="QUERY_TIMEOUT" type="number" value="300" min="1"></label>
+            <label>LIMIT_RESULTSET<input id="LIMIT_RESULTSET" type="number" value="1000" min="1"></label>
+          </div>
+          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> RECYCLE_ON_EOF</label><label><input id="RANDOM_ORDER" type="checkbox"> RANDOM_ORDER</label><label><input id="GENERATE_DASHBOARD" type="checkbox" checked> GENERATE_DASHBOARD</label></div>
+        </details>
+        <details class="card metadata-card">
+          <summary><strong>Run metadata</strong><span>Descriptive only · does not change JMeter execution</span></summary>
+          <div class="preset-strip"><label>Metadata preset<select id="metadataPreset"><option value="">Custom metadata</option></select></label><span>Loads a reusable cluster description.</span><button id="saveMetadataFromLaunch" class="secondary" type="button">Save as preset</button></div>
+          <div class="fields details-fields">
+            <label>CLUSTER_SIZE<input id="CLUSTER_SIZE" placeholder="S-2x2"></label>
+            <label>ESTIMATED_CORES<input id="ESTIMATED_CORES" type="number" min="1" placeholder="60"></label>
+            <label>MEMORY_GB<input id="MEMORY_GB" type="number" min="1" placeholder="512"></label>
+            <label>EXECUTORS<input id="EXECUTORS" type="number" min="1" placeholder="2"></label>
+            <label>CORES_PER_EXECUTOR<input id="CORES_PER_EXECUTOR" type="number" min="1" placeholder="30"></label>
+            <label>INSTANCE_TYPE<input id="INSTANCE_TYPE" placeholder="r6id.8xlarge"></label>
+            <label>SERVERLESS<select id="SERVERLESS"><option value="">Not specified</option><option>Y</option><option>N</option></select></label>
+            <label>ENGINE_BUILD<input id="ENGINE_BUILD" placeholder="release/build version"></label>
+            <label>BENCHMARK_TYPE<input id="BENCHMARK_TYPE" placeholder="tpcds_25_1tb"></label>
+            <label>DATA_SIZE<input id="DATA_SIZE" placeholder="1TB"></label>
+            <label>DATA_TYPE<input id="DATA_TYPE" placeholder="TPCDS"></label>
+            <label>RUN_MODE<select id="RUN_MODE"><option value="">Not specified</option><option>benchmark</option><option>test</option><option>prod</option></select></label>
+            <label>CUSTOMER<input id="CUSTOMER" placeholder="organization or team"></label>
+            <label>CONFIG<input id="CONFIG" placeholder="default"></label>
+            <label>TAGS<input id="TAGS" placeholder="tpcds,1tb,release"></label>
+            <label class="wide">COMMENTS<input id="COMMENTS" placeholder="Purpose or context for this run"></label>
+          </div>
+        </details>
+        <details class="card advanced-card">
+          <summary><strong>Observability</strong><span>Administrator-owned system configuration</span></summary>
+          <p id="observabilityLinks" class="artifact-list"></p>
+          <p class="artifact-list">Prometheus listener, port, Grafana URL and S3 destination are configured under System settings and apply to this runner.</p>
+        </details>
+        <details class="card preview-card">
+          <summary><strong>Resolved configuration preview</strong><span>No passwords</span></summary>
+          <pre id="configPreview"></pre>
+          <div class="config-actions"><button id="exportConfig" type="button" class="secondary">Export .env</button><label class="secondary import-label">Import .env<input id="importConfig" type="file" accept=".env,.txt"></label></div>
+        </details>
+        <div class="actions"><p id="formError" class="error"></p><button class="primary" type="submit">Launch benchmark <span>→</span></button></div>
+      </form>
+    </section>
+
+    <section id="live" class="panel">
+      <div class="section-heading"><div><span class="eyebrow">LIVE TELEMETRY</span><h2>Benchmark runs</h2><p>UI preview reads the JMeter result CSV. Final metrics and the generated JMeter HTML dashboard are authoritative. <span id="liveObservabilityLinks"></span></p></div><div class="live-actions"><label><input id="latestOnly" type="checkbox" checked> Latest launch only</label><button id="refreshRuns" class="secondary">Refresh</button></div></div>
+      <div id="liveRuns" class="run-grid empty">No runs launched in this UI session.</div>
+    </section>
+
+    <section id="compare" class="panel">
+      <div class="section-heading"><div><span class="eyebrow">RUN ANALYSIS</span><h2>Compare completed results</h2><p>Local report storage · <code>reports/**/run_summary.json</code> · no database required</p></div></div>
+      <div class="report-filters card"><label>Baseline engine<select id="filterLeftEngine"><option value="">All engines</option></select></label><label>Candidate engine<select id="filterRightEngine"><option value="">All engines</option></select></label><label>Benchmark<select id="filterBenchmark"><option value="">All benchmarks</option></select></label><label>Run type<select id="filterRunType"><option value="">All run types</option></select></label><label>Query dataset<select id="filterQueries"><option value="">All datasets</option></select></label><label>Test plan<select id="filterTestPlan"><option value="">All plans</option></select></label><label>Cluster size<select id="filterCluster"><option value="">All sizes</option></select></label><label>Engine build<select id="filterBuild"><option value="">All builds</option></select></label><label>Tag contains<input id="filterTag" placeholder="paired, release"></label><label>From date<input id="filterDateFrom" type="date"></label><label>Through date<input id="filterDateTo" type="date"></label><div></div><label class="compare-status-filter"><input id="compatibleOnly" type="checkbox"> Restrict candidates to the same query file and test plan</label><label class="compare-status-filter"><input id="includeInvalidReports" type="checkbox"> Include failed, cancelled, or interrupted runs</label></div>
+      <div class="compare-picker card">
+        <label>Baseline run<select id="leftReport"></select></label><span>versus</span><label>Candidate run<select id="rightReport"></select></label><button id="compareButton" class="primary">Compare</button>
+      </div>
+      <div id="comparison" class="comparison empty">Choose two completed runs.</div>
+    </section>
+
+    <section id="presets" class="panel">
+      <div class="section-heading"><div><span class="eyebrow">REUSABLE CONFIGURATION</span><h2>Presets</h2><p>Tracked presets are read-only; locally-created <code>ui_*</code> presets can be updated or deleted.</p></div></div>
+      <div class="settings-grid">
+        <div class="card"><h3>Workload presets</h3><p>Create a local preset from the current Launch workload fields.</p><label>Preset name<input id="newWorkloadPreset" placeholder="smoke_concurrency_4"></label><button id="saveWorkloadPreset" class="primary" type="button">Save current workload</button><p id="workloadPresetStatus" class="artifact-list"></p></div>
+        <div class="card"><h3>Metadata presets</h3><p>Create a local cluster/benchmark description from the current metadata fields.</p><label>Preset name<input id="newMetadataPreset" placeholder="dbr_small_warehouse"></label><button id="saveMetadataPreset" class="primary" type="button">Save current metadata</button><p id="metadataPresetStatus" class="artifact-list"></p></div>
+      </div>
+      <div id="presetInventory" class="preset-inventory"></div>
+    </section>
+
+    <section id="settings" class="panel">
+      <div class="section-heading"><div><span class="eyebrow">ADMINISTRATION</span><h2>System settings</h2><p>One configuration for this runner deployment. Browser users cannot modify it.</p></div></div>
+      <div class="card system-card"><h3>Administrator-owned system settings</h3><p>Non-secret runtime defaults can be edited when admin-write mode is enabled.</p><div id="systemSettings" class="system-grid"></div><div id="systemSettingsForm" class="fields details-fields hidden"><label>Prometheus enabled<select id="settingPrometheusEnabled"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><label>Prometheus port<input id="settingPrometheusPort" type="number"></label><label>Prometheus URL<input id="settingPrometheusUrl"></label><label>Grafana URL<input id="settingGrafanaUrl"></label><label>S3 upload<select id="settingS3Enabled"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><label>S3 report path<input id="settingS3Path"></label><label>Dashboard default<select id="settingDashboard"><option value="true">Enabled</option><option value="false">Disabled</option></select></label><label>Retention days<input id="settingRetention" type="number"></label><label>Maximum local GB<input id="settingMaxGb" type="number"></label></div><button id="saveSystemSettings" class="primary hidden" type="button">Save system settings</button><p id="systemSettingsStatus" class="artifact-list"></p><p class="artifact-list">Database backend, credentials, authentication token and network binding remain service environment settings requiring restart.</p></div>
+    </section>
+  </main>
+  <footer>Optional UI layer · Existing CLI execution remains unchanged · Credentials stay on this host</footer>
+  <script src="/app.js"></script>
+</body>
+</html>
