@@ -194,8 +194,8 @@ class UiTests(unittest.TestCase):
         self.assertEqual(details["per_query"][0]["sampleCount"], 4)
 
     def test_comparison_calculates_regression_direction_inputs(self):
-        left = {"samples": 100, "successful": 99, "failed": 1, "throughput_per_s": 10, "error_pct": 1, "latency_ms": {"mean": 150, "p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "arrival_window_s": 60, "drain_s": 2, "wall_clock_s": 62, "load_profile": {"expected": 100, "delivered_pct": 100}, "failure_messages": [{"count": 1, "message": "timeout"}], "meta": {"query_sha256": "a"}}
-        right = {"samples": 80, "successful": 60, "failed": 20, "throughput_per_s": 12, "error_pct": 25, "latency_ms": {"mean": 140, "p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "arrival_window_s": 60, "drain_s": 3, "wall_clock_s": 63, "load_profile": {"expected": 100, "delivered_pct": 80}, "meta": {"query_sha256": "b"}}
+        left = {"samples": 100, "successful": 99, "failed": 1, "throughput_per_s": 10, "error_pct": 1, "latency_ms": {"mean": 150, "p50": 100, "p95": 200, "p99": 300}, "peak_in_flight": 5, "arrival_window_s": 60, "drain_s": 2, "wall_clock_s": 62, "load_profile": {"expected": 100, "delivered_pct": 100}, "failure_messages": [{"count": 1, "message": "timeout"}], "meta": {"queries": "queries-a.csv", "test_plan": "run-once.jmx"}}
+        right = {"samples": 80, "successful": 60, "failed": 20, "throughput_per_s": 12, "error_pct": 25, "latency_ms": {"mean": 140, "p50": 90, "p95": 180, "p99": 330}, "peak_in_flight": 6, "arrival_window_s": 60, "drain_s": 3, "wall_clock_s": 63, "load_profile": {"expected": 100, "delivered_pct": 80}, "meta": {"queries": "queries-b.csv", "test_plan": "run-once.jmx"}}
         result = server.comparison(left, right)
         self.assertEqual(result["metrics"]["throughput_per_s"]["change_pct"], 20)
         self.assertEqual(result["metrics"]["throughput_per_s"]["ratio"], 1.2)

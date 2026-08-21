@@ -1153,7 +1153,10 @@ def comparison(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
         delta[name] = {"left": a, "right": b, "change_pct": pct, "ratio": ratio, "higher_is_better": higher_better}
     left_meta, right_meta = left.get("meta", {}), right.get("meta", {})
     compatibility = []
-    for key in ("query_sha256", "test_plan", "profile_sha256", "requested_concurrency", "requested_qps", "requested_qpm", "hold_period"):
+    # Candidate discovery intentionally follows the user-visible workload
+    # identity. Checksums and tuning values remain available in report details,
+    # but do not prevent comparing two engines or two repetitions.
+    for key in ("queries", "test_plan"):
         a, b = left_meta.get(key), right_meta.get(key)
         if a not in {None, ""} and b not in {None, ""} and a != b:
             compatibility.append({"field": key, "left": a, "right": b, "severity": "workload"})
