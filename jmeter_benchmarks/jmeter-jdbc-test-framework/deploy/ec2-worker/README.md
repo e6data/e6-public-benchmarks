@@ -34,6 +34,11 @@ BENCHMARK_EC2_CONTROL_S3_URI=s3://YOUR-PRIVATE-BUCKET/benchmark-control
 BENCHMARK_EC2_IDLE_STOP_MINUTES=20
 ```
 
+For a pre-existing worker whose lifecycle is managed outside Benchmark Studio,
+set `BENCHMARK_EC2_MANAGE_POWER=false`. The UI verifies that it is running but
+will not call `StartInstances` or schedule an idle stop. SSM command permissions
+are still required because SSM is the remote execution channel.
+
 The UI principal needs `ec2:StartInstances`, SSM describe/send/get permissions,
 and access to the control prefix. Do not place credentials in SSM command text.
 The adapter uploads an encrypted private bundle and sends only its S3 URI.

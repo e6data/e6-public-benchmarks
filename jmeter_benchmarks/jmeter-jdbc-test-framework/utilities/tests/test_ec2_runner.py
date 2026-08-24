@@ -63,6 +63,28 @@ class EC2RunnerTests(unittest.TestCase):
         self.assertNotIn("123456789012", message)
         self.assertNotIn("private-bucket", message)
 
+    def test_externally_managed_worker_is_not_started_or_stopped(self):
+        calls = []
+        def command(args, **kwargs):
+            calls.append(args)
+            if "describe-instances" in args:
+                return subprocess.CompletedProcess(args, 0, "running\n", "")
+            if "describe-instance-information" in args:
+                return subprocess.CompletedProcess(args, 0, "Online\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+        config = EC2Config(
+            "i-123", "us-east-1", "s3://private/control", "/worker",
+            poll_seconds=2, manage_power=False,
+        )
+        runner = EC2Runner(config, command)
+        runner.ensure_worker_ready(lambda _: None)
+        messages = []
+        runner.schedule_stop(messages.append)
+        flattened = json.dumps(calls)
+        self.assertNotIn("start-instances", flattened)
+        self.assertNotIn("stop-instances", flattened)
+        self.assertIn("automatic stop is disabled", messages[0])
+
 
 if __name__ == "__main__":
     unittest.main()

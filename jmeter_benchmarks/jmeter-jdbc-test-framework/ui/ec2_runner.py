@@ -33,6 +33,7 @@ class EC2Config:
     poll_seconds: int = 10
     idle_stop_minutes: int = 20
     command_timeout: int = 172800
+    manage_power: bool = True
 
     @classmethod
     def from_env(cls) -> "EC2Config":
@@ -53,6 +54,7 @@ class EC2Config:
             poll_seconds=max(2, int(os.environ.get("BENCHMARK_EC2_POLL_SECONDS", "10"))),
             idle_stop_minutes=max(1, int(os.environ.get("BENCHMARK_EC2_IDLE_STOP_MINUTES", "20"))),
             command_timeout=max(3600, int(os.environ.get("BENCHMARK_EC2_COMMAND_TIMEOUT", "172800"))),
+            manage_power=os.environ.get("BENCHMARK_EC2_MANAGE_POWER", "true").lower() == "true",
         )
 
 
@@ -112,8 +114,18 @@ class EC2Runner:
 
     def ensure_worker_ready(self, status: Callable[[str], None]) -> None:
         status("worker_starting")
-        self._aws("ec2", "start-instances", "--instance-ids", self.config.instance_id)
-        self._aws("ec2", "wait", "instance-running", "--instance-ids", self.config.instance_id)
+        if self.config.manage_power:
+            self._aws("ec2", "start-instances", "--instance-ids", self.config.instance_id)
+            self._aws("ec2", "wait", "instance-running", "--instance-ids", self.config.instance_id)
+        else:
+            result = self._aws(
+                "ec2", "describe-instances", "--instance-ids", self.config.instance_id,
+                "--query", "Reservations[0].Instances[0].State.Name", "--output", "text",
+            )
+            if result.stdout.strip() != "running":
+                raise EC2RunnerError(
+                    "The externally managed benchmark worker is not running; start it before launching a test"
+                )
         deadline = time.time() + self.config.startup_timeout
         while time.time() < deadline:
             result = self._aws(
@@ -175,6 +187,9 @@ class EC2Runner:
         self._run(["aws", "s3", "sync", f"{prefix}/results/", str(report_root), "--region", self.config.region], check=check)
 
     def schedule_stop(self, log: Callable[[str], None]) -> None:
+        if not self.config.manage_power:
+            log("Worker power is externally managed; automatic stop is disabled")
+            return
         result = self._aws(
             "ssm", "send-command", "--instance-ids", self.config.instance_id,
             "--document-name", "AWS-RunShellScript", "--parameters",
