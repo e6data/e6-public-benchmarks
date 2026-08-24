@@ -209,12 +209,14 @@ install_git() {
 find_ui_python() {
     for candidate in python3 python3.13 python3.12 python3.11 python3.10; do
         if command_exists "$candidate" && \
-            "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+            "$candidate" -c 'import ssl, sys, venv; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
             command -v "$candidate"
             return 0
         fi
     done
-    if [ -x "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11" ]; then
+    if [ -x "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11" ] && \
+        "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11" \
+            -c 'import ssl, sys, venv; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
         echo "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11"
         return 0
     fi
@@ -233,7 +235,7 @@ install_ui_python() {
                 # user's ~/.local without replacing /usr/bin/python3.
                 sudo yum groupinstall -y "Development Tools"
                 sudo yum install -y openssl11-devel bzip2-devel libffi-devel \
-                    zlib-devel xz-devel readline-devel sqlite-devel tar gzip
+                    zlib-devel xz-devel readline-devel sqlite-devel tar gzip pkgconfig
                 PYTHON_SOURCE_VERSION="3.11.16"
                 PYTHON_SOURCE_SHA256="6c0bd76ab0ec7d94ed400b1497f01ac6c7751c8822615ee0855a3eb2d893ea76"
                 PYTHON_PREFIX="$HOME/.local/e6-benchmark-python-3.11"
@@ -246,12 +248,19 @@ install_ui_python() {
                 fi
                 echo "${PYTHON_SOURCE_SHA256}  ${PYTHON_ARCHIVE}" | sha256sum -c -
                 tar -xzf "$PYTHON_ARCHIVE" -C "$PYTHON_BUILD_DIR"
+                OPENSSL_CFLAGS="$(pkg-config --cflags openssl11 2>/dev/null || true)"
+                OPENSSL_LDFLAGS="$(pkg-config --libs-only-L openssl11 2>/dev/null || true)"
                 (
                     cd "$PYTHON_BUILD_DIR/Python-${PYTHON_SOURCE_VERSION}"
-                    ./configure --prefix="$PYTHON_PREFIX" --with-ensurepip=install
+                    CPPFLAGS="$OPENSSL_CFLAGS" LDFLAGS="$OPENSSL_LDFLAGS" \
+                        ./configure --prefix="$PYTHON_PREFIX" \
+                        --with-openssl=/usr --with-openssl-rpath=auto \
+                        --with-ensurepip=install
                     make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
                     make install
                 )
+                "$PYTHON_PREFIX/bin/python3.11" -c \
+                    'import ssl, venv; print("Python SSL:", ssl.OPENSSL_VERSION)'
                 rm -rf "$PYTHON_BUILD_DIR"
             fi
             ;;

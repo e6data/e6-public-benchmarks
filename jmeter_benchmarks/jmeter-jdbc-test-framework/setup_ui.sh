@@ -30,7 +30,7 @@ if [ -n "$PYTHON_BIN" ]; then
 else
     for candidate in python3 python3.13 python3.12 python3.11 python3.10; do
         if command -v "$candidate" >/dev/null 2>&1 && \
-            "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+            "$candidate" -c 'import ssl, sys, venv; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
             PYTHON_BIN="$candidate"
             break
         fi
@@ -49,12 +49,17 @@ if [ -z "$PYTHON_BIN" ]; then
 fi
 
 PYTHON_VERSION=$("$PYTHON_BIN" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
-    echo "ERROR: Python 3.10+ is required; selected ${PYTHON_BIN} is ${PYTHON_VERSION}."
+if ! "$PYTHON_BIN" -c 'import ssl, sys, venv; raise SystemExit(sys.version_info < (3, 10))'; then
+    echo "ERROR: Selected Python must be 3.10+ with SSL and venv support: ${PYTHON_BIN} (${PYTHON_VERSION})."
     exit 1
 fi
 
 echo "Setting up Benchmark Studio with ${PYTHON_BIN} (${PYTHON_VERSION})..."
+if [ -x "$ROOT/.venv/bin/python" ] && \
+    ! "$ROOT/.venv/bin/python" -c 'import ssl, sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+    echo "Replacing incomplete or outdated Benchmark Studio virtual environment..."
+    rm -rf "$ROOT/.venv"
+fi
 if [ ! -x "$ROOT/.venv/bin/python" ]; then
     "$PYTHON_BIN" -m venv "$ROOT/.venv"
 fi
