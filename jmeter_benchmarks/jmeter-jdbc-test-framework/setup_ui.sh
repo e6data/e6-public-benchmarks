@@ -21,21 +21,42 @@ for arg in "$@"; do
     esac
 done
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "ERROR: Python 3 is required for Benchmark Studio."
-    echo "Install Python 3.10+ with your OS package manager, then rerun this script."
+PYTHON_BIN="${BENCHMARK_UI_PYTHON:-}"
+if [ -n "$PYTHON_BIN" ]; then
+    if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+        echo "ERROR: BENCHMARK_UI_PYTHON is not executable: $PYTHON_BIN"
+        exit 1
+    fi
+else
+    for candidate in python3 python3.13 python3.12 python3.11 python3.10; do
+        if command -v "$candidate" >/dev/null 2>&1 && \
+            "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+            PYTHON_BIN="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "$PYTHON_BIN" ]; then
+    SYSTEM_PYTHON_VERSION="not installed"
+    if command -v python3 >/dev/null 2>&1; then
+        SYSTEM_PYTHON_VERSION=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+    fi
+    echo "ERROR: Python 3.10+ is required for Benchmark Studio; default python3 is ${SYSTEM_PYTHON_VERSION}."
+    echo "Install Python 3.10+ alongside the system Python, then rerun this script."
+    echo "You may select it explicitly with BENCHMARK_UI_PYTHON=/path/to/python3.11 ./setup_ui.sh"
     exit 1
 fi
 
-PYTHON_VERSION=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-if ! python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
-    echo "ERROR: Python 3.10+ is required; found ${PYTHON_VERSION}."
+PYTHON_VERSION=$("$PYTHON_BIN" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+    echo "ERROR: Python 3.10+ is required; selected ${PYTHON_BIN} is ${PYTHON_VERSION}."
     exit 1
 fi
 
-echo "Setting up Benchmark Studio with Python ${PYTHON_VERSION}..."
+echo "Setting up Benchmark Studio with ${PYTHON_BIN} (${PYTHON_VERSION})..."
 if [ ! -x "$ROOT/.venv/bin/python" ]; then
-    python3 -m venv "$ROOT/.venv"
+    "$PYTHON_BIN" -m venv "$ROOT/.venv"
 fi
 "$ROOT/.venv/bin/python" -m pip install --upgrade pip
 "$ROOT/.venv/bin/python" -m pip install -r "$ROOT/requirements-ui.txt"
@@ -67,7 +88,7 @@ if [ "$WITH_POSTGRES" = true ]; then
             if command -v openssl >/dev/null 2>&1; then
                 BENCHMARK_POSTGRES_PASSWORD=$(openssl rand -hex 24)
             else
-                BENCHMARK_POSTGRES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(24))')
+                BENCHMARK_POSTGRES_PASSWORD=$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_hex(24))')
             fi
         fi
         case "$BENCHMARK_POSTGRES_PASSWORD" in

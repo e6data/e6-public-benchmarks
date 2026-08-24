@@ -69,6 +69,10 @@ Docker. To provision the supplied local PostgreSQL registry as part of setup:
 
 Both setup modes are safe to rerun. PostgreSQL credentials are generated into
 the ignored, permission-protected `.benchmark-ui.env`; they are not committed.
+If the operating system's `python3` is older than 3.10, setup automatically
+checks for a side-by-side `python3.13`, `python3.12`, `python3.11`, or
+`python3.10`. Set `BENCHMARK_UI_PYTHON=/path/to/python3.11` to choose one
+explicitly; the system Python is never replaced.
 
 If any dependency fails to install automatically, install it manually: Java 17+, jq 1.5+, git 2.x+.
 
