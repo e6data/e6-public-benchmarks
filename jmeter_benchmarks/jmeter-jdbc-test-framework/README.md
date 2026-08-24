@@ -460,10 +460,11 @@ BENCHMARK_EC2_MAX_PARALLEL=1
 BENCHMARK_EC2_WORKER_ROOT=/home/ec2-user/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
 ```
 
-On the EC2 host, clone the repository and run
-`./setup_jmeter.sh`, followed by `sudo ./deploy/ec2-worker/install_worker.sh`,
-from the framework directory. Run setup as the normal EC2 user. The worker
-installer detects the checkout location; it does not require an `/opt` path.
+On the EC2 host, clone the repository and run `./setup_jmeter.sh --without-ui`,
+followed by `sudo ./deploy/ec2-worker/install_worker.sh`, from the framework
+directory. Run setup as the normal EC2 user. The worker does not host Benchmark
+Studio, so Amazon Linux 2's system Python is sufficient. The worker installer
+detects the checkout location; it does not require an `/opt` path.
 
 Job bundles contain the selected connection profile temporarily. Block public
 S3 access, restrict both IAM roles to the control prefix, enable bucket

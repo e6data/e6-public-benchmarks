@@ -19,12 +19,14 @@ location-independent installer:
 ```bash
 git clone https://github.com/e6data/e6-public-benchmarks.git
 cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
-./setup_jmeter.sh
+./setup_jmeter.sh --without-ui
 sudo ./deploy/ec2-worker/install_worker.sh
 ```
 
-Run `setup_jmeter.sh` as the normal EC2 user so the checkout remains writable
-by that user. The privileged worker installer detects the checkout directory,
+Run `setup_jmeter.sh --without-ui` as the normal EC2 user so the checkout
+remains writable by that user. A remote worker does not host Benchmark Studio,
+so it does not require Python 3.10+ or the UI virtual environment. The
+privileged worker installer detects the checkout directory,
 creates the protected worker state directory, and installs the optional
 idle-stop systemd unit. It is safe to use the checkout at
 `/home/ec2-user/e6-public-benchmarks`; `/opt` is not required.

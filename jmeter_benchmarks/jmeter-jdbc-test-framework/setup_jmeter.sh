@@ -11,7 +11,7 @@
 # 6. Install the optional Benchmark Studio Python environment
 # 7. Optionally start its local PostgreSQL registry
 #
-# Usage: ./setup_jmeter.sh [--with-postgres]
+# Usage: ./setup_jmeter.sh [--with-postgres | --without-ui]
 #
 
 set -e  # Exit on error
@@ -22,18 +22,26 @@ JMETER_ARCHIVE="apache-jmeter-${JMETER_VERSION}.tgz"
 JMETER_URL="https://archive.apache.org/dist/jmeter/binaries/${JMETER_ARCHIVE}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WITH_POSTGRES=false
+INSTALL_UI=true
 for arg in "$@"; do
     case "$arg" in
         --with-postgres) WITH_POSTGRES=true ;;
+        --without-ui) INSTALL_UI=false ;;
         -h|--help)
-            echo "Usage: ./setup_jmeter.sh [--with-postgres]"
+            echo "Usage: ./setup_jmeter.sh [--with-postgres | --without-ui]"
             echo "  Installs JMeter, plugins, JDBC drivers, and Benchmark Studio."
             echo "  --with-postgres also starts the supplied local PostgreSQL container."
+            echo "  --without-ui installs only the CLI/remote-worker runtime."
             exit 0
             ;;
         *) echo "Unknown option: $arg"; exit 2 ;;
     esac
 done
+
+if [ "$WITH_POSTGRES" = true ] && [ "$INSTALL_UI" = false ]; then
+    echo "ERROR: --with-postgres and --without-ui cannot be used together."
+    exit 2
+fi
 
 echo "=================================================="
 echo "JMeter JDBC Test Framework Setup"
@@ -515,11 +523,15 @@ echo "Step 8: Creating reports directory..."
 mkdir -p "${SCRIPT_DIR}/reports"
 
 echo ""
-echo "Step 9: Installing Benchmark Studio runtime..."
-if [ "$WITH_POSTGRES" = true ]; then
-    "${SCRIPT_DIR}/setup_ui.sh" --with-postgres
+if [ "$INSTALL_UI" = true ]; then
+    echo "Step 9: Installing Benchmark Studio runtime..."
+    if [ "$WITH_POSTGRES" = true ]; then
+        "${SCRIPT_DIR}/setup_ui.sh" --with-postgres
+    else
+        "${SCRIPT_DIR}/setup_ui.sh"
+    fi
 else
-    "${SCRIPT_DIR}/setup_ui.sh"
+    echo "Step 9: Skipping Benchmark Studio runtime (--without-ui)."
 fi
 
 echo ""
@@ -544,9 +556,13 @@ fi
 echo "Next steps:"
 echo "  1. Copy your JDBC drivers to jdbc_drivers/ (if not already there)"
 echo "  2. Create connection: ./create_connection.sh (or create it in the UI)"
-echo "  3. Start the UI: ./start_ui.sh"
-echo "  4. Open http://127.0.0.1:8765 and launch a test"
-echo "  5. CLI alternative: ./run_test.sh test_configs/<your_config>.env"
+if [ "$INSTALL_UI" = true ]; then
+    echo "  3. Start the UI: ./start_ui.sh"
+    echo "  4. Open http://127.0.0.1:8765 and launch a test"
+    echo "  5. CLI alternative: ./run_test.sh test_configs/<your_config>.env"
+else
+    echo "  3. Run from CLI: ./run_test.sh test_configs/<your_config>.env"
+fi
 echo ""
 echo "To verify installation:"
 echo "  ./${JMETER_DIR}/bin/jmeter --version"

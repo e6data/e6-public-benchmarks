@@ -90,7 +90,10 @@ backwards-compatible alias.
 
 - Start with a small workload and monitor the target engine before increasing concurrency or arrival rate.
 - Keep access tokens, JDBC credentials, AWS credentials, query data, and generated reports out of version control. The repository ignores the common local files, but verify `git status` before committing.
-- The POV Compose file ships demonstration credentials in `pov/.env`; replace them before exposing it beyond localhost.
+- The separate POV Compose wrapper tracks only `pov/.env.example`, with
+  `CHANGE_ME` placeholders. Copy it to the ignored `pov/.env` and set strong
+  local values before starting that tool; do not expose its services publicly
+  without appropriate authentication and network controls.
 - Benchmark like-for-like datasets and cluster sizes, and distinguish client-observed latency from engine execution time when comparing results.
 
 ## License
