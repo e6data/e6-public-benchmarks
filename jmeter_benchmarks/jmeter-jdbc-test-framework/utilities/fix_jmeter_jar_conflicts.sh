@@ -11,17 +11,17 @@
 #      Symptom: every query fails immediately with
 #      "UNIMPLEMENTED: No cluster-name header or unknown cluster".
 #
-#   2. Zero-byte / corrupt jars, which break javac with "zip file is empty"
+#   2. Signed fat jars that embed Netty. Mixing their signed io.netty classes
+#      with unsigned Netty classes from another JDBC/JMeter jar makes Java fail
+#      with "signer information does not match" before the first sample.
+#
+#   3. Zero-byte / corrupt jars, which break javac with "zip file is empty"
 #      (this is what stops utilities/test_jdbc_connection.sh from compiling).
 #
 # Nothing is deleted: files move to lib_quarantine/ so they can be restored.
 #
-# NOTE: this deliberately does NOT touch JMeter's bundled Netty jars
-# (lib/netty-*.jar). The e6 driver bundles gRPC plus its own Netty, but it
-# is NOT self-sufficient - removing JMeter's Netty makes gRPC fail with
-# "NoClassDefFoundError: Could not initialize class
-# io.grpc.netty.NettyChannelBuilder" and zero samples are collected.
-# Verified by testing: removing them breaks a working install.
+# Ordinary unsigned Netty jars are retained. Only a jar that both embeds Netty
+# classes and contains JAR signature metadata is quarantined.
 
 set -e
 
@@ -86,8 +86,21 @@ else
 fi
 echo ""
 
-# --- 2. Corrupt / empty jars ----------------------------------------------
-echo "2. Zero-byte or corrupt jars"
+# --- 2. Signed embedded Netty packages ------------------------------------
+echo "2. Signed fat jars with embedded Netty"
+FOUND_SIGNED_NETTY=false
+while IFS= read -r j; do
+    if unzip -l "$j" 2>/dev/null | grep -q 'io/netty/' && \
+        unzip -l "$j" 2>/dev/null | grep -Eq 'META-INF/[^/]+\.(SF|RSA|DSA)$'; then
+        FOUND_SIGNED_NETTY=true
+        quarantine "$j" "signed embedded Netty conflicts with the shared JMeter classpath"
+    fi
+done < <(find "$JMETER_DIR/lib" "$JMETER_DIR/lib/ext" -maxdepth 1 -name "*.jar" -type f 2>/dev/null)
+$FOUND_SIGNED_NETTY || echo -e "  ${GREEN}ok${NC} - none"
+echo ""
+
+# --- 3. Corrupt / empty jars ----------------------------------------------
+echo "3. Zero-byte or corrupt jars"
 FOUND_BAD=false
 while IFS= read -r j; do
     if [ ! -s "$j" ]; then
@@ -101,8 +114,8 @@ done < <(find "$JMETER_DIR" -name "*.jar" -type f 2>/dev/null)
 $FOUND_BAD || echo -e "  ${GREEN}ok${NC} - none"
 echo ""
 
-# --- 3. Embedded dependency diagnostics ----------------------------------
-echo "3. Embedded logging / Netty dependencies"
+# --- 4. Embedded dependency diagnostics ----------------------------------
+echo "4. Embedded logging / Netty dependencies"
 for j in "${E6_JARS[@]}"; do
     [ -f "$j" ] || continue
     if unzip -l "$j" 2>/dev/null | grep -q 'org/slf4j/impl/StaticLoggerBinder.class'; then

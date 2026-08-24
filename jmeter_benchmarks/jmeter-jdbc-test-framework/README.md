@@ -674,6 +674,10 @@ For a bounded live JDBC validation (five plans, real query load):
 
 - **Security**: Do not commit credentials to version control. Connection properties and data files are in `.gitignore`.
 - **JDBC drivers**: Place JARs in `jdbc_drivers/`. The setup script copies them to JMeter's lib directory.
+- JMeter uses one global classpath. Setup quarantines signed fat JARs that embed
+  Netty when they would conflict with the e6/Databricks shared classpath. The
+  original JAR remains in `jdbc_drivers/`; use an isolated JMeter installation
+  when benchmarking a driver that requires the quarantined signed bundle.
 - **Start small**: Begin with 1-2 threads in a non-production environment. Monitor target database resources before scaling up.
 - **HOLD_PERIOD**: The test always runs for the full duration, even if queries finish early. With `RECYCLE_ON_EOF=true`, queries repeat until time expires.
 
