@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import stat
 import tempfile
 import time
@@ -449,9 +450,17 @@ class UiTests(unittest.TestCase):
                 server.init_registry()
                 run = server.Run("persisted", "test", {}, Path(temp) / "reports", status="running")
                 server.persist_run(run)
+                run.status = "completed"
+                server.persist_run(run)
+                with sqlite3.connect(server.DB_PATH) as db:
+                    count, payload = db.execute(
+                        "SELECT COUNT(*), payload FROM runs WHERE run_id=?", (run.run_id,)
+                    ).fetchone()
+                self.assertEqual(count, 1)
+                self.assertEqual(json.loads(payload)["status"], "completed")
                 server.RUNS.clear()
                 server.restore_runs()
-                self.assertEqual(server.RUNS["persisted"].status, "interrupted")
+                self.assertEqual(server.RUNS["persisted"].status, "completed")
         finally:
             server.DB_PATH, server.DB_READY = old_path, old_ready
             server.RUNS.clear()

@@ -182,11 +182,21 @@ def persist_run(run: "Run") -> None:
             persist_run_facts(db, run)
     else:
         with sqlite3.connect(DB_PATH) as db:
-            db.execute(
-                "INSERT INTO runs(run_id,payload,updated_at) VALUES(?,?,?) "
-                "ON CONFLICT(run_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
-                (run.run_id, json.dumps(payload), time.time()),
+            # Amazon Linux 2 links Python against SQLite 3.7, which predates
+            # SQLite's PostgreSQL-style ON CONFLICT ... DO UPDATE syntax.
+            # UPDATE followed by conditional INSERT is equivalent here and is
+            # supported by every SQLite version used by this project.
+            serialized = json.dumps(payload)
+            updated_at = time.time()
+            cursor = db.execute(
+                "UPDATE runs SET payload=?,updated_at=? WHERE run_id=?",
+                (serialized, updated_at, run.run_id),
             )
+            if cursor.rowcount == 0:
+                db.execute(
+                    "INSERT INTO runs(run_id,payload,updated_at) VALUES(?,?,?)",
+                    (run.run_id, serialized, updated_at),
+                )
 
 
 def _numeric(value: Any, integer: bool = False) -> int | float | None:
