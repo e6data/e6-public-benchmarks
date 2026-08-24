@@ -13,16 +13,25 @@ unchanged `run_test.sh`; local UI and CLI execution remain the default.
 - Bucket encryption and public access blocking. Job bundles contain a temporary
   connection properties file and must be treated as secrets.
 
-Install on the worker:
+Use a clean checkout on the worker. From the framework directory, run the
+location-independent installer:
 
 ```bash
-sudo install -d -m 700 /var/lib/e6-benchmark-worker/jobs
-sudo install -m 755 deploy/ec2-worker/run_job.sh deploy/ec2-worker/idle_stop.sh \
-  /opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/deploy/ec2-worker/
-sudo install -m 644 deploy/ec2-worker/benchmark-worker-idle-stop@.service /etc/systemd/system/
-sudo systemctl daemon-reload
+git clone https://github.com/e6data/e6-public-benchmarks.git
+cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
 ./setup_jmeter.sh
+sudo ./deploy/ec2-worker/install_worker.sh
 ```
+
+Run `setup_jmeter.sh` as the normal EC2 user so the checkout remains writable
+by that user. The privileged worker installer detects the checkout directory,
+creates the protected worker state directory, and installs the optional
+idle-stop systemd unit. It is safe to use the checkout at
+`/home/ec2-user/e6-public-benchmarks`; `/opt` is not required.
+
+For CLI-only execution on the EC2 host, the worker installer is not needed.
+Follow the main README: run `./setup_jmeter.sh`, create a connection profile,
+and invoke `./run_test.sh`.
 
 Configure the UI service:
 
@@ -32,6 +41,7 @@ BENCHMARK_EC2_INSTANCE_ID=i-xxxxxxxxxxxxxxxxx
 BENCHMARK_EC2_REGION=us-east-1
 BENCHMARK_EC2_CONTROL_S3_URI=s3://YOUR-PRIVATE-BUCKET/benchmark-control
 BENCHMARK_EC2_IDLE_STOP_MINUTES=20
+BENCHMARK_EC2_WORKER_ROOT=/home/ec2-user/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
 ```
 
 For a pre-existing worker whose lifecycle is managed outside Benchmark Studio,

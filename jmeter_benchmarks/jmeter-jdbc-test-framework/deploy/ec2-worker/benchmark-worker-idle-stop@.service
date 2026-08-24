@@ -5,5 +5,4 @@ After=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=-/etc/e6-benchmark-worker.env
-ExecStart=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/deploy/ec2-worker/idle_stop.sh %i
-
+ExecStart=/usr/local/libexec/e6-benchmark-worker-idle-stop %i

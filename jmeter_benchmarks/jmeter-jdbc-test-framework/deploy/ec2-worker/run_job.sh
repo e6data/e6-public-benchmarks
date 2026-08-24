@@ -9,7 +9,9 @@ fi
 INPUT_URI="$1"
 JOB_PREFIX="$2"
 RUN_ID="$3"
-FRAMEWORK_ROOT="${BENCHMARK_WORKER_ROOT:-/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework}"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_FRAMEWORK_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
+FRAMEWORK_ROOT="${BENCHMARK_WORKER_ROOT:-$DEFAULT_FRAMEWORK_ROOT}"
 JOB_DIR="/var/lib/e6-benchmark-worker/jobs/$RUN_ID"
 
 install -d -m 700 "$JOB_DIR"
