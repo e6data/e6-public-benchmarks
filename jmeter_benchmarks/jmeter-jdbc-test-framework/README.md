@@ -545,6 +545,10 @@ export CONCURRENT_QUERY_COUNT=8
 
 The two load-profile plans control different things, so they take different CSV formats.
 The format is picked from the plan automatically — set `LOAD_PROFILE` to any CSV.
+Both `QUERY_FILE` and `LOAD_PROFILE` may be local paths or complete `s3://`
+URIs. CLI runs download a fresh, private temporary copy for every invocation,
+validate it, record the source URI and SHA-256 in run metadata, and remove the
+temporary copy on exit.
 
 **Arrival rate** — `Test-Plan-Fire-QPS-with-load-profile.jmx`, default
 `test_properties/load_profile.csv`. Controls how fast queries are *submitted*:

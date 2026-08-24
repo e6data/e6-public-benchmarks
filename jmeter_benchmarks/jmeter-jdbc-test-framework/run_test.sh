@@ -77,6 +77,46 @@ NC='\033[0m'
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
+S3_INPUT_DIR=""
+cleanup_s3_inputs() {
+    if [ -n "$S3_INPUT_DIR" ] && [ -d "$S3_INPUT_DIR" ]; then
+        rm -rf -- "$S3_INPUT_DIR"
+    fi
+}
+trap cleanup_s3_inputs EXIT
+
+materialize_s3_input() {
+    local variable="$1" kind="$2" uri="${!1:-}" filename destination
+    case "$uri" in
+        s3://*) ;;
+        *) return 0 ;;
+    esac
+    if ! command -v aws >/dev/null 2>&1; then
+        echo -e "${RED}Error: AWS CLI is required for ${variable}=${uri}${NC}"
+        exit 1
+    fi
+    if [ -z "$S3_INPUT_DIR" ]; then
+        umask 077
+        S3_INPUT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/e6-jmeter-s3-inputs.XXXXXX")
+    fi
+    filename="${uri%%\?*}"
+    filename="$(basename "$filename")"
+    filename="$(printf '%s' "$filename" | tr -cs 'A-Za-z0-9._-' '_')"
+    [ -n "$filename" ] || filename="input.csv"
+    destination="$S3_INPUT_DIR/${kind}-${filename}"
+    echo "Downloading ${variable} from ${uri}"
+    if ! aws s3 cp "$uri" "$destination" --only-show-errors; then
+        echo -e "${RED}Error: failed to download ${variable} from ${uri}${NC}"
+        exit 1
+    fi
+    if [ ! -s "$destination" ]; then
+        echo -e "${RED}Error: downloaded ${variable} is empty: ${uri}${NC}"
+        exit 1
+    fi
+    printf -v "${variable}_SOURCE" '%s' "$uri"
+    printf -v "$variable" '%s' "$destination"
+}
+
 # ============================================================================
 # Source suite file if provided (env vars override suite file values)
 # ============================================================================
@@ -189,6 +229,10 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     exit 1
 fi
 
+# JMeter requires filesystem paths. Resolve a fresh copy for every CLI run so
+# an updated S3 object is never hidden behind a stale local cache.
+materialize_s3_input QUERY_FILE query
+
 # Validate files exist
 for var in CONNECTION_FILE TEST_PLAN QUERY_FILE; do
     val="${!var}"
@@ -244,6 +288,8 @@ PROMETHEUS_ENABLED="${PROMETHEUS_ENABLED:-false}"
 PROMETHEUS_IP="${PROMETHEUS_IP:-127.0.0.1}"
 PROMETHEUS_PORT="${PROMETHEUS_PORT:-9270}"
 PROMETHEUS_DELAY="${PROMETHEUS_DELAY:-15}"
+
+materialize_s3_input LOAD_PROFILE profile
 
 if [ "$PROMETHEUS_ENABLED" != "true" ] && [ "$PROMETHEUS_ENABLED" != "false" ]; then
     echo -e "${RED}Error: PROMETHEUS_ENABLED must be true or false.${NC}"
@@ -370,6 +416,7 @@ echo "    Plan:       $(basename "$TEST_PLAN")"
 echo "    Type:       ${TEST_TYPE}"
 echo "    Run type:   ${RUN_TYPE}"
 echo "    Queries:    $(basename "$QUERY_FILE") (${QUERY_COUNT} queries)"
+[ -n "${QUERY_FILE_SOURCE:-}" ] && echo "    Query source: ${QUERY_FILE_SOURCE}"
 [ -n "${METADATA_FILE:-}" ] && echo "    Metadata:   $(basename "$METADATA_FILE")"
 echo ""
 echo -e "  ${BOLD}Parameters${NC}"
@@ -396,6 +443,7 @@ case "$TEST_TYPE" in
         ;;
     *"Load Profile"*)
         echo "    Load Profile:    ${LOAD_PROFILE}"
+        [ -n "${LOAD_PROFILE_SOURCE:-}" ] && echo "    Profile source:  ${LOAD_PROFILE_SOURCE}"
         echo "    Hold Period:     ${HOLD_PERIOD}s"
         ;;
     *)
@@ -585,6 +633,7 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
         [ -n "$_meta_value" ] && CAPTURE_ARGS+=(--meta "${_meta_var}=${_meta_value}")
     done
     CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    [ -n "${QUERY_FILE_SOURCE:-}" ] && CAPTURE_ARGS+=(--meta "query_source=${QUERY_FILE_SOURCE}")
     [ -n "${GENERATED_PLAN:-}" ] && CAPTURE_ARGS+=(--meta "generated_plan=$(basename "$GENERATED_PLAN")")
     QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field sha256)
     CAPTURE_ARGS+=(--meta "query_sha256=${QUERY_SHA}" --meta "requested_concurrency=${CONCURRENT_QUERY_COUNT}")
@@ -601,6 +650,7 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     if [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] \
        && grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
         CAPTURE_ARGS+=(--meta "profile=$(basename "$LOAD_PROFILE")" --meta "profile_sha256=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$LOAD_PROFILE" --field sha256)")
+        [ -n "${LOAD_PROFILE_SOURCE:-}" ] && CAPTURE_ARGS+=(--meta "profile_source=${LOAD_PROFILE_SOURCE}")
     fi
     # Exit 2 from the report means the run itself failed (no samples, or an error
     # rate above MAX_ERROR_PCT). Propagate it: a run where the queries did not

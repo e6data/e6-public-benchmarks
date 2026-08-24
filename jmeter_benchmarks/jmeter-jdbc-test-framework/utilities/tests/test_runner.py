@@ -94,6 +94,28 @@ class RunnerIntegrationTests(unittest.TestCase):
         self.assertIn("QUERY_FILE preflight validation failed", completed.stdout)
         self.assertFalse(self.reports.exists())
 
+    def test_s3_query_input_is_downloaded_fresh_and_records_source(self):
+        fake_bin = Path(self.temp.name) / "bin"
+        fake_bin.mkdir()
+        aws = fake_bin / "aws"
+        aws.write_text(
+            '#!/bin/bash\n'
+            'test "$1" = s3 && test "$2" = cp || exit 9\n'
+            'cp "$FAKE_S3_OBJECT" "$4"\n'
+        )
+        aws.chmod(aws.stat().st_mode | stat.S_IXUSR)
+        completed = self.run_runner(
+            QUERY_FILE="s3://example-bucket/path/remote-queries.csv",
+            FAKE_S3_OBJECT=str(self.queries),
+            PATH=f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("Downloading QUERY_FILE from s3://example-bucket/path/remote-queries.csv", completed.stdout)
+        run_dir = next(self.reports.iterdir())
+        summary = json.loads((run_dir / "run_summary.json").read_text())
+        self.assertEqual(summary["meta"]["query_source"], "s3://example-bucket/path/remote-queries.csv")
+        self.assertEqual(summary["meta"]["queries"], "query-remote-queries.csv")
+
     def test_prometheus_transform_adds_dashboard_compatible_metrics(self):
         source = self.reports / "source.jmx"
         destination = self.reports / "generated.jmx"
