@@ -206,6 +206,73 @@ install_git() {
     echo ""
 }
 
+find_ui_python() {
+    for candidate in python3 python3.13 python3.12 python3.11 python3.10; do
+        if command_exists "$candidate" && \
+            "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+            command -v "$candidate"
+            return 0
+        fi
+    done
+    if [ -x "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11" ]; then
+        echo "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11"
+        return 0
+    fi
+    return 1
+}
+
+install_ui_python() {
+    echo "Installing a private Python 3.11 runtime for Benchmark Studio..."
+    case $OS in
+        amzn|amazonlinux)
+            if command_exists dnf; then
+                sudo dnf install -y python3.11 python3.11-pip
+            else
+                # Amazon Linux 2 has no supported Python 3.10+ package in its
+                # base repositories. Build a pinned CPython under the invoking
+                # user's ~/.local without replacing /usr/bin/python3.
+                sudo yum groupinstall -y "Development Tools"
+                sudo yum install -y openssl11-devel bzip2-devel libffi-devel \
+                    zlib-devel xz-devel readline-devel sqlite-devel tar gzip
+                PYTHON_SOURCE_VERSION="3.11.16"
+                PYTHON_SOURCE_SHA256="6c0bd76ab0ec7d94ed400b1497f01ac6c7751c8822615ee0855a3eb2d893ea76"
+                PYTHON_PREFIX="$HOME/.local/e6-benchmark-python-3.11"
+                PYTHON_BUILD_DIR="$(mktemp -d /tmp/e6-python-build.XXXXXX)"
+                PYTHON_ARCHIVE="$PYTHON_BUILD_DIR/Python-${PYTHON_SOURCE_VERSION}.tgz"
+                if command_exists curl; then
+                    curl -fL "https://www.python.org/ftp/python/${PYTHON_SOURCE_VERSION}/Python-${PYTHON_SOURCE_VERSION}.tgz" -o "$PYTHON_ARCHIVE"
+                else
+                    wget -O "$PYTHON_ARCHIVE" "https://www.python.org/ftp/python/${PYTHON_SOURCE_VERSION}/Python-${PYTHON_SOURCE_VERSION}.tgz"
+                fi
+                echo "${PYTHON_SOURCE_SHA256}  ${PYTHON_ARCHIVE}" | sha256sum -c -
+                tar -xzf "$PYTHON_ARCHIVE" -C "$PYTHON_BUILD_DIR"
+                (
+                    cd "$PYTHON_BUILD_DIR/Python-${PYTHON_SOURCE_VERSION}"
+                    ./configure --prefix="$PYTHON_PREFIX" --with-ensurepip=install
+                    make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+                    make install
+                )
+                rm -rf "$PYTHON_BUILD_DIR"
+            fi
+            ;;
+        ubuntu|debian)
+            sudo apt update
+            sudo apt install -y python3 python3-venv python3-pip
+            ;;
+        centos|rhel|fedora)
+            if command_exists dnf; then
+                sudo dnf install -y python3.11 python3.11-pip
+            else
+                sudo yum install -y python3.11 python3.11-pip
+            fi
+            ;;
+        *)
+            echo "ERROR: Automatic Python installation is not supported on $OS."
+            return 1
+            ;;
+    esac
+}
+
 # Check and install Java 17
 if check_java_version; then
     echo "✓ Java 17+ already installed: $(java -version 2>&1 | head -1)"
@@ -525,10 +592,19 @@ mkdir -p "${SCRIPT_DIR}/reports"
 echo ""
 if [ "$INSTALL_UI" = true ]; then
     echo "Step 9: Installing Benchmark Studio runtime..."
-    if [ "$WITH_POSTGRES" = true ]; then
-        "${SCRIPT_DIR}/setup_ui.sh" --with-postgres
+    if UI_PYTHON="$(find_ui_python)"; then
+        echo "  Using Python: $UI_PYTHON"
     else
-        "${SCRIPT_DIR}/setup_ui.sh"
+        install_ui_python
+        UI_PYTHON="$(find_ui_python)" || {
+            echo "ERROR: Python 3.10+ was not found after installation."
+            exit 1
+        }
+    fi
+    if [ "$WITH_POSTGRES" = true ]; then
+        BENCHMARK_UI_PYTHON="$UI_PYTHON" "${SCRIPT_DIR}/setup_ui.sh" --with-postgres
+    else
+        BENCHMARK_UI_PYTHON="$UI_PYTHON" "${SCRIPT_DIR}/setup_ui.sh"
     fi
 else
     echo "Step 9: Skipping Benchmark Studio runtime (--without-ui)."
