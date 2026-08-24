@@ -3,7 +3,7 @@
 ENGINE=e6data
 CLUSTER_SIZE=M-4x4
 COPY_TO_S3=false
-S3_BASE_PATH=s3://e6-jmeter/jmeter-results
+S3_BASE_PATH=s3://your-bucket/jmeter-results
 
 BENCHMARK_TYPE="tpcds_29_1tb"
 DATA_SIZE="1TB"

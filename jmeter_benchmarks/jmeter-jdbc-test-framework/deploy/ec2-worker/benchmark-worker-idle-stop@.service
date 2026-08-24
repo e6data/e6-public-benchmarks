@@ -1,0 +1,9 @@
+[Unit]
+Description=Stop benchmark EC2 worker after %i idle minutes
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/e6-benchmark-worker.env
+ExecStart=/opt/e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework/deploy/ec2-worker/idle_stop.sh %i
+

@@ -1,5 +1,25 @@
 # JMeter JDBC Test Framework
 
+## Public repository and bring-your-own configuration
+
+This is a public, reusable benchmark framework. A fresh clone contains JMX
+plans, scripts, sample workload shapes and connection templates only. It does
+not contain an e6data/Databricks credential, a usable connection profile, or
+AWS infrastructure configuration.
+
+Users may run the complete CLI/UI workflow or invoke a JMX plan directly with
+their own JMeter property files. Runtime connection profiles, query datasets,
+custom load profiles, generated reports, UI databases and local environment
+files are ignored by Git. Before committing, always check `git status` and
+never force-add those files. The optional EC2 runner is disabled by default and
+operates only after an administrator supplies their own instance, private S3
+prefix and IAM permissions outside the repository.
+
+The repository secret-scan workflow checks complete Git history on pushes and
+pull requests. Repository administrators should additionally enable GitHub
+Secret Scanning and Push Protection so recognized credentials are blocked
+before they enter public history.
+
 Run **JMeter JDBC performance tests** against any database that supports JDBC connections.
 
 The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
@@ -417,6 +437,35 @@ Every UI launch performs a query/configuration preflight and writes
 hashes, and load-generator host snapshots. Comparisons warn when workload
 signatures differ. These checks improve trustworthiness but do not modify the
 JMeter result files or metric calculations.
+
+### On-demand EC2 load generator
+
+The UI runs JMeter locally by default. To keep an expensive load generator
+stopped between tests, configure `BENCHMARK_UI_RUNNER=ec2`. The UI then remains
+the control plane, starts the configured EC2 instance, waits for SSM readiness,
+and invokes the same unmodified `run_test.sh` on that worker. Result files are
+synchronized through a private S3 control prefix so browser disconnection does
+not interrupt a run.
+
+Worker installation, least-privilege IAM examples and configuration are in
+[`deploy/ec2-worker/`](deploy/ec2-worker/README.md). The important controls are:
+
+```bash
+BENCHMARK_UI_RUNNER=ec2
+BENCHMARK_EC2_INSTANCE_ID=i-xxxxxxxxxxxxxxxxx
+BENCHMARK_EC2_REGION=us-east-1
+BENCHMARK_EC2_CONTROL_S3_URI=s3://your-private-bucket/benchmark-control
+BENCHMARK_EC2_IDLE_STOP_MINUTES=20
+BENCHMARK_EC2_MAX_PARALLEL=1
+```
+
+Job bundles contain the selected connection profile temporarily. Block public
+S3 access, restrict both IAM roles to the control prefix, enable bucket
+encryption, and apply an S3 lifecycle expiration rule. The worker deletes the
+input bundle after download and removes its local job directory after the run.
+Use sequential execution unless the worker has been sized and validated for two
+simultaneous load generators; contention on the worker can invalidate engine
+comparisons.
 
 ## Test Plans
 

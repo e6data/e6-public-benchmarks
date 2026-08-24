@@ -171,7 +171,7 @@ CONNECTION_POOLING="enabled"
 # Cost & Billing (optional)
 COST_CENTER="unknown"
 PROJECT="unknown"
-OWNER="jagannath@e6x.io"
+OWNER="${BENCHMARK_OWNER:-unknown}"
 
 # Comparison Baseline
 BASELINE_ENGINE="e6data"
@@ -287,7 +287,7 @@ CONNECTION_POOLING="enabled"
 # Cost & Billing (optional)
 COST_CENTER="unknown"
 PROJECT="unknown"
-OWNER="jagannath@e6x.io"
+OWNER="${BENCHMARK_OWNER:-unknown}"
 
 # Comparison Baseline
 BASELINE_ENGINE="dbr"

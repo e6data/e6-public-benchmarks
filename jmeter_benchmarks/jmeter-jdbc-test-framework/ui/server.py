@@ -39,6 +39,7 @@ from utilities.load_profile import (
     expected_arrivals_per_second, expected_concurrency_per_second,
     read_arrivals_profile, read_concurrency_profile,
 )
+from ui.ec2_runner import EC2Config, EC2Runner, EC2RunnerError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,9 @@ SYSTEM_GENERATE_DASHBOARD = SAVED_SETTINGS.get("generate_dashboard", os.environ.
 REPORT_RETENTION_DAYS = int(SAVED_SETTINGS.get("retention_days", os.environ.get("BENCHMARK_UI_REPORT_RETENTION_DAYS", "30")))
 MAX_LOCAL_REPORT_GB = int(SAVED_SETTINGS.get("max_local_report_gb", os.environ.get("BENCHMARK_UI_MAX_LOCAL_REPORT_GB", "100")))
 DELETE_LOCAL_AFTER_S3 = os.environ.get("BENCHMARK_UI_DELETE_LOCAL_AFTER_S3", "false").lower() == "true"
+RUNNER_BACKEND = os.environ.get("BENCHMARK_UI_RUNNER", "local").lower()
+if RUNNER_BACKEND not in {"local", "ec2"}:
+    raise RuntimeError("BENCHMARK_UI_RUNNER must be local or ec2")
 DB_READY = False
 
 PLANS = {
@@ -163,7 +167,8 @@ def persist_run(run: "Run") -> None:
         "id": run.run_id, "label": run.label, "config": run.config,
         "report_root": str(run.report_root), "status": run.status,
         "started_at": run.started_at, "finished_at": run.finished_at,
-        "return_code": run.return_code, "logs": list(run.logs),
+        "return_code": run.return_code, "remote_command_id": run.remote_command_id,
+        "logs": list(run.logs),
     }
     if REGISTRY_BACKEND == "postgresql":
         import psycopg
@@ -267,13 +272,14 @@ def restore_runs() -> None:
         try:
             item = raw if isinstance(raw, dict) else json.loads(raw)
             status = item["status"]
-            if status in {"queued", "running"}:
+            if status in {"queued", "worker_starting", "running", "finalizing"}:
                 status = "interrupted"
             run = Run(
                 item["id"], item.get("label", "Benchmark"), item.get("config", {}),
                 Path(item["report_root"]), status=status,
                 started_at=item.get("started_at"), finished_at=item.get("finished_at"),
-                return_code=item.get("return_code"), logs=deque(item.get("logs", []), maxlen=300),
+                return_code=item.get("return_code"), remote_command_id=item.get("remote_command_id"),
+                logs=deque(item.get("logs", []), maxlen=300),
             )
             if run.status == "failed" and run.return_code not in {None, 0}:
                 run.status = benchmark_status(
@@ -910,6 +916,7 @@ class Run:
     started_at: float | None = None
     finished_at: float | None = None
     return_code: int | None = None
+    remote_command_id: str | None = None
     process: subprocess.Popen[str] | None = field(default=None, repr=False)
     logs: deque[str] = field(default_factory=lambda: deque(maxlen=300), repr=False)
 
@@ -947,6 +954,9 @@ class Run:
             "metrics": live_metrics(self.report_root), "summary": compact_summary(summary),
             "logs": list(self.logs), "report_path": str(self.report_root.relative_to(ROOT)), "report_id": report_id,
             "artifact_storage": artifact_storage,
+            "cancellable": self.status == "running" and (
+                RUNNER_BACKEND == "local" or bool(self.remote_command_id)
+            ),
             "finalization_warning": self.return_code not in {None, 0} and self.status == "completed",
         }
 
@@ -956,25 +966,44 @@ RUN_LOCK = threading.Lock()
 
 
 def _execute(run: Run, env: dict[str, str]) -> None:
-    run.status, run.started_at = "running", time.time()
+    run.status = "worker_starting" if RUNNER_BACKEND == "ec2" else "running"
+    run.started_at = time.time()
     persist_run(run)
     LOGGER.info("run=%s status=running label=%s plan=%s", run.run_id, run.label, run.config.get("plan"))
+    adapter = None
     try:
         run.report_root.mkdir(parents=True, exist_ok=True)
         write_manifest(run, env)
         runner_log = run.report_root / "ui_runner.log"
-        run.process = subprocess.Popen(
-            [str(ROOT / "run_test.sh")], cwd=ROOT, env=env, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True,
-        )
-        assert run.process.stdout
-        with runner_log.open("a") as log_handle:
-            for line in run.process.stdout:
-                clean = line.rstrip()
-                run.logs.append(clean)
-                log_handle.write(line)
-                log_handle.flush()
-        run.return_code = run.process.wait()
+        if RUNNER_BACKEND == "ec2":
+            adapter = EC2Runner(EC2Config.from_env())
+            def set_status(value: str) -> None:
+                run.status = value
+                persist_run(run)
+            def append_log(value: str) -> None:
+                if value and (not run.logs or run.logs[-1] != value):
+                    run.logs.append(value)
+                    with runner_log.open("a") as handle:
+                        handle.write(value + "\n")
+            def command_started(command_id: str) -> None:
+                run.remote_command_id = command_id
+                persist_run(run)
+            run.return_code = adapter.execute(
+                run.run_id, env, ROOT, run.report_root, set_status, append_log, command_started,
+            )
+        else:
+            run.process = subprocess.Popen(
+                [str(ROOT / "run_test.sh")], cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True,
+            )
+            assert run.process.stdout
+            with runner_log.open("a") as log_handle:
+                for line in run.process.stdout:
+                    clean = line.rstrip()
+                    run.logs.append(clean)
+                    log_handle.write(line)
+                    log_handle.flush()
+            run.return_code = run.process.wait()
         if run.status != "cancelled":
             run.status = benchmark_status(
                 run.return_code, find_summary(run.report_root),
@@ -984,6 +1013,8 @@ def _execute(run: Run, env: dict[str, str]) -> None:
         run.logs.append(f"UI runner error: {exc}")
         LOGGER.exception("run=%s runner failure", run.run_id)
         run.return_code, run.status = 1, "failed"
+        if adapter is not None:
+            adapter.schedule_stop(lambda value: run.logs.append(value))
     finally:
         run.finished_at = time.time()
         try:
@@ -1048,7 +1079,7 @@ def report_status(summary: dict[str, Any]) -> str:
     run_id = str(summary.get("meta", {}).get("run_id") or "")
     with RUN_LOCK:
         run = RUNS.get(run_id)
-    if run and run.status not in {"queued", "running"}:
+    if run and run.status not in {"queued", "worker_starting", "running", "finalizing"}:
         return run.status
     return "completed" if int(summary.get("failed") or 0) == 0 else "failed"
 
@@ -1272,6 +1303,11 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/readyz":
             ready = DB_READY and (ROOT / "run_test.sh").is_file() and REPORTS.parent.is_dir()
+            if ready and RUNNER_BACKEND == "ec2":
+                try:
+                    EC2Config.from_env()
+                except EC2RunnerError:
+                    ready = False
             self._json({"status": "ready" if ready else "not_ready"}, 200 if ready else 503)
             return
         if self._require_auth():
@@ -1281,7 +1317,7 @@ class Handler(SimpleHTTPRequestHandler):
                 connections = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "connection_properties").glob("*.properties"))
                 queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").glob("*.csv"))
                 profiles = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "test_properties").glob("*.csv"))
-                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
+                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
             elif parsed.path == "/api/runs":
                 with RUN_LOCK:
                     self._json([run.public() for run in RUNS.values()])
@@ -1334,6 +1370,12 @@ class Handler(SimpleHTTPRequestHandler):
                 execution_mode = str(body.get("execution_mode", "parallel"))
                 if execution_mode not in {"parallel", "sequential"}:
                     raise ValueError("execution_mode must be parallel or sequential")
+                if RUNNER_BACKEND == "ec2" and execution_mode == "parallel" \
+                        and len(configs) > int(os.environ.get("BENCHMARK_EC2_MAX_PARALLEL", "1")):
+                    raise ValueError(
+                        "This EC2 worker is configured for fewer parallel runs; choose sequential execution "
+                        "or increase BENCHMARK_EC2_MAX_PARALLEL after validating load-generator capacity"
+                    )
                 if execution_mode == "parallel" and len(configs) == 2 \
                         and any(item.get("PROMETHEUS_ENABLED") is True for item in configs):
                     raise ValueError(
@@ -1364,6 +1406,14 @@ class Handler(SimpleHTTPRequestHandler):
                 run_id = self.path.split("/")[3]
                 with RUN_LOCK:
                     run = RUNS.get(run_id)
+                if RUNNER_BACKEND == "ec2":
+                    if not run or not run.remote_command_id or run.status not in {"running", "worker_starting"}:
+                        raise ValueError("Remote run is not cancellable yet")
+                    EC2Runner(EC2Config.from_env()).cancel(run.remote_command_id)
+                    run.status = "cancelled"
+                    persist_run(run)
+                    self._json(run.public())
+                    return
                 if not run or not run.process or run.status != "running":
                     raise ValueError("Run is not active")
                 os.killpg(run.process.pid, signal.SIGTERM)

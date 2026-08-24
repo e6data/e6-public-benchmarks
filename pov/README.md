@@ -13,7 +13,15 @@ Use comparable datasets and compute sizes on both engines if the results will be
 
 ## Configure
 
-The tracked `.env` file is a local demonstration configuration. Before starting, change at least the Django administrator password and MySQL root password. Do not expose the service publicly with the defaults.
+Create the untracked runtime configuration and replace both password values:
+
+```bash
+cp .env.example .env
+```
+
+The repository intentionally tracks only `.env.example`. Never commit the
+generated `.env`, and do not expose the service publicly with demonstration
+credentials.
 
 For a remote host, set `REACT_APP_API_DOMAIN` to the externally reachable backend URL, including `/api/`:
 
