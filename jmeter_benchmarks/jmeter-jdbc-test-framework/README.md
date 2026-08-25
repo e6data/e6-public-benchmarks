@@ -85,7 +85,13 @@ If any dependency fails to install automatically, install it manually: Java 17+,
 ./create_connection.sh
 ```
 
-Interactive prompts for JDBC URL, credentials, driver class. Supports e6data, Databricks, Trino, and HTTP endpoints.
+Interactive prompts for JDBC URL, credentials, driver class. Supports e6data, Databricks, Snowflake, Trino, and HTTP endpoints.
+
+Snowflake profiles use a vendor URL such as
+`jdbc:snowflake://<account>.snowflakecomputing.com/?warehouse=...&db=...&schema=...`
+and the current `net.snowflake.client.api.driver.SnowflakeDriver` class. Setup
+downloads the pinned Snowflake JDBC 4.3.3 self-contained driver from Maven
+Central; credentials remain in the git-ignored connection profile.
 
 This creates a file in `connection_properties/` — e.g., `connection_properties/my_connection.properties`.
 

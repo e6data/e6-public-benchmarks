@@ -6,7 +6,7 @@ This repository contains three independent toolsets for running and comparing an
 
 | Tool | Best for | Engines / interfaces | Start here |
 |---|---|---|---|
-| JMeter JDBC Test Framework | Repeatable concurrency, QPS/QPM, load-profile, and regression tests | JDBC and HTTP endpoints; connection templates cover e6data, Databricks, Trino, and others | [JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) |
+| JMeter JDBC Test Framework | Repeatable concurrency, QPS/QPM, load-profile, and regression tests | JDBC and HTTP endpoints; connection templates cover e6data, Databricks, Snowflake, Trino, and others | [JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) |
 | Python benchmarks | Small sequential or batched-concurrency runs from a query CSV | e6data, Trino, and Amazon Athena | [Python guide](python_benchmarks/README.md) |
 | Benchmark POV Tool | Browser-based e6data-versus-Databricks comparisons | Docker Compose deployment of prebuilt UI, API, and MySQL images | [POV guide](pov/README.md) |
 

@@ -3,7 +3,7 @@
 # Usage: ./create_connection.sh
 #
 # Supports two connection types:
-#   1. JDBC - for e6data, Databricks, Trino, etc.
+#   1. JDBC - for e6data, Databricks, Snowflake, Trino, etc.
 #   2. HTTP Endpoint - for HTTP API-based testing
 #
 # Creates properly formatted connection properties files in connection_properties/
@@ -42,7 +42,7 @@ fi
 
 # Choose connection type
 echo -e "${BOLD}Select connection type:${NC}"
-echo "  1) JDBC     (e6data, Databricks, Trino, etc.)"
+echo "  1) JDBC     (e6data, Databricks, Snowflake, Trino, etc.)"
 echo "  2) HTTP     (HTTP API endpoint)"
 echo ""
 read -p "Enter choice [1-2]: " conn_type
@@ -57,16 +57,18 @@ case "$conn_type" in
         echo -e "${BOLD}Select engine:${NC}"
         echo "  1) e6data"
         echo "  2) Databricks"
-        echo "  3) Trino"
-        echo "  4) Other"
+        echo "  3) Snowflake"
+        echo "  4) Trino"
+        echo "  5) Other"
         echo ""
-        read -p "Enter choice [1-4]: " engine_choice
+        read -p "Enter choice [1-5]: " engine_choice
 
         case "$engine_choice" in
             1) ENGINE="e6data"; DRIVER_CLASS="io.e6.jdbc.driver.E6Driver" ;;
             2) ENGINE="dbr"; DRIVER_CLASS="com.databricks.client.jdbc.Driver" ;;
-            3) ENGINE="trino"; DRIVER_CLASS="io.trino.jdbc.TrinoDriver" ;;
-            4)
+            3) ENGINE="snowflake"; DRIVER_CLASS="net.snowflake.client.api.driver.SnowflakeDriver" ;;
+            4) ENGINE="trino"; DRIVER_CLASS="io.trino.jdbc.TrinoDriver" ;;
+            5)
                 read -p "Engine name (for filename): " ENGINE
                 read -p "JDBC Driver class: " DRIVER_CLASS
                 ;;
@@ -109,7 +111,8 @@ case "$conn_type" in
             CATALOG=""
 
         else
-            # Trino/Other: ask for individual fields
+            # Snowflake/Trino/Other: accept the vendor JDBC URL and retain
+            # optional database/catalog metadata for reporting.
             read -p "Hostname: " HOSTNAME
             read -p "Port [443]: " PORT
             PORT=${PORT:-443}

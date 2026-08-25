@@ -513,6 +513,33 @@ else
     echo "  ✓ DBR JDBC driver already installed"
 fi
 
+# Download the Snowflake self-contained JDBC driver from Maven Central. The
+# binary is installed at setup time rather than committed to this repository.
+SNOWFLAKE_JDBC_VERSION="4.3.3"
+SNOWFLAKE_JDBC_URL="https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/${SNOWFLAKE_JDBC_VERSION}/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar"
+SNOWFLAKE_JDBC_JAR="${JMETER_DIR}/lib/ext/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar"
+
+if [ ! -f "${SNOWFLAKE_JDBC_JAR}" ]; then
+    echo "  Downloading Snowflake JDBC driver ${SNOWFLAKE_JDBC_VERSION}..."
+    if command_exists wget; then
+        wget -O "${SNOWFLAKE_JDBC_JAR}" "${SNOWFLAKE_JDBC_URL}" || {
+            echo "  WARNING: Failed to download Snowflake JDBC driver"
+            rm -f "${SNOWFLAKE_JDBC_JAR}"
+        }
+    elif command_exists curl; then
+        curl -fL -o "${SNOWFLAKE_JDBC_JAR}" "${SNOWFLAKE_JDBC_URL}" || {
+            echo "  WARNING: Failed to download Snowflake JDBC driver"
+            rm -f "${SNOWFLAKE_JDBC_JAR}"
+        }
+    fi
+
+    if [ -f "${SNOWFLAKE_JDBC_JAR}" ]; then
+        echo "  ✓ Snowflake JDBC driver installed"
+    fi
+else
+    echo "  ✓ Snowflake JDBC driver already installed"
+fi
+
 # Copy custom JDBC drivers from jdbc_drivers/ directory
 JDBC_DRIVERS_DIR="${SCRIPT_DIR}/jdbc_drivers"
 if [ -d "${JDBC_DRIVERS_DIR}" ]; then

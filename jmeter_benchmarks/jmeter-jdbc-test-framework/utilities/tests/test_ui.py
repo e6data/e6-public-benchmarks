@@ -82,6 +82,22 @@ class UiTests(unittest.TestCase):
         finally:
             target.unlink(missing_ok=True)
 
+    def test_snowflake_profile_uses_current_driver_class(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original_root = server.ROOT
+            server.ROOT = Path(tmp)
+            try:
+                relative = server.create_connection_profile({
+                    "name": "ui_snowflake_unit", "transport": "jdbc",
+                    "engine": "snowflake",
+                    "connection_string": "jdbc:snowflake://account.snowflakecomputing.com/?warehouse=BENCH",
+                    "user": "benchmark_user", "password": "private-token",
+                })
+            finally:
+                server.ROOT = original_root
+            contents = (Path(tmp) / relative).read_text()
+            self.assertIn("DRIVER_CLASS=net.snowflake.client.api.driver.SnowflakeDriver", contents)
+
     def test_create_connection_profile_rejects_injection_and_overwrite(self):
         with self.assertRaisesRegex(ValueError, "invalid character"):
             server.create_connection_profile({

@@ -17,11 +17,17 @@ The setup script copies JARs from this directory into `apache-jmeter-5.6.3/lib/e
 | Engine | Driver class |
 |---|---|
 | e6data | `io.e6.jdbc.driver.E6Driver` |
+| Snowflake 4.x | `net.snowflake.client.api.driver.SnowflakeDriver` |
 | Trino | `io.trino.jdbc.TrinoDriver` |
 | Presto | `com.facebook.presto.jdbc.PrestoDriver` |
 | Amazon Athena (Simba) | `com.simba.athena.jdbc.Driver` |
 
 For Databricks, download the current JDBC driver from Databricks and use the driver class documented for that release. Driver packaging and class names can change, so the vendor documentation is the source of truth.
+
+`setup_jmeter.sh` downloads the pinned Snowflake JDBC 4.3.3 self-contained JAR
+from Maven Central. Snowflake's older
+`net.snowflake.client.jdbc.SnowflakeDriver` class remains compatible but is
+deprecated; new profiles use the current API driver class shown above.
 
 ## Add or update a driver
 
