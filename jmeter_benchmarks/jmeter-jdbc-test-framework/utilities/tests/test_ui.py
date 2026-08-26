@@ -97,6 +97,7 @@ class UiTests(unittest.TestCase):
                 server.ROOT = original_root
             contents = (Path(tmp) / relative).read_text()
             self.assertIn("DRIVER_CLASS=net.snowflake.client.api.driver.SnowflakeDriver", contents)
+            self.assertIn("JDBC_INIT_SQL=ALTER SESSION SET USE_CACHED_RESULT = FALSE", contents)
 
     def test_create_connection_profile_rejects_injection_and_overwrite(self):
         with self.assertRaisesRegex(ValueError, "invalid character"):

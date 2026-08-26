@@ -592,6 +592,10 @@ def create_connection_profile(config: dict[str, Any]) -> str:
             "USER": _property_value(config.get("user"), "USER"),
             "PASSWORD": _property_value(config.get("password"), "PASSWORD"),
             "DRIVER_CLASS": _property_value(driver, "DRIVER_CLASS", required=True),
+            "JDBC_INIT_SQL": (
+                "ALTER SESSION SET USE_CACHED_RESULT = FALSE"
+                if engine == "snowflake" else ""
+            ),
         }
         heading = "# JDBC Connection Properties"
     elif transport == "http":

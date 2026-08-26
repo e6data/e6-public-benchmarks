@@ -493,6 +493,8 @@ fi
 # by Databricks Driver 3 PAT auth. Engine selection already determines the
 # driver, so adapt this internally without adding another user-facing input.
 JDBC_DRIVER=$(grep -E '^DRIVER_CLASS=' "$CONNECTION_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+PROFILE_JDBC_INIT_SQL=$(grep -E '^JDBC_INIT_SQL=' "$CONNECTION_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+JDBC_INIT_SQL="${JDBC_INIT_SQL:-$PROFILE_JDBC_INIT_SQL}"
 if [ "$JDBC_DRIVER" = "com.databricks.client.jdbc.Driver" ]; then
     JDBC_PLAN="${REPORT_DIR}/$(basename "${TEST_PLAN%.jmx}")-jdbc-configured.jmx"
     python3 "${PROJECT_ROOT}/utilities/configure_jdbc_connection.py" \
@@ -502,6 +504,10 @@ if [ "$JDBC_DRIVER" = "com.databricks.client.jdbc.Driver" ]; then
     echo ""
 fi
 if [ "$JDBC_DRIVER" = "net.snowflake.client.api.driver.SnowflakeDriver" ]; then
+    # Disable Snowflake persisted-result reuse once for every physical pooled
+    # connection. This preserves JMeter connection reuse and avoids adding a
+    # control query to every measured sample.
+    JDBC_INIT_SQL="${JDBC_INIT_SQL:-ALTER SESSION SET USE_CACHED_RESULT = FALSE}"
     # Snowflake's result path uses Apache Arrow. Java 9+ requires this narrow
     # module opening or every query can fail while materializing its result.
     # Append without replacing caller-provided heap/tuning options.
@@ -511,6 +517,7 @@ if [ "$JDBC_DRIVER" = "net.snowflake.client.api.driver.SnowflakeDriver" ]; then
     esac
     export JVM_ARGS
     echo "  Snowflake Arrow: Java NIO module access configured"
+    echo "  Snowflake result cache: disabled for every pooled connection"
     echo ""
 fi
 
@@ -586,6 +593,7 @@ JMETER_CMD+=("-JRECYCLE_ON_EOF=$RECYCLE_ON_EOF")
 JMETER_CMD+=("-JQUERY_TIMEOUT=$QUERY_TIMEOUT")
 JMETER_CMD+=("-JLIMIT_RESULTSET=$LIMIT_RESULTSET")
 JMETER_CMD+=("-JMAX_CONCURRANCY=$MAX_CONCURRANCY")
+JMETER_CMD+=("-JJDBC_INIT_SQL=${JDBC_INIT_SQL:-}")
 JMETER_CMD+=("-Jjmeter.save.saveservice.autoflush=$JMETER_RESULT_AUTOFLUSH")
 if [ "$PROMETHEUS_ENABLED" = "true" ]; then
     JMETER_CMD+=("-Jprometheus.ip=$PROMETHEUS_IP" "-Jprometheus.port=$PROMETHEUS_PORT" "-Jprometheus.delay=$PROMETHEUS_DELAY")

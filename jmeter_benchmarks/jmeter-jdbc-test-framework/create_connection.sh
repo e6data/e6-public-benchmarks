@@ -66,7 +66,7 @@ case "$conn_type" in
         case "$engine_choice" in
             1) ENGINE="e6data"; DRIVER_CLASS="io.e6.jdbc.driver.E6Driver" ;;
             2) ENGINE="dbr"; DRIVER_CLASS="com.databricks.client.jdbc.Driver" ;;
-            3) ENGINE="snowflake"; DRIVER_CLASS="net.snowflake.client.api.driver.SnowflakeDriver" ;;
+            3) ENGINE="snowflake"; DRIVER_CLASS="net.snowflake.client.api.driver.SnowflakeDriver"; JDBC_INIT_SQL="ALTER SESSION SET USE_CACHED_RESULT = FALSE" ;;
             4) ENGINE="trino"; DRIVER_CLASS="io.trino.jdbc.TrinoDriver" ;;
             5)
                 read -p "Engine name (for filename): " ENGINE
@@ -160,6 +160,7 @@ PASSWORD=${PASSWORD_VAL}
 CONNECTION_STRING=${CONNECTION_STRING}
 
 DRIVER_CLASS=${DRIVER_CLASS}
+JDBC_INIT_SQL=${JDBC_INIT_SQL:-}
 EOF
         ;;
 

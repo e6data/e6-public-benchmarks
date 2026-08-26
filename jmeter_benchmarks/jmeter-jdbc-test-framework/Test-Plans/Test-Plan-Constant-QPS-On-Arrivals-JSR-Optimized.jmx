@@ -210,7 +210,7 @@
         <stringProp name="trimInterval">300000</stringProp>
         <stringProp name="username">${USER}</stringProp>
         <boolProp name="preinit">true</boolProp>
-        <stringProp name="initQuery"></stringProp>
+        <stringProp name="initQuery">${__P(JDBC_INIT_SQL,)}</stringProp>
         <stringProp name="connectionProperties"></stringProp>
       </JDBCDataSource>
       <hashTree/>

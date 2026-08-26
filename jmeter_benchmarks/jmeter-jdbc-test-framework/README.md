@@ -92,6 +92,10 @@ Snowflake profiles use a vendor URL such as
 and the current `net.snowflake.client.api.driver.SnowflakeDriver` class. Setup
 downloads the pinned Snowflake JDBC 4.3.3 self-contained driver from Maven
 Central; credentials remain in the git-ignored connection profile.
+Snowflake profiles also initialize every physical pooled connection with
+`ALTER SESSION SET USE_CACHED_RESULT = FALSE`. `run_test.sh` applies the same
+default to existing Snowflake profiles, so persisted-result cache hits cannot
+silently invalidate a benchmark. Connection pooling and reuse remain enabled.
 For Java 9+, `run_test.sh` automatically appends Apache Arrow's required
 `java.nio` module option to `JVM_ARGS` only for this driver. Existing caller
 heap/tuning options are preserved; other JDBC engines are unchanged.

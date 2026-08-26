@@ -15,6 +15,9 @@ FAKE_JMETER = r'''#!/bin/bash
 if [ -n "${CAPTURE_JVM_ARGS:-}" ]; then
     printf '%s' "${JVM_ARGS:-}" > "$CAPTURE_JVM_ARGS"
 fi
+if [ -n "${CAPTURE_JMETER_ARGS:-}" ]; then
+    printf '%s\n' "$@" > "$CAPTURE_JMETER_ARGS"
+fi
 result=""
 while [ "$#" -gt 0 ]; do
     if [ "$1" = "-l" ]; then
@@ -121,16 +124,34 @@ class RunnerIntegrationTests(unittest.TestCase):
 
     def test_snowflake_driver_adds_arrow_java_access_without_losing_caller_options(self):
         capture = Path(self.temp.name) / "jvm-args.txt"
+        args_capture = Path(self.temp.name) / "jmeter-args.txt"
         self.connection.write_text(
             "CONNECTION_STRING=jdbc:test\n"
             "DRIVER_CLASS=net.snowflake.client.api.driver.SnowflakeDriver\n"
         )
-        completed = self.run_runner(JVM_ARGS="-Xmx2g", CAPTURE_JVM_ARGS=str(capture))
+        completed = self.run_runner(
+            JVM_ARGS="-Xmx2g",
+            CAPTURE_JVM_ARGS=str(capture),
+            CAPTURE_JMETER_ARGS=str(args_capture),
+        )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertEqual(
             capture.read_text(),
             "-Xmx2g --add-opens=java.base/java.nio=ALL-UNNAMED",
         )
+        self.assertIn(
+            "-JJDBC_INIT_SQL=ALTER SESSION SET USE_CACHED_RESULT = FALSE",
+            args_capture.read_text().splitlines(),
+        )
+
+    def test_every_jdbc_plan_initializes_physical_connections_from_property(self):
+        plans = ROOT / "Test-Plans"
+        for path in plans.glob("*.jmx"):
+            data_sources = ET.parse(path).findall(".//JDBCDataSource")
+            for source in data_sources:
+                init = source.find("./stringProp[@name='initQuery']")
+                self.assertIsNotNone(init, path.name)
+                self.assertEqual(init.text, "${__P(JDBC_INIT_SQL,)}", path.name)
 
     def test_prometheus_transform_adds_dashboard_compatible_metrics(self):
         source = self.reports / "source.jmx"
