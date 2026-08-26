@@ -90,6 +90,10 @@ backwards-compatible alias.
 
 - Start with a small workload and monitor the target engine before increasing concurrency or arrival rate.
 - Keep access tokens, JDBC credentials, AWS credentials, query data, and generated reports out of version control. The repository ignores the common local files, but verify `git status` before committing.
+- Pull requests run a public-artifact guard in addition to secret scanning. It
+  rejects force-added reports, JMeter result files, connection profiles, local
+  registries, logs, private keys, and non-example environment files. Enable the
+  same check before every local commit with `git config core.hooksPath .githooks`.
 - The separate POV Compose wrapper tracks only `pov/.env.example`, with
   `CHANGE_ME` placeholders. Copy it to the ignored `pov/.env` and set strong
   local values before starting that tool; do not expose its services publicly

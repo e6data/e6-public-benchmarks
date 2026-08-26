@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+python3 utilities/check_public_repo_safety.py
 python3 -m unittest discover -s utilities/tests -v
 python3 -m compileall -q utilities
 

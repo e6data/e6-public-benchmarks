@@ -292,6 +292,15 @@ run invalid removes it from active reference use without deleting its report or
 promotion history. The Compare page can filter by scope, purpose, validity,
 active-reference status, tags, workload identity, engine, and date.
 
+Generated results and local credentials are ignored by Git. A repository-wide
+public-artifact guard also fails pull requests if those files are force-added.
+Run it manually with `python3 utilities/check_public_repo_safety.py`, or enable
+the included local pre-commit hook once per clone from the repository root:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 UI-created workload presets are stored as ignored
 `test_properties/ui_*.properties` files; metadata presets use ignored
 `metadata_files/ui_*.txt` files. Existing tracked examples remain available on
