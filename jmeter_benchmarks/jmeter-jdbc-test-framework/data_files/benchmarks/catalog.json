@@ -2,7 +2,7 @@
   "schema_version": 1,
   "generated_on": "2026-08-26",
   "alias_contract": {
-    "tpcds": "TPCDS_Qnn with A/B suffix for canonical forms; TPCDS_LEGACY_* for legacy sequence identities",
+    "tpcds": "TPCDS_Qnn with A/B suffix for reference/vendor forms; TPCDS_LEGACY_* for legacy sequence identities",
     "tpch": "TPCH_Qnn"
   },
   "comparison_policy": "Compare the same variant when possible; otherwise require identical logical aliases, data semantics, scale, execution policy, and successful coverage.",
@@ -10,9 +10,9 @@
     {
       "id": "tpcds.apache-spark.reference.103",
       "benchmark": "tpcds",
-      "classification": "portable-reference",
+      "classification": "reference",
       "forms": 103,
-      "path": "data_files/benchmarks/tpcds/canonical/apache_spark_103.csv",
+      "path": "data_files/benchmarks/tpcds/reference/apache_spark_103.csv",
       "sha256": "08e19a9faee5459fa095749017f0a1a972e202dfd0bfb83d83274a9157f7e6e0",
       "source": "https://github.com/apache/spark/tree/19f59da405c204f8610d42aafa1cfe8437fd9f82/sql/core/src/test/resources/tpcds",
       "source_sha256": "36a3f8adcb8ec1021e0ba4d02002d85975aaaf2e2531ea424dd3610e34359ab9",

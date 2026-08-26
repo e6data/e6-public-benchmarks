@@ -21,7 +21,7 @@ class BenchmarkCatalogTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "expected 103"):
                 read_rows(source, "tpcds", False)
 
-    def test_legacy_sequence_is_not_mislabeled_as_canonical_query_number(self):
+    def test_legacy_sequence_is_not_mislabeled_as_reference_query_number(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "source.csv"
             with source.open("w", newline="") as handle:

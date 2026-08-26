@@ -11,9 +11,9 @@ lineage and dialect. Every executable CSV uses the strict
   execution-sequence labels, not canonical TPC-DS query numbers.
 - TPC-H: `TPCH_Q01` through `TPCH_Q22` (22 executable queries).
 
-The paths under `canonical/`, `databricks/`, `snowflake/`, and `e6data/` are
+The paths under `reference/`, `databricks/`, `snowflake/`, and `e6data/` are
 workload identities, not claims that one SQL file is portable to every engine.
-Use `catalog.json` to distinguish vendor-published, portable-reference, and
+Use `catalog.json` to distinguish vendor-published, reference, and
 legacy optimized SQL.
 
 ## Fair comparisons
@@ -49,3 +49,4 @@ python3 utilities/build_benchmark_catalog.py tpch snowflake.sql TARGET.csv --sno
 ```
 
 See `catalog.json` for pinned upstream sources and SHA-256 hashes.
+See `THIRD_PARTY_NOTICES.md` for upstream licensing and trademark notices.
