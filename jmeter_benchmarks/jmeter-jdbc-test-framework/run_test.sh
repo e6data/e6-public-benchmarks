@@ -628,7 +628,7 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     # participate in JMeter load generation or query execution.
     for _meta_var in DATA_SIZE DATA_TYPE RUN_MODE CUSTOMER CONFIG TAGS COMMENTS \
         ESTIMATED_CORES MEMORY_GB INSTANCE_TYPE EXECUTORS CORES_PER_EXECUTOR \
-        SERVERLESS ENGINE_BUILD; do
+        SERVERLESS ENGINE_BUILD RUN_SCOPE RUN_PURPOSE RUN_VALIDITY; do
         _meta_value="${!_meta_var:-}"
         [ -n "$_meta_value" ] && CAPTURE_ARGS+=(--meta "${_meta_var}=${_meta_value}")
     done

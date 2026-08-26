@@ -494,6 +494,62 @@ class UiTests(unittest.TestCase):
             server.RUNS.clear()
             server.RUNS.update(old_runs)
 
+    def test_reference_promotion_is_explicit_auditable_and_invalidatable(self):
+        old_path, old_reports, old_ready, old_backend = (
+            server.DB_PATH, server.REPORTS, server.DB_READY, server.REGISTRY_BACKEND,
+        )
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                server.DB_PATH = root / "registry.db"
+                server.REPORTS = root / "reports"
+                server.REPORTS.mkdir()
+                server.DB_READY = False
+                server.REGISTRY_BACKEND = "sqlite"
+                server.init_registry()
+                for run_id, report_id in (("first", "run-first"), ("second", "run-second")):
+                    directory = server.REPORTS / report_id
+                    directory.mkdir()
+                    (directory / "run_summary.json").write_text(json.dumps({
+                        "samples": 25, "successful": 25, "failed": 0, "error_pct": 0,
+                        "meta": {"run_id": run_id, "engine": "snowflake", "queries": "tpcds.csv",
+                                 "query_sha256": "same", "test_plan": "run-once.jmx", "run_type": "ui_run_once"},
+                    }))
+                first = server.promote_reference("run-first", {"reason": "initial baseline", "promoted_by": "qa"})
+                self.assertTrue(first["is_active_reference"])
+                second = server.promote_reference("run-second", {"reason": "driver upgrade", "promoted_by": "qa"})
+                self.assertTrue(second["is_active_reference"])
+                self.assertFalse(server.report_governance(server.report_by_id("run-first"))["is_active_reference"])
+                with sqlite3.connect(server.DB_PATH) as db:
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM reference_promotions").fetchone()[0], 2)
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM reference_promotions WHERE active=1").fetchone()[0], 1)
+                invalid = server.annotate_report("run-second", {
+                    "scope": "external", "purpose": "reference-candidate",
+                    "validity": "invalid", "reason": "wrong warehouse size",
+                })
+                self.assertEqual(invalid["scope"], "external")
+                self.assertEqual(invalid["validity"], "invalid")
+                self.assertFalse(invalid["is_active_reference"])
+        finally:
+            server.DB_PATH, server.REPORTS = old_path, old_reports
+            server.DB_READY, server.REGISTRY_BACKEND = old_ready, old_backend
+
+    def test_reference_promotion_rejects_failed_report(self):
+        old_reports = server.REPORTS
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                server.REPORTS = Path(temp)
+                report = server.REPORTS / "failed"
+                report.mkdir()
+                (report / "run_summary.json").write_text(json.dumps({
+                    "samples": 1, "successful": 0, "failed": 1,
+                    "meta": {"run_id": "failed", "engine": "databricks", "queries": "q.csv"},
+                }))
+                with self.assertRaisesRegex(ValueError, "zero-failure"):
+                    server.promote_reference("failed", {"reason": "should fail"})
+        finally:
+            server.REPORTS = old_reports
+
     def test_run_once_always_disables_recycling(self):
         connection = server.ROOT / "connection_properties" / "ui_test.properties"
         query = server.ROOT / "data_files" / "ui_test.csv"

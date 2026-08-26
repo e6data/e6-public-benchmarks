@@ -113,8 +113,12 @@ METADATA_FIELDS = {
     "DATA_TYPE": 40, "RUN_MODE": 40, "CUSTOMER": 100, "CONFIG": 120,
     "TAGS": 300, "COMMENTS": 1000, "ESTIMATED_CORES": 20, "MEMORY_GB": 20,
     "INSTANCE_TYPE": 100, "EXECUTORS": 20, "CORES_PER_EXECUTOR": 20,
-    "SERVERLESS": 20, "ENGINE_BUILD": 120,
+    "SERVERLESS": 20, "ENGINE_BUILD": 120, "RUN_SCOPE": 20,
+    "RUN_PURPOSE": 40, "RUN_VALIDITY": 20,
 }
+RUN_SCOPES = {"internal", "external"}
+RUN_PURPOSES = {"adhoc", "reference-candidate", "nightly", "validation"}
+RUN_VALIDITIES = {"valid", "invalid", "pending"}
 DISPLAY_ENV_FIELDS = (
     "RUN_ID", "ENGINE", "CONNECTION_FILE", "TEST_PLAN", "QUERY_FILE", "LOAD_PROFILE",
     "CONCURRENT_QUERY_COUNT", "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME",
@@ -154,10 +158,32 @@ def init_registry() -> None:
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS run_facts_search_idx ON run_facts(engine, benchmark, cluster_size, started_at DESC)")
             db.execute("CREATE INDEX IF NOT EXISTS query_results_transaction_idx ON query_results(transaction, run_id)")
+            db.execute("""CREATE TABLE IF NOT EXISTS run_annotations (
+                run_id TEXT PRIMARY KEY, scope TEXT NOT NULL, purpose TEXT NOT NULL,
+                validity TEXT NOT NULL, reason TEXT, updated_at DOUBLE PRECISION NOT NULL
+            )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS reference_promotions (
+                promotion_id TEXT PRIMARY KEY, reference_key TEXT NOT NULL, run_id TEXT NOT NULL,
+                report_id TEXT NOT NULL, engine TEXT NOT NULL, workload_signature JSONB NOT NULL,
+                promoted_at DOUBLE PRECISION NOT NULL, promoted_by TEXT, reason TEXT NOT NULL,
+                active BOOLEAN NOT NULL
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS reference_promotions_lookup_idx ON reference_promotions(reference_key, active)")
     else:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(DB_PATH) as db:
             db.execute("CREATE TABLE IF NOT EXISTS runs (run_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at REAL NOT NULL)")
+            db.execute("""CREATE TABLE IF NOT EXISTS run_annotations (
+                run_id TEXT PRIMARY KEY, scope TEXT NOT NULL, purpose TEXT NOT NULL,
+                validity TEXT NOT NULL, reason TEXT, updated_at REAL NOT NULL
+            )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS reference_promotions (
+                promotion_id TEXT PRIMARY KEY, reference_key TEXT NOT NULL, run_id TEXT NOT NULL,
+                report_id TEXT NOT NULL, engine TEXT NOT NULL, workload_signature TEXT NOT NULL,
+                promoted_at REAL NOT NULL, promoted_by TEXT, reason TEXT NOT NULL,
+                active INTEGER NOT NULL
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS reference_promotions_lookup_idx ON reference_promotions(reference_key, active)")
     DB_READY = True
 
 
@@ -721,10 +747,16 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
     metadata = config.get("metadata") or {}
     if not isinstance(metadata, dict):
         raise ValueError("metadata must be an object")
+    enum_metadata = {
+        "RUN_SCOPE": RUN_SCOPES, "RUN_PURPOSE": RUN_PURPOSES,
+        "RUN_VALIDITY": RUN_VALIDITIES,
+    }
     for key, limit in METADATA_FIELDS.items():
         value = _property_value(metadata.get(key), key)
         if len(value) > limit:
             raise ValueError(f"{key} must not exceed {limit} characters")
+        if value and key in enum_metadata and value not in enum_metadata[key]:
+            raise ValueError(f"{key} has an unsupported value")
         if value:
             env[key] = value
     defaults = {
@@ -1073,13 +1105,179 @@ def start_runs(configs: list[dict[str, Any]], sequential: bool = False) -> list[
     return [run for run, _ in prepared]
 
 
+def _annotation_defaults(summary: dict[str, Any]) -> dict[str, Any]:
+    meta = summary.get("meta", {})
+    return {
+        "scope": str(meta.get("RUN_SCOPE") or "internal"),
+        "purpose": str(meta.get("RUN_PURPOSE") or "adhoc"),
+        "validity": str(meta.get("RUN_VALIDITY") or "valid"),
+        "reason": "",
+    }
+
+
+def governance_catalog() -> tuple[dict[str, tuple[Any, ...]], dict[str, tuple[Any, ...]]]:
+    if not DB_READY:
+        return {}, {}
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as db:
+            annotations = db.execute("SELECT run_id,scope,purpose,validity,reason FROM run_annotations").fetchall()
+            references = db.execute(
+                "SELECT run_id,reference_key,promoted_at,promoted_by,reason FROM reference_promotions WHERE active=true"
+            ).fetchall()
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            annotations = db.execute("SELECT run_id,scope,purpose,validity,reason FROM run_annotations").fetchall()
+            references = db.execute(
+                "SELECT run_id,reference_key,promoted_at,promoted_by,reason FROM reference_promotions WHERE active=1"
+            ).fetchall()
+    return ({row[0]: tuple(row[1:]) for row in annotations}, {row[0]: tuple(row[1:]) for row in references})
+
+
+def report_governance(
+        summary: dict[str, Any], catalog: tuple[dict[str, tuple[Any, ...]], dict[str, tuple[Any, ...]]] | None = None,
+) -> dict[str, Any]:
+    values = _annotation_defaults(summary)
+    run_id = str(summary.get("meta", {}).get("run_id") or "")
+    values.update({"is_active_reference": False, "reference_key": ""})
+    if not DB_READY or not run_id:
+        return values
+    if catalog is not None:
+        annotation, reference = catalog[0].get(run_id), catalog[1].get(run_id)
+        if annotation:
+            values.update(dict(zip(("scope", "purpose", "validity", "reason"), annotation)))
+        if reference:
+            values.update({"is_active_reference": True, "reference_key": reference[0],
+                           "promoted_at": reference[1], "promoted_by": reference[2],
+                           "promotion_reason": reference[3]})
+        return values
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as db:
+            annotation = db.execute(
+                "SELECT scope,purpose,validity,reason FROM run_annotations WHERE run_id=%s", (run_id,)
+            ).fetchone()
+            reference = db.execute(
+                "SELECT reference_key,promoted_at,promoted_by,reason FROM reference_promotions "
+                "WHERE run_id=%s AND active=true ORDER BY promoted_at DESC LIMIT 1", (run_id,)
+            ).fetchone()
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            annotation = db.execute(
+                "SELECT scope,purpose,validity,reason FROM run_annotations WHERE run_id=?", (run_id,)
+            ).fetchone()
+            reference = db.execute(
+                "SELECT reference_key,promoted_at,promoted_by,reason FROM reference_promotions "
+                "WHERE run_id=? AND active=1 ORDER BY promoted_at DESC LIMIT 1", (run_id,)
+            ).fetchone()
+    if annotation:
+        values.update(dict(zip(("scope", "purpose", "validity", "reason"), annotation)))
+    if reference:
+        values.update({
+            "is_active_reference": True, "reference_key": reference[0],
+            "promoted_at": reference[1], "promoted_by": reference[2],
+            "promotion_reason": reference[3],
+        })
+    return values
+
+
+def annotate_report(report_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    summary = report_by_id(report_id)
+    run_id = str(summary.get("meta", {}).get("run_id") or "")
+    if not run_id:
+        raise ValueError("Report does not contain a run_id")
+    current = report_governance(summary)
+    scope = str(body.get("scope") or current["scope"])
+    purpose = str(body.get("purpose") or current["purpose"])
+    validity = str(body.get("validity") or current["validity"])
+    reason = str(body.get("reason") or "").strip()
+    if scope not in RUN_SCOPES or purpose not in RUN_PURPOSES or validity not in RUN_VALIDITIES:
+        raise ValueError("Invalid run scope, purpose, or validity")
+    if validity == "invalid" and not reason:
+        raise ValueError("A reason is required when marking a run invalid")
+    now = time.time()
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute(
+                "INSERT INTO run_annotations(run_id,scope,purpose,validity,reason,updated_at) VALUES(%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT(run_id) DO UPDATE SET scope=excluded.scope,purpose=excluded.purpose,validity=excluded.validity,reason=excluded.reason,updated_at=excluded.updated_at",
+                (run_id, scope, purpose, validity, reason, now),
+            )
+            if validity == "invalid":
+                db.execute("UPDATE reference_promotions SET active=false WHERE run_id=%s", (run_id,))
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            values = (scope, purpose, validity, reason, now, run_id)
+            cursor = db.execute(
+                "UPDATE run_annotations SET scope=?,purpose=?,validity=?,reason=?,updated_at=? WHERE run_id=?", values
+            )
+            if cursor.rowcount == 0:
+                db.execute(
+                    "INSERT INTO run_annotations(run_id,scope,purpose,validity,reason,updated_at) VALUES(?,?,?,?,?,?)",
+                    (run_id, scope, purpose, validity, reason, now),
+                )
+            if validity == "invalid":
+                db.execute("UPDATE reference_promotions SET active=0 WHERE run_id=?", (run_id,))
+    return report_governance(summary)
+
+
+def workload_signature(summary: dict[str, Any]) -> dict[str, str]:
+    meta = summary.get("meta", {})
+    return {key: str(meta.get(key) or "") for key in (
+        "queries", "query_sha256", "test_plan", "run_type", "requested_concurrency",
+        "requested_qps", "requested_qpm", "hold_period", "ramp_up_time", "ramp_up_steps",
+        "max_concurrency", "recycle_on_eof", "random_order", "profile", "profile_sha256",
+    )}
+
+
+def promote_reference(report_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    summary = report_by_id(report_id)
+    meta = summary.get("meta", {})
+    run_id, engine = str(meta.get("run_id") or ""), str(meta.get("engine") or "")
+    reason = str(body.get("reason") or "").strip()
+    if report_status(summary) != "completed" or int(summary.get("samples") or 0) == 0 \
+            or int(summary.get("failed") or 0) != 0:
+        raise ValueError("Only completed, non-empty, zero-failure runs can be promoted")
+    if not run_id or not engine or not (meta.get("query_sha256") or meta.get("queries")):
+        raise ValueError("Reference promotion requires run, engine, and query identity metadata")
+    if report_governance(summary)["validity"] != "valid":
+        raise ValueError("Only runs marked valid can be promoted")
+    if not reason:
+        raise ValueError("Promotion reason is required")
+    signature = workload_signature(summary)
+    key_source = json.dumps({"engine": engine, **signature}, sort_keys=True)
+    reference_key = hashlib.sha256(key_source.encode()).hexdigest()
+    values = (uuid.uuid4().hex, reference_key, run_id, report_id, engine, time.time(),
+              str(body.get("promoted_by") or "ui-user")[:100], reason[:1000])
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        from psycopg.types.json import Jsonb
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute("UPDATE reference_promotions SET active=false WHERE reference_key=%s AND active=true", (reference_key,))
+            db.execute(
+                "INSERT INTO reference_promotions(promotion_id,reference_key,run_id,report_id,engine,workload_signature,promoted_at,promoted_by,reason,active) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,true)",
+                (*values[:5], Jsonb(signature), *values[5:]),
+            )
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            db.execute("UPDATE reference_promotions SET active=0 WHERE reference_key=? AND active=1", (reference_key,))
+            db.execute(
+                "INSERT INTO reference_promotions(promotion_id,reference_key,run_id,report_id,engine,workload_signature,promoted_at,promoted_by,reason,active) VALUES(?,?,?,?,?,?,?,?,?,1)",
+                (*values[:5], json.dumps(signature, sort_keys=True), *values[5:]),
+            )
+    return report_governance(summary)
+
+
 def completed_reports() -> list[dict[str, Any]]:
     found = []
+    catalog = governance_catalog()
     for path in REPORTS.glob("**/run_summary.json"):
         try:
             summary = json.loads(path.read_text())
             found.append({"id": str(path.parent.relative_to(REPORTS)), "mtime": path.stat().st_mtime,
-                          "status": report_status(summary), "summary": compact_summary(summary)})
+                          "status": report_status(summary), "summary": compact_summary(summary),
+                          "governance": report_governance(summary, catalog)})
         except (OSError, json.JSONDecodeError):
             continue
     return sorted(found, key=lambda item: item["mtime"], reverse=True)[:200]
@@ -1413,6 +1611,10 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(workload_preview(body))
             elif self.path == "/api/preflight":
                 self._json(preflight(body))
+            elif self.path == "/api/reports/annotate":
+                self._json(annotate_report(str(body.get("report_id", "")), body))
+            elif self.path == "/api/references/promote":
+                self._json(promote_reference(str(body.get("report_id", "")), body), HTTPStatus.CREATED)
             elif self.path.endswith("/cancel") and self.path.startswith("/api/runs/"):
                 run_id = self.path.split("/")[3]
                 with RUN_LOCK:
@@ -1437,8 +1639,8 @@ class Handler(SimpleHTTPRequestHandler):
                 left, right = report_by_id(left_id), report_by_id(right_id)
                 result = comparison(left, right)
                 result["report_identity"] = {
-                    "left": {"id": left_id, "status": report_status(left)},
-                    "right": {"id": right_id, "status": report_status(right)},
+                    "left": {"id": left_id, "status": report_status(left), "governance": report_governance(left)},
+                    "right": {"id": right_id, "status": report_status(right), "governance": report_governance(right)},
                 }
                 result["per_query"] = per_query_comparison(left_id, right_id)
                 self._json(result)

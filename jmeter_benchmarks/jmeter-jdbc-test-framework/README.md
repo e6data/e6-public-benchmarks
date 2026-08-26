@@ -267,6 +267,11 @@ Then open <http://127.0.0.1:8765>. The UI supports:
   visual deltas, cross-engine per-query JMeter statistics, and JSON/CSV/print
   export. Candidate compatibility restriction is opt-in; failed or cancelled
   runs stay hidden unless explicitly included;
+- classifying runs by internal/external scope, purpose, and validity for trend
+  analysis, then filtering those classifications in Compare;
+- explicitly promoting a completed zero-failure run as the active reference for
+  its engine and exact workload. Promotion requires a reason, preserves prior
+  promotion history, and never replaces a reference automatically;
 - previewing the backend-resolved planned workload before launch and comparing
   it with actual arrivals/in-flight behavior read from JMeter's result CSV;
 - applying tracked or locally-created workload and metadata presets through the
@@ -279,6 +284,13 @@ shows the exact non-secret values that will be passed to `run_test.sh`, and can
 export or import a reusable `.env` file. Importing a configuration never imports
 connection secrets; it references the local `CONNECTION_FILE`, just like CLI
 configuration.
+
+Run classifications and reference promotions are stored in the configured UI
+registry (SQLite by default, PostgreSQL in a shared deployment). Raw JMeter
+samples and generated reports remain in local or S3 artifact storage. Marking a
+run invalid removes it from active reference use without deleting its report or
+promotion history. The Compare page can filter by scope, purpose, validity,
+active-reference status, tags, workload identity, engine, and date.
 
 UI-created workload presets are stored as ignored
 `test_properties/ui_*.properties` files; metadata presets use ignored
