@@ -512,7 +512,7 @@ class UiTests(unittest.TestCase):
                     directory.mkdir()
                     (directory / "run_summary.json").write_text(json.dumps({
                         "samples": 25, "successful": 25, "failed": 0, "error_pct": 0,
-                        "meta": {"run_id": run_id, "engine": "snowflake", "queries": "tpcds.csv",
+                        "meta": {"run_id": run_id, "engine": "engine-a", "queries": "tpcds.csv",
                                  "query_sha256": "same", "test_plan": "run-once.jmx", "run_type": "ui_run_once"},
                     }))
                 first = server.promote_reference("run-first", {"reason": "initial baseline", "promoted_by": "qa"})
@@ -543,7 +543,7 @@ class UiTests(unittest.TestCase):
                 report.mkdir()
                 (report / "run_summary.json").write_text(json.dumps({
                     "samples": 1, "successful": 0, "failed": 1,
-                    "meta": {"run_id": "failed", "engine": "databricks", "queries": "q.csv"},
+                    "meta": {"run_id": "failed", "engine": "engine-b", "queries": "q.csv"},
                 }))
                 with self.assertRaisesRegex(ValueError, "zero-failure"):
                     server.promote_reference("failed", {"reason": "should fail"})
