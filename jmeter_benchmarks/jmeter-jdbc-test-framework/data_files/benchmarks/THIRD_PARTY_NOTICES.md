@@ -10,8 +10,6 @@ is subject to the applicable upstream terms.
   licensed under Apache License 2.0.
 - Snowflake sample SQL is downloaded from Snowflake Documentation. Snowflake's
   documentation and site terms apply to that upstream sample content.
-- E6 and Snowflake legacy harness SQL comes from the E6 benchmark assets
-  identified by source hashes in `catalog.json`.
 
 TPC-DS and TPC-H are trademarks of the Transaction Processing Performance
 Council. Inclusion of query text does not make results produced by this

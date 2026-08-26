@@ -6,14 +6,13 @@ lineage and dialect. Every executable CSV uses the strict
 
 - TPC-DS vendor/reference suites: `TPCDS_Q01` through `TPCDS_Q99`, including
   `A`/`B` forms for the four split templates (103 executable forms).
-- Legacy E6 harness suites: `TPCDS_LEGACY_*`. These source numbers are
-  execution-sequence labels, not reference TPC-DS query numbers.
 - TPC-H: `TPCH_Q01` through `TPCH_Q22` (22 executable queries).
 
 Files are grouped only by benchmark; their names identify source lineage and
 dialect. This compact layout does not claim that one SQL file is portable to
 every engine. Use `catalog.json` to distinguish public samples, published
-reference sources, and legacy optimized SQL.
+reference sources. Optimized, historical, and organization-specific workloads
+are runtime inputs and are not tracked here.
 
 ## Fair comparisons
 
@@ -25,15 +24,20 @@ all required queries succeeded.
 
 The Snowflake files are derived from public documentation samples; their names
 do not claim an audited or certified benchmark. The Databricks files retain
-the public `spark-sql-perf` lineage, while the E6 files preserve an existing
-optimized legacy workload. The `2_4` upstream directory remains recorded in
+the public `spark-sql-perf` lineage. The `2_4` upstream directory remains recorded in
 `catalog.json` but is intentionally omitted from the public filename because
 it is source lineage, not a Databricks runtime requirement. Trino and Presto do
 not currently have separately published full suites in this catalog; validate
 the Apache Spark reference against the target engine before use.
 
-Private or organization-specific query suites are runtime inputs, not public
-catalog entries. Supply them with the UI's S3 selector or an S3 URI in the CLI;
+For e6data, begin with the Apache Spark reference suite. Add an e6data dialect
+variant only after documenting syntax-only changes and validating equivalent
+results. Engine-specific optimizations are not dialect-only query suites and
+must remain external to this public catalog.
+
+Private, optimized, historical, or organization-specific query suites are
+runtime inputs, not public catalog entries. Supply them with the UI's S3
+selector or an S3 URI in the CLI;
 the downloaded input and its SHA-256 are recorded with the run and remain
 git-ignored.
 
@@ -43,13 +47,10 @@ benchmark results.
 ## Regeneration
 
 The deterministic converter retains SQL semantics, changes aliases to the
-stable logical IDs, removes explicitly requested legacy bootstrap probes, and
-normalizes tab indentation:
+stable logical IDs, and normalizes tab indentation:
 
 ```bash
 python3 utilities/build_benchmark_catalog.py tpcds SOURCE.csv TARGET.csv
-python3 utilities/build_benchmark_catalog.py tpcds SOURCE.csv TARGET.csv --skip-bootstrap
-python3 utilities/build_benchmark_catalog.py tpcds SOURCE.csv TARGET.csv --skip-bootstrap --legacy-sequence
 python3 utilities/build_benchmark_catalog.py tpch SOURCE.csv TARGET.csv
 python3 utilities/build_benchmark_catalog.py tpch snowflake.sql TARGET.csv --snowflake-script
 ```

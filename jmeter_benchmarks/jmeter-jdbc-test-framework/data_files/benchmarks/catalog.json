@@ -2,7 +2,7 @@
   "schema_version": 1,
   "generated_on": "2026-08-26",
   "alias_contract": {
-    "tpcds": "TPCDS_Qnn with A/B suffix for reference/vendor forms; TPCDS_LEGACY_* for legacy sequence identities",
+    "tpcds": "TPCDS_Qnn with A/B suffix for the four split templates",
     "tpch": "TPCH_Qnn"
   },
   "comparison_policy": "Compare the same variant when possible; otherwise require identical logical aliases, data semantics, scale, execution policy, and successful coverage.",
@@ -12,7 +12,7 @@
       "benchmark": "tpcds",
       "classification": "reference",
       "forms": 103,
-      "path": "data_files/benchmarks/tpcds/apache_spark_reference_103.csv",
+      "path": "data_files/benchmarks/tpcds/tpcds_99_apache_spark_reference.csv",
       "sha256": "08e19a9faee5459fa095749017f0a1a972e202dfd0bfb83d83274a9157f7e6e0",
       "source": "https://github.com/apache/spark/tree/19f59da405c204f8610d42aafa1cfe8437fd9f82/sql/core/src/test/resources/tpcds",
       "source_sha256": "36a3f8adcb8ec1021e0ba4d02002d85975aaaf2e2531ea424dd3610e34359ab9",
@@ -25,7 +25,7 @@
       "classification": "vendor-published",
       "engine": "databricks",
       "forms": 103,
-      "path": "data_files/benchmarks/tpcds/databricks_spark_sql_perf_103.csv",
+      "path": "data_files/benchmarks/tpcds/tpcds_99_databricks_spark_sql_perf.csv",
       "sha256": "be44d6cc28c0912f3924620f0a945ac8047dcd2829b09ffda3d1c806c5a3b006",
       "source": "https://github.com/databricks/spark-sql-perf/tree/28d88190f6a5f6698d32eaf4092334c41180b806/src/main/resources/tpcds_2_4",
       "source_sha256": "c54c858e1fab258dd914bf09ba78fb2fdc5e8e6dc3e06c18590ef4e56d90aca3",
@@ -37,24 +37,11 @@
       "classification": "public-sample",
       "engine": "snowflake",
       "forms": 103,
-      "path": "data_files/benchmarks/tpcds/snowflake_public_sample_103.csv",
+      "path": "data_files/benchmarks/tpcds/tpcds_99_snowflake_public_sample.csv",
       "sha256": "fa841cf6ee0f5ba360f57d385279c6967d83d327b7f5cedcddc0e38714f00abf",
       "source": "https://docs.snowflake.com/static/samples/tpc-ds-all-queries.sql",
       "source_sha256": "d7d35ba55bba8225a5bd850e007f1e6abff5eab7d726384bd6f17d9e090136ff",
       "intended_engines": ["snowflake"]
-    },
-    {
-      "id": "tpcds.e6data.optimized-legacy.103",
-      "benchmark": "tpcds",
-      "classification": "legacy-optimized",
-      "engine": "e6data",
-      "forms": 103,
-      "path": "data_files/benchmarks/tpcds/e6data_optimized_legacy_103.csv",
-      "sha256": "95aec1c6daa03c3c115eafeb6e9aaf6cc12d378ef4889e340fe378aeee2dde6c",
-      "source": "e6-perf-test:TPCDS_E6_Optimized_Legacy_108.csv",
-      "source_sha256": "1da8b77c3d1b9155dbc784d0951ec7329db6ae9ea7538177755f23ddb5ba7081",
-      "intended_engines": ["e6data"],
-      "notes": "Five non-TPC bootstrap probes were excluded; SQL was not rewritten."
     },
     {
       "id": "tpch.databricks.spark-sql-perf.22",
@@ -62,7 +49,7 @@
       "classification": "vendor-published",
       "engine": "databricks",
       "forms": 22,
-      "path": "data_files/benchmarks/tpch/databricks_spark_sql_perf_22.csv",
+      "path": "data_files/benchmarks/tpch/tpch_22_databricks_spark_sql_perf.csv",
       "sha256": "38bce3e7c65f01a687a923a36aef4295c4f689f52253e3b54da5390ce3dbedcb",
       "source": "https://github.com/databricks/spark-sql-perf/tree/28d88190f6a5f6698d32eaf4092334c41180b806/src/main/resources/tpch/queries",
       "source_sha256": "82f8ed6d9b7e0b5af7ae57d2e02a3e449e6db557c931ec7e87e1d73aeb14d6f2",
@@ -74,23 +61,11 @@
       "classification": "public-sample",
       "engine": "snowflake",
       "forms": 22,
-      "path": "data_files/benchmarks/tpch/snowflake_public_sample_22.csv",
+      "path": "data_files/benchmarks/tpch/tpch_22_snowflake_public_sample.csv",
       "sha256": "d5fd7092bc366095d50189e9921b3d5a2df4a57600cfdedd71569a83992e0f97",
       "source": "https://docs.snowflake.com/static/samples/tpc-h-all-queries.sql",
       "source_sha256": "9a8ac045822f95058cc53ddab8026f9458331d5b521cde6d20579f1af84e89c2",
       "intended_engines": ["snowflake"]
-    },
-    {
-      "id": "tpch.e6data.optimized-legacy.22",
-      "benchmark": "tpch",
-      "classification": "legacy-optimized",
-      "engine": "e6data",
-      "forms": 22,
-      "path": "data_files/benchmarks/tpch/e6data_optimized_legacy_22.csv",
-      "sha256": "436f1e55742c284f28a088d9f20f78233c7929aae6760fb95b8cd678f7f8b143",
-      "source": "e6-perf-test:TPCH_E6_Optimized_Legacy_22.csv",
-      "source_sha256": "3f5d76a54ca712cadb3d3f177bbf0d3d05ed66b680f5a8fd3fc5073e62e7932b",
-      "intended_engines": ["e6data"]
     }
   ]
 }

@@ -5,7 +5,7 @@ be described as an audited, certified, or compliant TPC benchmark result.
 
 ## Public documentation sample
 
-`data_files/benchmarks/tpcds/snowflake_public_sample_103.csv` contains 103 executable query
+`data_files/benchmarks/tpcds/tpcds_99_snowflake_public_sample.csv` contains 103 executable query
 forms (99 query numbers, with two forms each for queries 14, 23, 24, and 39)
 from Snowflake's public TPC-DS sample script. Source order and SQL semantics are
 preserved. Surrounding session/timing statements are excluded, indentation is
@@ -27,7 +27,7 @@ python3 utilities/import_snowflake_tpcds.py official \
   /tmp/tpc-ds-all-queries.sql /tmp/snowflake-source-order.csv
 python3 utilities/build_benchmark_catalog.py tpcds \
   /tmp/snowflake-source-order.csv \
-  data_files/benchmarks/tpcds/snowflake_public_sample_103.csv
+  data_files/benchmarks/tpcds/tpcds_99_snowflake_public_sample.csv
 ```
 
 ## Private workloads
