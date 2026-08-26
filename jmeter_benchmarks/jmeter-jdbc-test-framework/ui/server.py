@@ -660,7 +660,7 @@ def _inside(relative: str, directory: str, suffix: str) -> str:
     """Return a normalized repo-relative file from one allowed directory."""
     candidate = (ROOT / relative).resolve()
     base = (ROOT / directory).resolve()
-    if candidate.parent != base or candidate.suffix.lower() != suffix or not candidate.is_file():
+    if not candidate.is_relative_to(base) or candidate.suffix.lower() != suffix or not candidate.is_file():
         raise ValueError(f"Invalid {directory} file")
     return candidate.relative_to(ROOT).as_posix()
 
@@ -1326,7 +1326,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             if parsed.path == "/api/config":
                 connections = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "connection_properties").glob("*.properties"))
-                queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").glob("*.csv"))
+                queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").rglob("*.csv"))
                 profiles = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "test_properties").glob("*.csv"))
                 self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
             elif parsed.path == "/api/runs":

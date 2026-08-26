@@ -345,6 +345,18 @@ class UiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             server._inside("../../etc/passwd", "connection_properties", ".properties")
 
+    def test_path_validation_accepts_nested_benchmark_query(self):
+        query = server.ROOT / "data_files" / "benchmarks" / "ui_nested_test.csv"
+        try:
+            query.parent.mkdir(parents=True, exist_ok=True)
+            query.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select 1"\n')
+            self.assertEqual(
+                server._inside("data_files/benchmarks/ui_nested_test.csv", "data_files", ".csv"),
+                "data_files/benchmarks/ui_nested_test.csv",
+            )
+        finally:
+            query.unlink(missing_ok=True)
+
     def test_build_environment_keeps_upload_disabled_and_enables_standard_dashboard(self):
         connection = server.ROOT / "connection_properties" / "ui_test.properties"
         query = server.ROOT / "data_files" / "ui_test.csv"

@@ -138,6 +138,13 @@ Their different provenance, hashes, regeneration commands, and comparability
 limits are documented in
 [Snowflake TPC-DS workloads](docs/snowflake-tpcds-workloads.md).
 
+Complete, lineage-separated TPC-DS (103 executable forms representing 99
+query numbers) and TPC-H (22 queries) suites are available under
+[`data_files/benchmarks/`](data_files/benchmarks/README.md). The catalog keeps
+Apache Spark reference, Databricks-published, Snowflake-official, and E6 legacy
+optimized SQL separate while assigning stable logical query aliases for
+per-query comparisons. Benchmark Studio discovers these nested CSVs directly.
+
 ### Step 4: Run a test
 
 **Option A — One reusable config, choose the load model at runtime (recommended):**
