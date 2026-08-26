@@ -1,6 +1,10 @@
 # JDBC Drivers
 
-The repository currently includes the e6data JDBC driver used by the checked-in test setup. Additional JDBC JARs placed here are ignored by Git. `./setup_jmeter.sh` copies third-party drivers and only the highest-versioned e6data driver into JMeter's `lib/ext/` directory.
+The repository includes the approved e6data JDBC driver used by the checked-in
+test setup. Additional JDBC JARs placed here are ignored by Git.
+`./setup_jmeter.sh` downloads the pinned Databricks, Snowflake, Trino, and
+Presto drivers from Maven Central and installs only the highest-versioned
+e6data driver into JMeter's `lib/ext/` directory.
 
 ## Bundled artifact
 
@@ -28,6 +32,18 @@ For Databricks, download the current JDBC driver from Databricks and use the dri
 from Maven Central. Snowflake's older
 `net.snowflake.client.jdbc.SnowflakeDriver` class remains compatible but is
 deprecated; new profiles use the current API driver class shown above.
+
+Pinned setup-time versions (verified against Maven Central on 2026-08-26):
+
+| Engine | Version |
+|---|---:|
+| Databricks | 3.4.2 |
+| Snowflake | 4.3.3 |
+| Trino | 483 |
+| Presto | 0.298.1 |
+
+The e6data 2.0.27 artifact is repository-managed rather than published through
+Maven Central, so it is updated only from an approved e6data driver release.
 
 ## Add or update a driver
 

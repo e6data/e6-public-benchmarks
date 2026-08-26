@@ -490,19 +490,26 @@ echo ""
 echo "Step 6: Installing custom JDBC drivers..."
 
 # Download Databricks JDBC driver from Maven Central
-DBR_JDBC_VERSION="3.3.3"
+DBR_JDBC_VERSION="3.4.2"
 DBR_JDBC_URL="https://repo1.maven.org/maven2/com/databricks/databricks-jdbc/${DBR_JDBC_VERSION}/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
 DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
+
+for old_jar in "${JMETER_DIR}"/lib/ext/databricks-jdbc-*.jar; do
+    [ -e "${old_jar}" ] || continue
+    [ "${old_jar}" = "${DBR_JDBC_JAR}" ] || rm -f "${old_jar}"
+done
 
 if [ ! -f "${DBR_JDBC_JAR}" ]; then
     echo "  Downloading DBR JDBC driver ${DBR_JDBC_VERSION}..."
     if command_exists wget; then
         wget -O "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
             echo "  WARNING: Failed to download DBR JDBC driver"
+            rm -f "${DBR_JDBC_JAR}"
         }
     elif command_exists curl; then
         curl -L -o "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
             echo "  WARNING: Failed to download DBR JDBC driver"
+            rm -f "${DBR_JDBC_JAR}"
         }
     fi
 
@@ -518,6 +525,11 @@ fi
 SNOWFLAKE_JDBC_VERSION="4.3.3"
 SNOWFLAKE_JDBC_URL="https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/${SNOWFLAKE_JDBC_VERSION}/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar"
 SNOWFLAKE_JDBC_JAR="${JMETER_DIR}/lib/ext/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar"
+
+for old_jar in "${JMETER_DIR}"/lib/ext/snowflake-jdbc-*.jar; do
+    [ -e "${old_jar}" ] || continue
+    [ "${old_jar}" = "${SNOWFLAKE_JDBC_JAR}" ] || rm -f "${old_jar}"
+done
 
 if [ ! -f "${SNOWFLAKE_JDBC_JAR}" ]; then
     echo "  Downloading Snowflake JDBC driver ${SNOWFLAKE_JDBC_VERSION}..."
@@ -540,6 +552,43 @@ else
     echo "  ✓ Snowflake JDBC driver already installed"
 fi
 
+# Trino recommends using a JDBC driver identical to or newer than the server.
+TRINO_JDBC_VERSION="483"
+TRINO_JDBC_URL="https://repo1.maven.org/maven2/io/trino/trino-jdbc/${TRINO_JDBC_VERSION}/trino-jdbc-${TRINO_JDBC_VERSION}.jar"
+TRINO_JDBC_JAR="${JMETER_DIR}/lib/ext/trino-jdbc-${TRINO_JDBC_VERSION}.jar"
+for old_jar in "${JMETER_DIR}"/lib/ext/trino-jdbc-*.jar; do
+    [ -e "${old_jar}" ] || continue
+    [ "${old_jar}" = "${TRINO_JDBC_JAR}" ] || rm -f "${old_jar}"
+done
+if [ ! -f "${TRINO_JDBC_JAR}" ]; then
+    echo "  Downloading Trino JDBC driver ${TRINO_JDBC_VERSION}..."
+    if command_exists wget; then
+        wget -O "${TRINO_JDBC_JAR}" "${TRINO_JDBC_URL}" || rm -f "${TRINO_JDBC_JAR}"
+    elif command_exists curl; then
+        curl -fL -o "${TRINO_JDBC_JAR}" "${TRINO_JDBC_URL}" || rm -f "${TRINO_JDBC_JAR}"
+    fi
+fi
+[ -f "${TRINO_JDBC_JAR}" ] && echo "  ✓ Trino JDBC driver ${TRINO_JDBC_VERSION} installed"
+
+# Presto remains available for existing custom profiles even though it is not
+# one of Benchmark Studio's named engine presets.
+PRESTO_JDBC_VERSION="0.298.1"
+PRESTO_JDBC_URL="https://repo1.maven.org/maven2/com/facebook/presto/presto-jdbc/${PRESTO_JDBC_VERSION}/presto-jdbc-${PRESTO_JDBC_VERSION}.jar"
+PRESTO_JDBC_JAR="${JMETER_DIR}/lib/ext/presto-jdbc-${PRESTO_JDBC_VERSION}.jar"
+for old_jar in "${JMETER_DIR}"/lib/ext/presto-jdbc-*.jar; do
+    [ -e "${old_jar}" ] || continue
+    [ "${old_jar}" = "${PRESTO_JDBC_JAR}" ] || rm -f "${old_jar}"
+done
+if [ ! -f "${PRESTO_JDBC_JAR}" ]; then
+    echo "  Downloading Presto JDBC driver ${PRESTO_JDBC_VERSION}..."
+    if command_exists wget; then
+        wget -O "${PRESTO_JDBC_JAR}" "${PRESTO_JDBC_URL}" || rm -f "${PRESTO_JDBC_JAR}"
+    elif command_exists curl; then
+        curl -fL -o "${PRESTO_JDBC_JAR}" "${PRESTO_JDBC_URL}" || rm -f "${PRESTO_JDBC_JAR}"
+    fi
+fi
+[ -f "${PRESTO_JDBC_JAR}" ] && echo "  ✓ Presto JDBC driver ${PRESTO_JDBC_VERSION} installed"
+
 # Copy custom JDBC drivers from jdbc_drivers/ directory
 JDBC_DRIVERS_DIR="${SCRIPT_DIR}/jdbc_drivers"
 if [ -d "${JDBC_DRIVERS_DIR}" ]; then
@@ -558,6 +607,7 @@ if [ -d "${JDBC_DRIVERS_DIR}" ]; then
         [ -e "$jar" ] || continue
         case "$(basename "$jar")" in
             e6-jdbc-driver-*.jar) continue ;;
+            trino-jdbc-*.jar|presto-jdbc-*.jar) continue ;;
         esac
         cp -v "$jar" "${JMETER_DIR}/lib/ext/"
     done

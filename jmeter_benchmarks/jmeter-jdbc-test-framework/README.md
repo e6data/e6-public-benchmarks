@@ -93,6 +93,12 @@ and the current `net.snowflake.client.api.driver.SnowflakeDriver` class. Setup
 downloads the pinned Snowflake JDBC 4.3.3 self-contained driver from Maven
 Central; credentials remain in the git-ignored connection profile.
 
+The setup-time JDBC pins are Databricks 3.4.2, Snowflake 4.3.3, Trino 483, and
+Presto 0.298.1. The bundled e6data 2.0.27 driver remains the latest
+repository-approved internal artifact. Re-run setup after pulling an upgrade;
+it removes superseded versions of the Maven-downloaded drivers from JMeter's
+classpath.
+
 This creates a file in `connection_properties/` — e.g., `connection_properties/my_connection.properties`.
 
 For Databricks JDBC Driver 3, copy the short URL from the SQL warehouse
@@ -125,6 +131,12 @@ q2,"SELECT col1, col2 FROM my_table WHERE col1 > 100"
 mkdir -p data_files
 cp my_queries.csv data_files/
 ```
+
+Two reproducible Snowflake workloads are included: Snowflake's official
+103-form TPC-DS sample and the legacy 80-row subset used by `e6-perf-test`.
+Their different provenance, hashes, regeneration commands, and comparability
+limits are documented in
+[Snowflake TPC-DS workloads](docs/snowflake-tpcds-workloads.md).
 
 ### Step 4: Run a test
 
