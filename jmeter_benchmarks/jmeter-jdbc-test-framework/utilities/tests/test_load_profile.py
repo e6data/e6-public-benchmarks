@@ -81,6 +81,14 @@ class ReportMetricTests(unittest.TestCase):
         report = capture_run_report.analyse(rows)
         self.assertEqual(report["peak_in_flight"], 1)
 
+    def test_thread_count_caps_millisecond_handoff_rounding(self):
+        rows = [self.row(1000, 1001), self.row(2000, 100)]
+        for row in rows:
+            row["allThreads"] = "1"
+            row["threadName"] = "Thread Group 1-1"
+        report = capture_run_report.analyse(rows)
+        self.assertEqual(report["peak_in_flight"], 1)
+
     def test_error_metrics(self):
         rows = [self.row(1000, 100), self.row(1100, 100, "false")]
         report = capture_run_report.analyse(rows)

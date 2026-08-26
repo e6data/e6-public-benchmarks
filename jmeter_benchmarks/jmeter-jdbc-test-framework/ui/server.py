@@ -869,6 +869,12 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
             event_index += 1
         in_flight.append(peak)
     latency_series = [round(total / count) if count else 0 for total, count in zip(latency_sum, latency_count)]
+    thread_cap = max(
+        (int(row.get("allThreads") or row.get("grpThreads") or 0) for row in rows),
+        default=0,
+    )
+    if thread_cap:
+        in_flight = [min(value, thread_cap) for value in in_flight]
     top_failure = max(failures.items(), key=lambda item: item[1]) if failures else None
     series = {"arrivals": arrivals, "successful": successful, "failed": failed, "in_flight": in_flight, "latency_ms": latency_series}
     bucket = max(1, (len(arrivals) + 599) // 600)

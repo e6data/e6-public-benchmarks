@@ -110,6 +110,17 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
         end = int(row["timeStamp"]) + int(row["elapsed"])
         successful_comp[(end - t0) // 1000] += 1
     inflight = peak_inflight_per_second(starts, ends, t0, n)
+    # A sampler's millisecond timestamp and elapsed value can differ by one
+    # millisecond at a same-thread hand-off. The raw interval sweep would then
+    # report more simultaneous queries than JMeter had worker threads. JDBC
+    # samplers are synchronous, so JMeter's recorded thread count is a hard
+    # upper bound for query concurrency.
+    thread_cap = max(
+        (int(row.get("allThreads") or row.get("grpThreads") or 0) for row in rows),
+        default=0,
+    )
+    if thread_cap:
+        inflight = [min(value, thread_cap) for value in inflight]
 
     active_completion_buckets = [value for value in comp if value > 0]
 

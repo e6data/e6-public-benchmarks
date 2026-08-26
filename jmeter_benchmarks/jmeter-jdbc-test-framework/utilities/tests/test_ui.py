@@ -341,6 +341,18 @@ class UiTests(unittest.TestCase):
         self.assertEqual(metrics["series"]["in_flight"], [1])
         self.assertEqual(metrics["successful"], 2)
 
+    def test_live_metrics_caps_rounding_overlap_at_jmeter_thread_count(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "child"
+            run.mkdir()
+            (run / "JmeterResultFile.csv").write_text(
+                "timeStamp,elapsed,label,success,allThreads,threadName\n"
+                "1000,1001,Q1,true,1,Thread Group 1-1\n"
+                "2000,100,Q2,true,1,Thread Group 1-1\n"
+            )
+            metrics = server.live_metrics(Path(temp))
+        self.assertEqual(max(metrics["series"]["in_flight"]), 1)
+
     def test_path_validation_blocks_traversal(self):
         with self.assertRaises(ValueError):
             server._inside("../../etc/passwd", "connection_properties", ".properties")
