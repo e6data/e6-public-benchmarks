@@ -6,15 +6,14 @@ lineage and dialect. Every executable CSV uses the strict
 
 - TPC-DS vendor/reference suites: `TPCDS_Q01` through `TPCDS_Q99`, including
   `A`/`B` forms for the four split templates (103 executable forms).
-- Legacy E6 harness suites: `TPCDS_LEGACY_*`. These aliases are aligned only
-  between the E6 and Snowflake legacy files because the source numbers are
-  execution-sequence labels, not canonical TPC-DS query numbers.
+- Legacy E6 harness suites: `TPCDS_LEGACY_*`. These source numbers are
+  execution-sequence labels, not reference TPC-DS query numbers.
 - TPC-H: `TPCH_Q01` through `TPCH_Q22` (22 executable queries).
 
-The paths under `reference/`, `databricks/`, `snowflake/`, and `e6data/` are
-workload identities, not claims that one SQL file is portable to every engine.
-Use `catalog.json` to distinguish vendor-published, reference, and
-legacy optimized SQL.
+Files are grouped only by benchmark; their names identify source lineage and
+dialect. This compact layout does not claim that one SQL file is portable to
+every engine. Use `catalog.json` to distinguish public samples, published
+reference sources, and legacy optimized SQL.
 
 ## Fair comparisons
 
@@ -24,12 +23,19 @@ and retain the catalog variant ID in the result metadata. Never aggregate two
 runs unless they cover the same logical aliases, data scale and semantics and
 all required queries succeeded.
 
-The Databricks and Snowflake directories contain vendor-published SQL. The E6
-files preserve an existing optimized legacy harness workload. Trino and Presto
-do not currently have a separately published full suite in this catalog; use
-the portable Apache Spark reference only after preflight/execution validation
-against the target catalog. The catalog deliberately does not create cosmetic
-copies and label them as vendor SQL.
+The Snowflake files are derived from public documentation samples; their names
+do not claim an audited or certified benchmark. The Databricks files retain
+the public `spark-sql-perf` lineage, while the E6 files preserve an existing
+optimized legacy workload. The `2_4` upstream directory remains recorded in
+`catalog.json` but is intentionally omitted from the public filename because
+it is source lineage, not a Databricks runtime requirement. Trino and Presto do
+not currently have separately published full suites in this catalog; validate
+the Apache Spark reference against the target engine before use.
+
+Private or organization-specific query suites are runtime inputs, not public
+catalog entries. Supply them with the UI's S3 selector or an S3 URI in the CLI;
+the downloaded input and its SHA-256 are recorded with the run and remain
+git-ignored.
 
 These are query-engine regression workloads. They are not audited TPC
 benchmark results.
