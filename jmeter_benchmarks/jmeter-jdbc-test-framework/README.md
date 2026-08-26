@@ -92,6 +92,9 @@ Snowflake profiles use a vendor URL such as
 and the current `net.snowflake.client.api.driver.SnowflakeDriver` class. Setup
 downloads the pinned Snowflake JDBC 4.3.3 self-contained driver from Maven
 Central; credentials remain in the git-ignored connection profile.
+For Java 9+, `run_test.sh` automatically appends Apache Arrow's required
+`java.nio` module option to `JVM_ARGS` only for this driver. Existing caller
+heap/tuning options are preserved; other JDBC engines are unchanged.
 
 The setup-time JDBC pins are Databricks 3.4.2, Snowflake 4.3.3, Trino 483, and
 Presto 0.298.1. The bundled e6data 2.0.27 driver remains the latest

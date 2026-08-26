@@ -501,6 +501,18 @@ if [ "$JDBC_DRIVER" = "com.databricks.client.jdbc.Driver" ]; then
     echo "  Databricks Driver 3: PAT authentication configured"
     echo ""
 fi
+if [ "$JDBC_DRIVER" = "net.snowflake.client.api.driver.SnowflakeDriver" ]; then
+    # Snowflake's result path uses Apache Arrow. Java 9+ requires this narrow
+    # module opening or every query can fail while materializing its result.
+    # Append without replacing caller-provided heap/tuning options.
+    case " ${JVM_ARGS:-} " in
+        *" --add-opens=java.base/java.nio=ALL-UNNAMED "*) ;;
+        *) JVM_ARGS="${JVM_ARGS:+$JVM_ARGS }--add-opens=java.base/java.nio=ALL-UNNAMED" ;;
+    esac
+    export JVM_ARGS
+    echo "  Snowflake Arrow: Java NIO module access configured"
+    echo ""
+fi
 
 # Opt-in only: derive another run-local plan containing the upstream listener.
 # Source JMX files and the normal CLI path remain untouched when disabled.

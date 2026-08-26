@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 FAKE_JMETER = r'''#!/bin/bash
+if [ -n "${CAPTURE_JVM_ARGS:-}" ]; then
+    printf '%s' "${JVM_ARGS:-}" > "$CAPTURE_JVM_ARGS"
+fi
 result=""
 while [ "$#" -gt 0 ]; do
     if [ "$1" = "-l" ]; then
@@ -115,6 +118,19 @@ class RunnerIntegrationTests(unittest.TestCase):
         summary = json.loads((run_dir / "run_summary.json").read_text())
         self.assertEqual(summary["meta"]["query_source"], "s3://example-bucket/path/remote-queries.csv")
         self.assertEqual(summary["meta"]["queries"], "query-remote-queries.csv")
+
+    def test_snowflake_driver_adds_arrow_java_access_without_losing_caller_options(self):
+        capture = Path(self.temp.name) / "jvm-args.txt"
+        self.connection.write_text(
+            "CONNECTION_STRING=jdbc:test\n"
+            "DRIVER_CLASS=net.snowflake.client.api.driver.SnowflakeDriver\n"
+        )
+        completed = self.run_runner(JVM_ARGS="-Xmx2g", CAPTURE_JVM_ARGS=str(capture))
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertEqual(
+            capture.read_text(),
+            "-Xmx2g --add-opens=java.base/java.nio=ALL-UNNAMED",
+        )
 
     def test_prometheus_transform_adds_dashboard_compatible_metrics(self):
         source = self.reports / "source.jmx"
