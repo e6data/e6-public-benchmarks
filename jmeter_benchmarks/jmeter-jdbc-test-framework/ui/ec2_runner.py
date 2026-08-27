@@ -93,7 +93,10 @@ class EC2Runner:
             job = Path(temp) / "job"
             job.mkdir()
             remote_env = dict(env)
-            for key in ("CONNECTION_FILE", "QUERY_FILE", "LOAD_PROFILE"):
+            for key in (
+                "CONNECTION_FILE", "TEST_PROPERTIES_FILE", "QUERY_FILE",
+                "LOAD_PROFILE", "WARMUP_QUERY_FILE",
+            ):
                 value = env.get(key)
                 if not value:
                     continue

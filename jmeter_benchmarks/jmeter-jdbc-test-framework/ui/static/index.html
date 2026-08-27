@@ -22,6 +22,7 @@
     <div class="nav-label">PERFORMANCE</div>
     <button class="tab active" data-tab="launch"><b>＋</b> Launch test</button>
     <button class="tab" data-tab="live"><b>◉</b> Live runs <span id="liveCount">0</span></button>
+    <button class="tab" data-tab="history"><b>◷</b> Run history</button>
     <button class="tab" data-tab="compare"><b>⇄</b> Compare runs</button>
     <button class="tab" data-tab="presets"><b>◇</b> Presets</button>
     <button class="tab" data-tab="settings"><b>⚙</b> System settings</button>
@@ -37,29 +38,47 @@
         <div id="engines" class="engine-grid"></div>
         <div class="card workload">
           <div class="card-title"><span>02</span><div><h3>Workload</h3><p>Shared by both engines for a fair comparison</p></div></div>
-          <div class="preset-strip"><label>Workload preset<select id="workloadPreset"><option value="">Custom configuration</option></select></label><span>Loads visible fields below; values remain editable.</span><button id="saveWorkloadFromLaunch" class="secondary" type="button">Save as preset</button></div>
-          <div class="fields">
-            <label>TEST_PLAN <small>test pattern</small><select id="plan"></select></label>
-            <label>QUERY_FILE <small>query dataset</small><select id="query_file" required></select><span class="source-actions"><input id="query_upload" type="file" accept=".csv"><button type="button" data-upload="query">Local CSV</button><button type="button" data-s3="query">S3 URI</button></span></label>
-            <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
-            <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
-            <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>
-            <label class="param qpm">QPM <small>queries / minute</small><input id="QPM" type="number" value="60" min="1"></label>
-            <label>HOLD_PERIOD <small id="durationUnit">seconds</small><input id="HOLD_PERIOD" type="number" value="60" min="1"></label>
-          </div>
-          <div id="plannedWorkload" class="planned-workload"><div class="chart-empty">Select a workload to preview its planned shape.</div></div>
+          <div class="preset-strip"><label>Saved workload preset <small>optional shortcut</small><select id="workloadPreset"><option value="">No saved preset — configure below</option></select></label><span>A preset fills the test plan and workload fields. Without one, start by selecting the test plan below.</span><button id="updateWorkloadFromLaunch" class="secondary" type="button" disabled>Update selected</button><button id="saveWorkloadFromLaunch" class="secondary" type="button">Save as new</button></div>
+          <section class="workload-phase warmup-phase">
+            <div class="workload-phase-header">
+              <div><h4>Warm-up <em>Optional · always sequential</em></h4><p>Wake and prepare the engine before measurement. It always uses Run Once at concurrency 1; samples are stored separately and excluded from benchmark statistics.</p></div>
+              <label class="phase-toggle"><input id="WARMUP_ENABLED" type="checkbox"><span>Enable warm-up</span></label>
+            </div>
+            <div class="fields warmup-fields">
+              <label>Warm-up query file <small>excluded query dataset</small><select id="WARMUP_QUERY_FILE"></select><span class="source-actions"><input id="warmup_upload" type="file" accept=".csv"><button type="button" data-upload="warmup">Local CSV</button><button type="button" data-s3="warmup">S3 URI</button></span></label>
+              <label>Warm-up iterations <small>excluded sequential passes</small><input id="WARMUP_ITERATIONS" type="number" value="1" min="1"></label>
+            </div>
+            <p class="phase-note">Each iteration uses the Run Once plan at concurrency 1. For a three-pass experiment, choose 2 here; the third pass is the measured workload below.</p>
+          </section>
+          <section class="workload-phase measured-phase">
+            <div class="workload-phase-header">
+              <div><h4>Actual workload <em>Measured</em></h4><p>Configure the test pattern and query dataset included in benchmark results.</p></div>
+            </div>
+            <div class="fields">
+              <label>TEST_PLAN <small>select the test pattern first</small><select id="plan"></select></label>
+              <label>TEST_PROPERTIES <small>automatic for selected plan</small><input id="testPropertiesDisplay" readonly></label>
+              <label>QUERY_FILE <small>measured query dataset</small><select id="query_file" required></select><span class="source-actions"><input id="query_upload" type="file" accept=".csv"><button type="button" data-upload="query">Local CSV</button><button type="button" data-s3="query">S3 URI</button></span></label>
+              <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
+              <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
+              <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>
+              <label class="param qpm">QPM <small>queries / minute</small><input id="QPM" type="number" value="60" min="1"></label>
+              <label class="duration-field">HOLD_PERIOD <small id="durationUnit">seconds</small><input id="HOLD_PERIOD" type="number" value="60" min="1"></label>
+              <label class="measured-iterations">Measured iterations <small>Run Once passes included in JMeter results</small><input id="MEASURED_ITERATIONS" type="number" value="1" min="1" max="20"></label>
+            </div>
+            <div id="plannedWorkload" class="planned-workload"><div class="chart-empty">Select a workload to preview its planned shape.</div></div>
+          </section>
         </div>
         <details class="card advanced-card">
           <summary><strong>Advanced run settings</strong><span>Optional run_test.sh inputs</span></summary>
           <div class="fields details-fields">
-            <label>RAMP_UP_TIME<input id="RAMP_UP_TIME" type="number" value="1" min="0"></label>
-            <label>RAMP_UP_STEPS<input id="RAMP_UP_STEPS" type="number" value="1" min="1"></label>
+            <label class="ramp-time-setting">RAMP_UP_TIME <small>seconds; 0 starts immediately</small><input id="RAMP_UP_TIME" type="number" value="0" min="0"></label>
+            <label class="ramp-steps-setting">RAMP_UP_STEPS <small>number of stepped increases</small><input id="RAMP_UP_STEPS" type="number" value="1" min="1"></label>
             <label>MAX_CONCURRANCY <small>arrival safety cap</small><input id="MAX_CONCURRANCY" type="number" value="100" min="1"></label>
-            <label>MAX_ERROR_PCT<input id="MAX_ERROR_PCT" type="number" value="5" min="0" max="100"></label>
-            <label>QUERY_TIMEOUT<input id="QUERY_TIMEOUT" type="number" value="300" min="1"></label>
-            <label>LIMIT_RESULTSET<input id="LIMIT_RESULTSET" type="number" value="1000" min="1"></label>
+            <label>MAX_ERROR_PCT <small>runner pass/fail threshold</small><input id="MAX_ERROR_PCT" type="number" value="5" min="0" max="100"></label>
+            <label>QUERY_TIMEOUT <small>per query, seconds</small><input id="QUERY_TIMEOUT" type="number" value="300" min="1"></label>
+            <label>LIMIT_RESULTSET <small>maximum rows consumed per query</small><input id="LIMIT_RESULTSET" type="number" value="1000" min="1"></label>
           </div>
-          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> RECYCLE_ON_EOF</label><label><input id="RANDOM_ORDER" type="checkbox"> RANDOM_ORDER</label><label><input id="GENERATE_DASHBOARD" type="checkbox" checked> GENERATE_DASHBOARD</label></div>
+          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> RECYCLE_ON_EOF</label><label class="random-order-setting"><input id="RANDOM_ORDER" type="checkbox"> RANDOM_ORDER</label><label><input id="GENERATE_DASHBOARD" type="checkbox" checked> GENERATE_DASHBOARD</label></div>
         </details>
         <details class="card metadata-card">
           <summary><strong>Run metadata</strong><span>Descriptive only · does not change JMeter execution</span></summary>
@@ -103,6 +122,20 @@
     <section id="live" class="panel">
       <div class="section-heading"><div><span class="eyebrow">LIVE TELEMETRY</span><h2>Benchmark runs</h2><p>UI preview reads the JMeter result CSV. Final metrics and the generated JMeter HTML dashboard are authoritative. <span id="liveObservabilityLinks"></span></p></div><div class="live-actions"><label><input id="latestOnly" type="checkbox" checked> Latest launch only</label><button id="refreshRuns" class="secondary">Refresh</button></div></div>
       <div id="liveRuns" class="run-grid empty">No runs launched in this UI session.</div>
+    </section>
+
+    <section id="history" class="panel">
+      <div class="section-heading"><div><span class="eyebrow">RUN CATALOG</span><h2>Run history</h2><p>Search registry-backed runs and open their final JMeter artifacts.</p></div><button id="refreshHistory" class="secondary">Refresh</button></div>
+      <div class="history-filters card">
+        <label>Search<input id="historySearch" placeholder="run ID, label, query file, tag"></label>
+        <label>Engine<select id="historyEngine"><option value="">All engines</option></select></label>
+        <label>Status<select id="historyStatus"><option value="">All statuses</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option><option value="interrupted">Interrupted</option><option value="running">Running</option></select></label>
+        <label>Test plan<select id="historyPlan"><option value="">All test plans</option></select></label>
+        <label>From date<input id="historyFrom" type="date"></label>
+        <label>Through date<input id="historyTo" type="date"></label>
+      </div>
+      <p id="historyCount" class="artifact-list"></p>
+      <div id="historyRuns" class="run-grid empty">No runs match these filters.</div>
     </section>
 
     <section id="compare" class="panel">

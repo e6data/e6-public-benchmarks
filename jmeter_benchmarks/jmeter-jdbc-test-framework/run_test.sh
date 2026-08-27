@@ -10,6 +10,8 @@
 #   CONNECTION_FILE   - path to connection properties file
 #   TEST_PLAN         - path to test plan .jmx file
 #   QUERY_FILE        - path to query CSV data file
+#   TEST_PROPERTIES_FILE - optional local or s3:// JMeter properties file;
+#                          inferred from TEST_PLAN when omitted
 #
 # Optional (with defaults):
 #   METADATA_FILE             - metadata file for S3 upload (default: none)
@@ -17,7 +19,7 @@
 #   QPS                       - queries per second (default: 1)
 #   QPM                       - queries per minute (default: 10)
 #   HOLD_PERIOD               - test duration in seconds (default: 300)
-#   RAMP_UP_TIME              - ramp up time in seconds (default: 1)
+#   RAMP_UP_TIME              - ramp up time in seconds; 0 starts immediately (default: 0)
 #   RAMP_UP_STEPS             - ramp up steps (default: 1)
 #   LOAD_PROFILE              - load profile CSV path (default: test_properties/load_profile.csv)
 #   RANDOM_ORDER              - random query order true/false (default: false)
@@ -38,6 +40,10 @@
 #   PROMETHEUS_DELAY          - seconds to keep endpoint after the test (default: 15)
 #   PROMETHEUS_URL            - informational Prometheus UI URL (default: empty)
 #   GRAFANA_URL               - informational dashboard URL (default: empty)
+#   WARMUP_ENABLED            - run an excluded sequential warm-up first (default: false)
+#   WARMUP_QUERY_FILE         - warm-up query CSV; local path or s3:// URI
+#   WARMUP_ITERATIONS         - number of separate warm-up passes (default: 1)
+#   MEASURED_ITERATIONS       - query-file passes included in a Run Once result (default: 1)
 #
 # Exit codes:
 #   0  the run completed and the error rate was within MAX_ERROR_PCT
@@ -132,6 +138,7 @@ if [ -n "$1" ]; then
     # Save any pre-set env vars so they take priority over config file
     _SAVE_CONNECTION_FILE="${CONNECTION_FILE:-}"
     _SAVE_TEST_PLAN="${TEST_PLAN:-}"
+    _SAVE_TEST_PROPERTIES_FILE="${TEST_PROPERTIES_FILE:-}"
     _SAVE_QUERY_FILE="${QUERY_FILE:-}"
     _SAVE_METADATA_FILE="${METADATA_FILE:-}"
     _SAVE_CONCURRENT_QUERY_COUNT="${CONCURRENT_QUERY_COUNT:-}"
@@ -159,12 +166,17 @@ if [ -n "$1" ]; then
     _SAVE_PROMETHEUS_DELAY="${PROMETHEUS_DELAY:-}"
     _SAVE_PROMETHEUS_URL="${PROMETHEUS_URL:-}"
     _SAVE_GRAFANA_URL="${GRAFANA_URL:-}"
+    _SAVE_WARMUP_ENABLED="${WARMUP_ENABLED:-}"
+    _SAVE_WARMUP_QUERY_FILE="${WARMUP_QUERY_FILE:-}"
+    _SAVE_WARMUP_ITERATIONS="${WARMUP_ITERATIONS:-}"
+    _SAVE_MEASURED_ITERATIONS="${MEASURED_ITERATIONS:-}"
 
     source "$SUITE_FILE"
 
     # Restore env vars that were set before sourcing (env overrides config)
     [ -n "$_SAVE_CONNECTION_FILE" ] && CONNECTION_FILE="$_SAVE_CONNECTION_FILE"
     [ -n "$_SAVE_TEST_PLAN" ] && TEST_PLAN="$_SAVE_TEST_PLAN"
+    [ -n "$_SAVE_TEST_PROPERTIES_FILE" ] && TEST_PROPERTIES_FILE="$_SAVE_TEST_PROPERTIES_FILE"
     [ -n "$_SAVE_QUERY_FILE" ] && QUERY_FILE="$_SAVE_QUERY_FILE"
     [ -n "$_SAVE_METADATA_FILE" ] && METADATA_FILE="$_SAVE_METADATA_FILE"
     [ -n "$_SAVE_CONCURRENT_QUERY_COUNT" ] && CONCURRENT_QUERY_COUNT="$_SAVE_CONCURRENT_QUERY_COUNT"
@@ -192,6 +204,10 @@ if [ -n "$1" ]; then
     [ -n "$_SAVE_PROMETHEUS_DELAY" ] && PROMETHEUS_DELAY="$_SAVE_PROMETHEUS_DELAY"
     [ -n "$_SAVE_PROMETHEUS_URL" ] && PROMETHEUS_URL="$_SAVE_PROMETHEUS_URL"
     [ -n "$_SAVE_GRAFANA_URL" ] && GRAFANA_URL="$_SAVE_GRAFANA_URL"
+    [ -n "$_SAVE_WARMUP_ENABLED" ] && WARMUP_ENABLED="$_SAVE_WARMUP_ENABLED"
+    [ -n "$_SAVE_WARMUP_QUERY_FILE" ] && WARMUP_QUERY_FILE="$_SAVE_WARMUP_QUERY_FILE"
+    [ -n "$_SAVE_WARMUP_ITERATIONS" ] && WARMUP_ITERATIONS="$_SAVE_WARMUP_ITERATIONS"
+    [ -n "$_SAVE_MEASURED_ITERATIONS" ] && MEASURED_ITERATIONS="$_SAVE_MEASURED_ITERATIONS"
 fi
 
 # ============================================================================
@@ -233,8 +249,38 @@ fi
 # an updated S3 object is never hidden behind a stale local cache.
 materialize_s3_input QUERY_FILE query
 
+# Every supported plan has one canonical JMeter properties file. A caller may
+# select another local/S3 file; already-resolved suite or environment values
+# remain higher precedence and are emitted as explicit -J overrides below.
+if [ -z "${TEST_PROPERTIES_FILE:-}" ]; then
+    case "$(basename "$TEST_PLAN")" in
+        *Run-Once*) TEST_PROPERTIES_FILE="test_properties/run_once.properties" ;;
+        *Maintain-static-concurrency*) TEST_PROPERTIES_FILE="test_properties/fixed_concurrency.properties" ;;
+        *Constant-QPS*) TEST_PROPERTIES_FILE="test_properties/constant_qps.properties" ;;
+        *Constant-QPM*) TEST_PROPERTIES_FILE="test_properties/constant_qpm.properties" ;;
+        *Fire-QPS-with-load-profile*) TEST_PROPERTIES_FILE="test_properties/variable_arrivals.properties" ;;
+        *Maintain-variable-concurrency*) TEST_PROPERTIES_FILE="test_properties/variable_concurrency.properties" ;;
+        *) TEST_PROPERTIES_FILE="test_properties/default.properties" ;;
+    esac
+fi
+materialize_s3_input TEST_PROPERTIES_FILE test-properties
+
+# Read only runner-supported keys from the properties file, without sourcing
+# it as shell code. Arbitrary JMeter/plugin keys are still loaded by JMeter via
+# the second -q argument. Existing env/suite values win.
+TEST_PROPERTY_KEYS="CONCURRENT_QUERY_COUNT QPS QPM HOLD_PERIOD RAMP_UP_TIME RAMP_UP_STEPS LOAD_PROFILE RANDOM_ORDER RECYCLE_ON_EOF QUERY_TIMEOUT LIMIT_RESULTSET MAX_CONCURRANCY MAX_ERROR_PCT MEASURED_ITERATIONS GENERATE_DASHBOARD"
+if [ -f "$TEST_PROPERTIES_FILE" ]; then
+    while IFS='=' read -r raw_key raw_value; do
+        key="$(printf '%s' "$raw_key" | xargs)"
+        case " $TEST_PROPERTY_KEYS " in *" $key "*) ;; *) continue ;; esac
+        value="${raw_value%%[[:space:]]#*}"
+        value="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [ -n "${!key:-}" ] || printf -v "$key" '%s' "$value"
+    done < "$TEST_PROPERTIES_FILE"
+fi
+
 # Validate files exist
-for var in CONNECTION_FILE TEST_PLAN QUERY_FILE; do
+for var in CONNECTION_FILE TEST_PLAN TEST_PROPERTIES_FILE QUERY_FILE; do
     val="${!var}"
     if [ ! -f "$val" ]; then
         echo -e "${RED}Error: ${var} file not found: ${val}${NC}"
@@ -265,7 +311,7 @@ CONCURRENT_QUERY_COUNT="${CONCURRENT_QUERY_COUNT:-2}"
 QPS="${QPS:-1}"
 QPM="${QPM:-10}"
 HOLD_PERIOD="${HOLD_PERIOD:-300}"
-RAMP_UP_TIME="${RAMP_UP_TIME:-1}"
+RAMP_UP_TIME="${RAMP_UP_TIME:-0}"
 RAMP_UP_STEPS="${RAMP_UP_STEPS:-1}"
 # The two load-profile plan families take different CSV formats, so the default
 # follows the plan: 5-column concurrency waves for UltimateThreadGroup,
@@ -288,6 +334,30 @@ PROMETHEUS_ENABLED="${PROMETHEUS_ENABLED:-false}"
 PROMETHEUS_IP="${PROMETHEUS_IP:-127.0.0.1}"
 PROMETHEUS_PORT="${PROMETHEUS_PORT:-9270}"
 PROMETHEUS_DELAY="${PROMETHEUS_DELAY:-15}"
+WARMUP_ENABLED="${WARMUP_ENABLED:-false}"
+WARMUP_ITERATIONS="${WARMUP_ITERATIONS:-1}"
+MEASURED_ITERATIONS="${MEASURED_ITERATIONS:-1}"
+
+if [ "$WARMUP_ENABLED" != "true" ] && [ "$WARMUP_ENABLED" != "false" ]; then
+    echo -e "${RED}Error: WARMUP_ENABLED must be true or false.${NC}"
+    exit 1
+fi
+if ! [[ "$WARMUP_ITERATIONS" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "${RED}Error: WARMUP_ITERATIONS must be a positive integer.${NC}"
+    exit 1
+fi
+if ! [[ "$MEASURED_ITERATIONS" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "${RED}Error: MEASURED_ITERATIONS must be a positive integer.${NC}"
+    exit 1
+fi
+if [ "$MEASURED_ITERATIONS" -gt 1 ] && ! basename "$TEST_PLAN" | grep -qi "run-once"; then
+    echo -e "${RED}Error: MEASURED_ITERATIONS greater than 1 is supported only by Run Once plans.${NC}"
+    exit 1
+fi
+if [ "$WARMUP_ENABLED" = "true" ] && [ -z "${WARMUP_QUERY_FILE:-}" ]; then
+    echo -e "${RED}Error: WARMUP_QUERY_FILE is required when WARMUP_ENABLED=true.${NC}"
+    exit 1
+fi
 
 materialize_s3_input LOAD_PROFILE profile
 
@@ -340,6 +410,49 @@ if [ -z "${JMETER_HOME:-}" ] || [ ! -f "$JMETER_HOME/bin/jmeter" ]; then
     exit 1
 fi
 
+# Run warm-up in one or more separate JMeter processes. Each pass uses the
+# run-once plan at concurrency 1 and writes below REPORT_PATH/_warmup/. The
+# measured invocation therefore never sees warm-up samples in its result CSV,
+# dashboard, summary, percentiles, throughput, or comparison registry entry.
+if [ "$WARMUP_ENABLED" = "true" ]; then
+    echo ""
+    echo -e "${BLUE}=========================================="
+    echo " Benchmark warm-up (excluded)"
+    echo -e "==========================================${NC}"
+    echo "  Queries:    ${WARMUP_QUERY_FILE}"
+    echo "  Iterations: ${WARMUP_ITERATIONS}"
+    echo "  Results:    ${REPORT_PATH}/_warmup/"
+    echo ""
+    _warmup_iteration=1
+    while [ "$_warmup_iteration" -le "$WARMUP_ITERATIONS" ]; do
+        echo -e "${BLUE}Warm-up pass ${_warmup_iteration}/${WARMUP_ITERATIONS}${NC}"
+        if ! env \
+            WARMUP_ENABLED=false \
+            MEASURED_ITERATIONS=1 \
+            QUERY_FILE="$WARMUP_QUERY_FILE" \
+            TEST_PLAN="${PROJECT_ROOT}/Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx" \
+            TEST_PROPERTIES_FILE="${PROJECT_ROOT}/test_properties/run_once.properties" \
+            CONCURRENT_QUERY_COUNT=1 \
+            RANDOM_ORDER=false \
+            RECYCLE_ON_EOF=false \
+            REPORT_PATH="${REPORT_PATH}/_warmup" \
+            RUN_ID="${RUN_ID:-warmup}-warmup-${_warmup_iteration}" \
+            RUN_TYPE=warmup \
+            RUN_PURPOSE=warmup \
+            RUN_VALIDITY=invalid \
+            COPY_TO_S3=false \
+            GENERATE_DASHBOARD=false \
+            PROMETHEUS_ENABLED=false \
+            MAX_ERROR_PCT=0 \
+            "${PROJECT_ROOT}/run_test.sh"; then
+            echo -e "${RED}Error: warm-up pass ${_warmup_iteration} failed; measured run was not started.${NC}"
+            exit 1
+        fi
+        _warmup_iteration=$((_warmup_iteration + 1))
+    done
+    echo -e "${GREEN}Warm-up complete; starting measured run with a fresh JMeter process.${NC}"
+fi
+
 # ============================================================================
 # Display configuration
 # ============================================================================
@@ -354,8 +467,21 @@ if ! mkdir "$REPORT_DIR"; then
     exit 1
 fi
 
+# Run Once consumes a shared CSV until EOF. Repeating its validated data rows
+# creates exact measured passes without modifying the JMX or enabling endless
+# CSV recycling. Preserving aliases lets JMeter aggregate the N observations of
+# each query into its standard per-label count/average/median/percentiles.
+ORIGINAL_QUERY_FILE="$QUERY_FILE"
+if [ "$MEASURED_ITERATIONS" -gt 1 ]; then
+    REPEATED_QUERY_FILE="${REPORT_DIR}/measured-queries-${MEASURED_ITERATIONS}x.csv"
+    python3 "${PROJECT_ROOT}/utilities/repeat_query_file.py" \
+        "$ORIGINAL_QUERY_FILE" "$REPEATED_QUERY_FILE" "$MEASURED_ITERATIONS" >/dev/null
+    QUERY_FILE="$REPEATED_QUERY_FILE"
+fi
+
 # Count logical query rows, excluding a recognized CSV header.
 QUERY_COUNT=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field rows)
+UNIQUE_QUERY_COUNT=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$ORIGINAL_QUERY_FILE" --field rows)
 
 # Infer test type from test plan filename for display
 PLAN_BASENAME=$(basename "$TEST_PLAN" .jmx | tr '[:upper:]' '[:lower:]')
@@ -413,9 +539,12 @@ echo "    File:       $(basename "$CONNECTION_FILE")"
 echo ""
 echo -e "  ${BOLD}Test${NC}"
 echo "    Plan:       $(basename "$TEST_PLAN")"
+echo "    Properties: $(basename "$TEST_PROPERTIES_FILE")"
+[ -n "${TEST_PROPERTIES_FILE_SOURCE:-}" ] && echo "    Properties source: ${TEST_PROPERTIES_FILE_SOURCE}"
 echo "    Type:       ${TEST_TYPE}"
 echo "    Run type:   ${RUN_TYPE}"
-echo "    Queries:    $(basename "$QUERY_FILE") (${QUERY_COUNT} queries)"
+echo "    Queries:    $(basename "$ORIGINAL_QUERY_FILE") (${UNIQUE_QUERY_COUNT} unique queries)"
+[ "$MEASURED_ITERATIONS" -gt 1 ] && echo "    Measured passes: ${MEASURED_ITERATIONS} (${QUERY_COUNT} total samples planned; same labels aggregated by JMeter)"
 [ -n "${QUERY_FILE_SOURCE:-}" ] && echo "    Query source: ${QUERY_FILE_SOURCE}"
 [ -n "${METADATA_FILE:-}" ] && echo "    Metadata:   $(basename "$METADATA_FILE")"
 echo ""
@@ -566,6 +695,7 @@ fi
 JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
 JMETER_CMD+=(-t "$TEST_PLAN")
 JMETER_CMD+=(-q "$CONNECTION_FILE")
+JMETER_CMD+=(-q "$TEST_PROPERTIES_FILE")
 JMETER_CMD+=(-l "${REPORT_DIR}/JmeterResultFile.csv")
 # HTML dashboard is ~3.5MB of vendored assets per run. CLAUDE.md documents
 # GENERATE_DASHBOARD=false to skip it; honour that here.
@@ -652,15 +782,19 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
         _meta_value="${!_meta_var:-}"
         [ -n "$_meta_value" ] && CAPTURE_ARGS+=(--meta "${_meta_var}=${_meta_value}")
     done
-    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$ORIGINAL_QUERY_FILE")")
     [ -n "${QUERY_FILE_SOURCE:-}" ] && CAPTURE_ARGS+=(--meta "query_source=${QUERY_FILE_SOURCE}")
     [ -n "${GENERATED_PLAN:-}" ] && CAPTURE_ARGS+=(--meta "generated_plan=$(basename "$GENERATED_PLAN")")
-    QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field sha256)
-    CAPTURE_ARGS+=(--meta "query_sha256=${QUERY_SHA}" --meta "requested_concurrency=${CONCURRENT_QUERY_COUNT}")
+    QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$ORIGINAL_QUERY_FILE" --field sha256)
+    CAPTURE_ARGS+=(--meta "query_sha256=${QUERY_SHA}" --meta "measured_iterations=${MEASURED_ITERATIONS}" --meta "requested_concurrency=${CONCURRENT_QUERY_COUNT}")
     CAPTURE_ARGS+=(--meta "requested_qps=${QPS}" --meta "requested_qpm=${QPM}")
     CAPTURE_ARGS+=(--meta "hold_period=${HOLD_PERIOD}" --meta "ramp_up_time=${RAMP_UP_TIME}" --meta "ramp_up_steps=${RAMP_UP_STEPS}")
     CAPTURE_ARGS+=(--meta "max_concurrency=${MAX_CONCURRANCY}" --meta "recycle_on_eof=${RECYCLE_ON_EOF}" --meta "random_order=${RANDOM_ORDER}")
     CAPTURE_ARGS+=(--meta "jmeter_result_autoflush=${JMETER_RESULT_AUTOFLUSH}")
+    CAPTURE_ARGS+=(--meta "warmup_enabled=${WARMUP_ENABLED}" --meta "warmup_iterations=${WARMUP_ITERATIONS}")
+    if [ "$WARMUP_ENABLED" = "true" ]; then
+        CAPTURE_ARGS+=(--meta "warmup_queries=$(basename "$WARMUP_QUERY_FILE")")
+    fi
     CAPTURE_ARGS+=(--meta "prometheus_enabled=${PROMETHEUS_ENABLED}")
     [ "$PROMETHEUS_ENABLED" = "true" ] && CAPTURE_ARGS+=(--meta "prometheus_endpoint=http://${PROMETHEUS_IP}:${PROMETHEUS_PORT}/metrics")
     [ -n "${PROMETHEUS_URL:-}" ] && CAPTURE_ARGS+=(--meta "prometheus_url=${PROMETHEUS_URL}")

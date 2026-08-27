@@ -161,17 +161,35 @@ class UiTests(unittest.TestCase):
         finally:
             target.unlink(missing_ok=True)
 
-    def test_s3_import_selects_existing_local_file(self):
+    def test_s3_import_refreshes_existing_local_file(self):
         target = server.ROOT / "data_files" / "ui_s3_existing.csv"
+        def fake_run(command, **_kwargs):
+            Path(command[4]).write_text("query_alias,query_string\nq2,select 2\n")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
         try:
             target.parent.mkdir(exist_ok=True)
             target.write_text("query_alias,query_string\nq1,select 1\n")
-            with mock.patch.object(server.subprocess, "run") as download:
+            with mock.patch.object(server.subprocess, "run", side_effect=fake_run) as download:
                 relative = server.import_s3_input(
                     "query", "s3://example-bucket/folder/ui_s3_existing.csv"
                 )
             self.assertEqual(relative, "data_files/ui_s3_existing.csv")
-            download.assert_not_called()
+            download.assert_called_once()
+            self.assertIn("q2,select 2", target.read_text())
+        finally:
+            target.unlink(missing_ok=True)
+
+    def test_warmup_s3_import_uses_query_input_directory(self):
+        target = server.ROOT / "data_files" / "ui_warmup_s3.csv"
+        def fake_run(command, **_kwargs):
+            Path(command[4]).write_text("query_alias,query_string\nw1,select 1\n")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        try:
+            with mock.patch.object(server.subprocess, "run", side_effect=fake_run):
+                relative = server.import_s3_input(
+                    "warmup", "s3://example-bucket/warmup/ui_warmup_s3.csv"
+                )
+            self.assertEqual(relative, "data_files/ui_warmup_s3.csv")
         finally:
             target.unlink(missing_ok=True)
 
@@ -284,6 +302,26 @@ class UiTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 server.delete_preset("workload", "repository_example")
 
+    def test_workload_preset_preserves_warmup_and_boolean_fields(self):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(server, "ROOT", Path(temp)):
+            (Path(temp) / "test_properties").mkdir()
+            saved = server.create_preset("workload", {"name": "warm", "values": {
+                "QUERY_PATH": "data_files/queries.csv",
+                "WARMUP_ENABLED": True,
+                "WARMUP_QUERY_FILE": "data_files/warmup.csv",
+                "WARMUP_ITERATIONS": 2,
+                "RECYCLE_ON_EOF": False,
+                "RANDOM_ORDER": False,
+                "GENERATE_DASHBOARD": True,
+            }})
+            values = server.read_preset(Path(temp) / saved)
+            self.assertEqual(values["WARMUP_ENABLED"], "true")
+            self.assertEqual(values["WARMUP_QUERY_FILE"], "data_files/warmup.csv")
+            self.assertEqual(values["WARMUP_ITERATIONS"], "2")
+            self.assertEqual(values["RECYCLE_ON_EOF"], "false")
+            self.assertEqual(values["RANDOM_ORDER"], "false")
+            self.assertEqual(values["GENERATE_DASHBOARD"], "true")
+
     def test_live_metrics_ignores_setup_samples(self):
         with tempfile.TemporaryDirectory() as temp:
             run = Path(temp) / "child"
@@ -394,6 +432,12 @@ class UiTests(unittest.TestCase):
         self.assertEqual(env["REPORT_PATH"], "reports/ui-abc")
         self.assertEqual(env["PROMETHEUS_ENABLED"], "false")
         self.assertEqual(env["PROMETHEUS_PORT"], "9270")
+
+    def test_run_id_is_sortable_and_human_readable(self):
+        with mock.patch.object(server.time, "gmtime", return_value=time.gmtime(0)), \
+                mock.patch.object(server.uuid, "uuid4", return_value=mock.Mock(hex="abcdef123456")):
+            run_id = server.new_run_id("Snowflake", "jdbc_sequential")
+        self.assertEqual(run_id, "19700101T000000Z-snowflake-sequential-abcdef")
 
     def test_preflight_accepts_runner_query_header_variants(self):
         connection = server.ROOT / "connection_properties" / "ui_header_test.properties"
@@ -599,6 +643,8 @@ class UiTests(unittest.TestCase):
                     "load_profile": profile,
                 }, plan)
                 self.assertEqual(env["TEST_PLAN"], expected_path)
+                self.assertEqual(env["TEST_PROPERTIES_FILE"], server.PLAN_TEST_PROPERTIES[plan])
+                self.assertTrue((server.ROOT / env["TEST_PROPERTIES_FILE"]).is_file())
         finally:
             for path in (jdbc, http, query, arrivals, concurrency):
                 path.unlink(missing_ok=True)
@@ -651,6 +697,25 @@ class UiTests(unittest.TestCase):
         })
         self.assertEqual(preview["expected_total"], 2)
 
+    def test_run_once_preview_multiplies_total_by_measured_iterations(self):
+        preview = server.workload_preview({
+            "plan": "jdbc_run_once", "query_file": "data_files/simple_queries.csv",
+            "CONCURRENT_QUERY_COUNT": 2, "MEASURED_ITERATIONS": 3,
+            "RAMP_UP_TIME": 0, "RAMP_UP_STEPS": 1, "HOLD_PERIOD": 1,
+        })
+        self.assertEqual(preview["expected_total"], 6)
+
+    def test_sequential_is_run_once_with_concurrency_forced_to_one(self):
+        preview = server.workload_preview({
+            "plan": "jdbc_sequential", "query_file": "data_files/simple_queries.csv",
+            "CONCURRENT_QUERY_COUNT": 9, "RAMP_UP_TIME": 1,
+            "RAMP_UP_STEPS": 1, "HOLD_PERIOD": 60,
+        })
+        self.assertEqual(preview["pattern"], "Sequential")
+        self.assertTrue(preview["is_run_once"])
+        self.assertEqual(preview["peak"], 1)
+        self.assertIsNone(preview["duration_s"])
+
     def test_qps_preview_matches_arrivals_thread_group_step_ramp(self):
         preview = server.workload_preview({
             "plan": "jdbc_qps", "QPS": 4, "RAMP_UP_TIME": 4,
@@ -668,7 +733,8 @@ class UiTests(unittest.TestCase):
             "HOLD_PERIOD": 1,
         }
         expected = {
-            "jdbc_run_once": "Run once", "jdbc_concurrency": "Fixed concurrency",
+            "jdbc_sequential": "Sequential", "jdbc_run_once": "Run once (concurrent)",
+            "jdbc_concurrency": "Fixed concurrency",
             "jdbc_qps": "Constant QPS", "jdbc_qpm": "Constant QPM",
         }
         for plan, label in expected.items():

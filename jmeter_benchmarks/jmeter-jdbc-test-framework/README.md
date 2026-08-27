@@ -139,20 +139,54 @@ mkdir -p data_files
 cp my_queries.csv data_files/
 ```
 
-Two reproducible Snowflake workloads are included: Snowflake's official
-103-form TPC-DS sample and the legacy 80-row subset used by `e6-perf-test`.
-Their different provenance, hashes, regeneration commands, and comparability
-limits are documented in
-[Snowflake TPC-DS workloads](docs/snowflake-tpcds-workloads.md).
+The repository intentionally does not bundle vendor-specific TPC-DS or TPC-H
+SQL. This is a generic JMeter framework: provide the workload you are
+authorized to use as a local CSV or an `s3://` URI. Benchmark Studio provides
+local-file and S3 selectors for measured query, warm-up query, and load-profile
+CSVs. An S3 selection is downloaded afresh on the runner, atomically replacing
+an older local copy with the same filename. The CLI accepts S3 URIs directly.
+Both paths validate the standard two-column query CSV before execution; the
+CLI also records its source URI and resolved SHA-256 with the run.
 
-Complete, lineage-separated TPC-DS (103 executable forms representing 99
-query numbers) and TPC-H (22 queries) suites are available under
-[`data_files/benchmarks/`](data_files/benchmarks/README.md). The catalog keeps
-Apache Spark reference, Databricks-published, Snowflake-official, and E6 legacy
-optimized SQL separate while assigning stable logical query aliases for
-per-query comparisons. Benchmark Studio discovers these nested CSVs directly.
+For cross-engine comparisons, use stable logical aliases, equivalent data and
+execution policies, and retain the exact query-file hash. Dialect-specific or
+optimized suites should live outside this public repository.
 
 ### Step 4: Run a test
+
+Every bundled plan family has one canonical file under `test_properties/`:
+`run_once.properties`, `fixed_concurrency.properties`,
+`constant_qps.properties`, `constant_qpm.properties`,
+`variable_arrivals.properties`, or `variable_concurrency.properties`.
+`run_test.sh` selects the matching file automatically. You may select a local
+or `s3://` file with `TEST_PROPERTIES_FILE`; the runner downloads S3 inputs
+fresh for that run.
+
+The effective precedence is JMX fallback, then connection and test `-q`
+files, then explicit environment/UI values emitted as JMeter `-J` overrides.
+For example, this uses `fixed_concurrency.properties` but runs at concurrency
+5 without creating another properties file:
+
+```bash
+export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
+export CONCURRENT_QUERY_COUNT=5
+./run_test.sh test_configs/my_benchmark.env
+```
+
+The equivalent raw JMeter shape is:
+
+```bash
+./apache-jmeter-5.6.3/bin/jmeter -n \
+  -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
+  -q connection_properties/my_connection.properties \
+  -q test_properties/fixed_concurrency.properties \
+  -JQUERY_PATH=data_files/my_queries.csv \
+  -JCONCURRENT_QUERY_COUNT=5 \
+  -l reports/results.csv
+```
+
+JVM startup options such as `HEAP` and `JVM_ARGS` must remain environment
+variables because Java has already started before JMeter reads `-q` files.
 
 **Option A — One reusable config, choose the load model at runtime (recommended):**
 
@@ -197,6 +231,37 @@ TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.j
 
 Environment values override the config file, so no JMX editing or separate config per load level is required.
 
+Benchmark Studio exposes **Sequential** and **Run once (concurrent)** as
+separate workload choices. Both reuse the same run-once JMX; Sequential forces
+concurrency to 1, while concurrent Run Once lets threads consume the query CSV
+together. Neither uses `HOLD_PERIOD`—both stop when every query-file row has
+been consumed for the configured `MEASURED_ITERATIONS` (default `1`). For
+example, `MEASURED_ITERATIONS=3` produces three samples per query label in one
+standard JMeter result. The JMeter Aggregate Report and per-query view then
+provide count, average, median, and percentiles across those three samples.
+
+#### Optional excluded warm-up
+
+Warm a suspended engine without contaminating the measured JMeter CSV,
+percentiles, throughput, dashboard, or comparison result:
+
+```bash
+WARMUP_ENABLED=true \
+WARMUP_QUERY_FILE=s3://my-private-bucket/workloads/warmup.csv \
+WARMUP_ITERATIONS=1 \
+TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
+CONCURRENT_QUERY_COUNT=1 \
+./run_test.sh test_configs/my_benchmark.env
+```
+
+The runner executes each warm-up pass in a separate JMeter process using the
+unchanged run-once JMX at concurrency 1. Warm-up artifacts are written below
+`REPORT_PATH/_warmup/`; the measured run starts only after every pass succeeds.
+Warm-up inputs are supplied by the user and are never bundled with the public
+framework. Engine-specific cache or persisted-result behavior remains the
+responsibility of the selected connection and workload. In Benchmark Studio, enable
+the same option directly in the **Workload** section.
+
 **Option B — Export variables and run:**
 
 ```bash
@@ -228,7 +293,10 @@ vi test_configs/my_test.env
 ./run_jmeter_tests_interactive.sh
 ```
 
-Guides you through selecting connection, test plan, query file, and parameters.
+Guides you through selecting a connection, test plan, query file, optional metadata,
+and the workload values relevant to the selected plan. The plan automatically selects
+its canonical file under `test_properties/`; interactive answers override those defaults
+for that run and the script delegates execution to `run_test.sh`.
 
 ## Optional local web UI
 
@@ -308,7 +376,10 @@ the included local pre-commit hook once per clone from the repository root:
 git config core.hooksPath .githooks
 ```
 
-UI-created workload presets are stored as ignored
+The UI's **Workload preset** is the same JMeter properties format used by the
+CLI. Selecting a plan loads its canonical defaults into the visible fields;
+editing a field creates the same explicit override that `run_test.sh` would
+receive from an exported variable. UI-created workload presets are stored as ignored
 `test_properties/ui_*.properties` files; metadata presets use ignored
 `metadata_files/ui_*.txt` files. Existing tracked examples remain available on
 a fresh clone. Administrator-owned defaults such as authentication, report
@@ -583,8 +654,12 @@ export CONCURRENT_QUERY_COUNT=8
 | `QPS` | Queries per second | QPS-based plans |
 | `QPM` | Queries per minute | QPM-based plans |
 | `HOLD_PERIOD` | Test duration in seconds; the QPM arrivals plan interprets it as minutes | All plans except Run-Once |
-| `RECYCLE_ON_EOF` | Repeat queries when CSV ends (`true`/`false`) | All plans |
-| `RANDOM_ORDER` | Shuffle query execution order (`true`/`false`) | All plans |
+| `RECYCLE_ON_EOF` | Repeat queries when CSV ends (`true`/`false`); forced `false` for Run Once | Duration/profile plans |
+| `RANDOM_ORDER` | Shuffle query execution order (`true`/`false`) | Plans whose JMX contains the shuffle preprocessor; not Run Once |
+| `WARMUP_ENABLED` | Run excluded sequential warm-up pass(es) before measurement; default `false` | All JDBC plans |
+| `WARMUP_QUERY_FILE` | Warm-up query CSV, local path or `s3://` URI | When warm-up is enabled |
+| `WARMUP_ITERATIONS` | Number of separate excluded warm-up passes; default `1` | When warm-up is enabled |
+| `MEASURED_ITERATIONS` | Number of query-file passes included in one JMeter result; aliases remain unchanged for standard per-label aggregation | Run Once plans |
 | `COPY_TO_S3` | Upload results to S3 (`true`/`false`, default `false`) | All plans |
 | `S3_REPORT_PATH` | Root path for runner uploads; `S3_BASE_PATH` remains a legacy metadata alias | All plans |
 | `RUN_TYPE` | Optional S3 partition label; inferred from plan and concurrency/rate when omitted | All plans |
@@ -663,7 +738,12 @@ cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 ├── connection_properties/           # JDBC connection files
 │   └── connection.properties.template
 ├── test_properties/                 # Test parameter files
-│   ├── test.properties.template
+│   ├── run_once.properties
+│   ├── fixed_concurrency.properties
+│   ├── constant_qps.properties
+│   ├── constant_qpm.properties
+│   ├── variable_arrivals.properties
+│   ├── variable_concurrency.properties
 │   └── load_profile.csv
 ├── test_configs/                    # Ready-to-run config files
 │   ├── sample_concurrency_test.env

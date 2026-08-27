@@ -75,7 +75,8 @@ if RUNNER_BACKEND not in {"local", "ec2"}:
 DB_READY = False
 
 PLANS = {
-    "jdbc_run_once": ("Run once", "Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "jdbc"),
+    "jdbc_sequential": ("Sequential", "Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "jdbc"),
+    "jdbc_run_once": ("Run once (concurrent)", "Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "jdbc"),
     "jdbc_concurrency": ("Fixed concurrency", "Test-Plans/Test-Plan-Maintain-static-concurrency.jmx", "jdbc"),
     "jdbc_qps": ("Constant QPS", "Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx", "jdbc"),
     "jdbc_qpm": ("Constant QPM", "Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx", "jdbc"),
@@ -85,12 +86,26 @@ PLANS = {
     "http_concurrency": ("Fixed concurrency (HTTP)", "Test-Plans/Test-Plan-Maintain-static-concurrency-http-endpoint.jmx", "http"),
     "http_arrivals": ("Variable arrival rate (HTTP)", "Test-Plans/Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx", "http"),
 }
+RUN_ONCE_PLANS = {"jdbc_sequential", "jdbc_run_once", "http_run_once"}
+PLAN_TEST_PROPERTIES = {
+    "jdbc_sequential": "test_properties/run_once.properties",
+    "jdbc_run_once": "test_properties/run_once.properties",
+    "http_run_once": "test_properties/run_once.properties",
+    "jdbc_concurrency": "test_properties/fixed_concurrency.properties",
+    "http_concurrency": "test_properties/fixed_concurrency.properties",
+    "jdbc_qps": "test_properties/constant_qps.properties",
+    "jdbc_qpm": "test_properties/constant_qpm.properties",
+    "jdbc_arrivals": "test_properties/variable_arrivals.properties",
+    "http_arrivals": "test_properties/variable_arrivals.properties",
+    "jdbc_variable_concurrency": "test_properties/variable_concurrency.properties",
+}
 
 NUMERIC_LIMITS = {
     "CONCURRENT_QUERY_COUNT": (1, 10000), "QPS": (1, 100000), "QPM": (1, 1000000),
     "HOLD_PERIOD": (1, 86400), "RAMP_UP_TIME": (0, 86400), "RAMP_UP_STEPS": (1, 10000),
     "MAX_CONCURRANCY": (1, 100000), "QUERY_TIMEOUT": (1, 86400),
     "LIMIT_RESULTSET": (1, 10000000), "MAX_ERROR_PCT": (0, 100),
+    "MEASURED_ITERATIONS": (1, 20),
 }
 
 PROFILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -102,11 +117,12 @@ JDBC_DRIVERS = {
     "trino": "io.trino.jdbc.TrinoDriver",
 }
 PUBLIC_RUN_FIELDS = {
-    "plan", "engine", "connection", "query_file", "load_profile", "CONCURRENT_QUERY_COUNT",
+    "plan", "engine", "connection", "query_file", "load_profile", "test_properties_file", "CONCURRENT_QUERY_COUNT",
     "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME", "RAMP_UP_STEPS",
     "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET", "MAX_ERROR_PCT",
     "RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD", "PROMETHEUS_ENABLED",
-    "PROMETHEUS_PORT", "execution_mode", "metadata", "planned_workload", "rerun_of",
+    "PROMETHEUS_PORT", "WARMUP_ENABLED", "WARMUP_QUERY_FILE", "WARMUP_ITERATIONS", "MEASURED_ITERATIONS",
+    "execution_mode", "metadata", "planned_workload", "rerun_of",
 }
 METADATA_FIELDS = {
     "CLUSTER_SIZE": 80, "BENCHMARK_TYPE": 100, "DATA_SIZE": 40,
@@ -120,13 +136,14 @@ RUN_SCOPES = {"internal", "external"}
 RUN_PURPOSES = {"adhoc", "reference-candidate", "nightly", "validation"}
 RUN_VALIDITIES = {"valid", "invalid", "pending"}
 DISPLAY_ENV_FIELDS = (
-    "RUN_ID", "ENGINE", "CONNECTION_FILE", "TEST_PLAN", "QUERY_FILE", "LOAD_PROFILE",
+    "RUN_ID", "ENGINE", "CONNECTION_FILE", "TEST_PLAN", "TEST_PROPERTIES_FILE", "QUERY_FILE", "LOAD_PROFILE",
     "CONCURRENT_QUERY_COUNT", "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME",
     "RAMP_UP_STEPS", "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET",
     "MAX_ERROR_PCT", "RECYCLE_ON_EOF", "RANDOM_ORDER", "REPORT_PATH",
     "RUN_TYPE", "COPY_TO_S3", "GENERATE_DASHBOARD", "PROMETHEUS_ENABLED",
     "PROMETHEUS_IP", "PROMETHEUS_PORT", "PROMETHEUS_DELAY", "PROMETHEUS_URL",
     "GRAFANA_URL", "JMETER_RESULT_AUTOFLUSH", *METADATA_FIELDS,
+    "WARMUP_ENABLED", "WARMUP_QUERY_FILE", "WARMUP_ITERATIONS", "MEASURED_ITERATIONS",
 )
 
 
@@ -397,6 +414,8 @@ def write_manifest(run: "Run", env: dict[str, str]) -> None:
     }
     if env.get("LOAD_PROFILE") and (ROOT / env["LOAD_PROFILE"]).is_file():
         manifest["artifacts"]["load_profile_sha256"] = file_sha256(ROOT / env["LOAD_PROFILE"])
+    if env.get("WARMUP_QUERY_FILE") and (ROOT / env["WARMUP_QUERY_FILE"]).is_file():
+        manifest["artifacts"]["warmup_query_sha256"] = file_sha256(ROOT / env["WARMUP_QUERY_FILE"])
     run.report_root.mkdir(parents=True, exist_ok=True)
     (run.report_root / "ui_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -407,6 +426,10 @@ def preflight(config: dict[str, Any]) -> dict[str, Any]:
     query_info = inspect_query_file(query_path)
     if query_info["errors"]:
         raise ValueError("Invalid QUERY_FILE: " + "; ".join(query_info["errors"][:5]))
+    if env.get("WARMUP_ENABLED") == "true":
+        warmup_info = inspect_query_file(ROOT / env["WARMUP_QUERY_FILE"])
+        if warmup_info["errors"]:
+            raise ValueError("Invalid WARMUP_QUERY_FILE: " + "; ".join(warmup_info["errors"][:5]))
     query_count = query_info["rows"]
     warnings = []
     free_gb = shutil.disk_usage(ROOT).free / 1024 ** 3
@@ -434,22 +457,25 @@ def workload_preview(config: dict[str, Any]) -> dict[str, Any]:
     plan = str(config.get("plan", ""))
     if plan not in PLANS:
         raise ValueError("Unknown test plan")
-    ramp = int(config.get("RAMP_UP_TIME", 1))
+    ramp = int(config.get("RAMP_UP_TIME", 0))
     steps = int(config.get("RAMP_UP_STEPS", 1))
     hold = int(config.get("HOLD_PERIOD", 60))
-    concurrency = int(config.get("CONCURRENT_QUERY_COUNT", 2))
+    concurrency = 1 if plan == "jdbc_sequential" else int(config.get("CONCURRENT_QUERY_COUNT", 2))
     if ramp < 0 or steps < 1 or hold < 1 or concurrency < 1:
         raise ValueError("Workload ramp, duration, and concurrency values are invalid")
     source = "resolved run_test.sh inputs"
     expected_total = None
-    if plan.endswith("run_once"):
+    if plan in RUN_ONCE_PLANS:
+        measured_iterations = int(config.get("MEASURED_ITERATIONS", 1))
+        if not 1 <= measured_iterations <= 20:
+            raise ValueError("MEASURED_ITERATIONS must be between 1 and 20")
         values, kind, duration_s = [float(concurrency)], "concurrency", None
         query_file = str(config.get("query_file", "")).strip()
         if query_file:
             query_path = _inside(query_file, "data_files", ".csv")
             query_info = inspect_query_file(ROOT / query_path)
             if not query_info["errors"]:
-                expected_total = query_info["rows"]
+                expected_total = query_info["rows"] * measured_iterations
     elif plan in {"jdbc_concurrency", "http_concurrency"}:
         values = ([concurrency * second / ramp for second in range(ramp)] if ramp else []) + [float(concurrency)] * hold
         kind, duration_s = "concurrency", len(values)
@@ -486,12 +512,12 @@ def workload_preview(config: dict[str, Any]) -> dict[str, Any]:
         "kind": kind, "unit": "queries/sec" if kind == "arrivals" else "queries in flight",
         "values": compressed, "bucket_s": bucket, "duration_s": duration_s,
         "peak": round(max(values), 3) if values else 0, "expected_total": expected_total,
-        "source": source, "is_run_once": plan.endswith("run_once"),
+        "source": source, "is_run_once": plan in RUN_ONCE_PLANS,
     }
 
 
 def _property_value(value: Any, field: str, required: bool = False) -> str:
-    text = str(value or "").strip()
+    text = ("true" if value else "false") if isinstance(value, bool) else str(value or "").strip()
     if required and not text:
         raise ValueError(f"{field} is required")
     if "\n" in text or "\r" in text or "\x00" in text:
@@ -525,8 +551,21 @@ def read_preset(path: Path) -> dict[str, str]:
 
 
 def preset_catalog(directory: str, pattern: str) -> list[dict[str, Any]]:
-    return [{"file": path.relative_to(ROOT).as_posix(), "name": path.stem, "values": read_preset(path), "editable": path.stem.startswith("ui_")}
-            for path in sorted((ROOT / directory).glob(pattern)) if path.is_file()]
+    workload_names = {
+        "run_once": "Run once / sequential defaults",
+        "fixed_concurrency": "Fixed concurrency defaults",
+        "constant_qps": "Constant QPS defaults",
+        "constant_qpm": "Constant QPM defaults",
+        "variable_arrivals": "Variable QPS profile defaults",
+        "variable_concurrency": "Variable concurrency profile defaults",
+    }
+    return [{
+        "file": path.relative_to(ROOT).as_posix(),
+        "name": workload_names.get(path.stem, path.stem.removeprefix("ui_")),
+        "values": read_preset(path),
+        "editable": path.stem.startswith("ui_"),
+    } for path in sorted((ROOT / directory).glob(pattern))
+      if path.is_file() and not (directory == "test_properties" and path.stem == "default")]
 
 
 def create_preset(kind: str, config: dict[str, Any], overwrite: bool = False) -> str:
@@ -539,7 +578,11 @@ def create_preset(kind: str, config: dict[str, Any], overwrite: bool = False) ->
         raise ValueError("Preset name may contain only letters, numbers, dot, dash, and underscore")
     if not name.startswith("ui_"):
         name = "ui_" + name
-    allowed = set(NUMERIC_LIMITS) | {"TEST_PLAN", "LOAD_PROFILE", "QUERY_PATH", "RANDOM_ORDER", "RECYCLE_ON_EOF"} if kind == "workload" else set(METADATA_FIELDS)
+    allowed = set(NUMERIC_LIMITS) | {
+        "TEST_PLAN", "LOAD_PROFILE", "QUERY_PATH", "WARMUP_ENABLED",
+        "WARMUP_QUERY_FILE", "WARMUP_ITERATIONS", "RANDOM_ORDER", "RECYCLE_ON_EOF",
+        "GENERATE_DASHBOARD",
+    } if kind == "workload" else set(METADATA_FIELDS)
     values = config.get("values")
     if not isinstance(values, dict):
         raise ValueError("Preset values must be an object")
@@ -627,10 +670,10 @@ def create_connection_profile(config: dict[str, Any]) -> str:
 
 
 def input_destination(kind: str, filename: str, allow_existing: bool = False) -> Path:
-    directory = {"query": "data_files", "profile": "test_properties"}.get(kind)
+    directory = {"query": "data_files", "warmup": "data_files", "profile": "test_properties"}.get(kind)
     clean_name = Path(filename).name
     if not directory or filename != clean_name or not CSV_NAME.fullmatch(clean_name):
-        raise ValueError("Input must be a CSV filename for query or profile")
+        raise ValueError("Input must be a CSV filename for query, warm-up, or profile")
     target = ROOT / directory / clean_name
     if target.exists() and not allow_existing:
         raise ValueError("A local input with this filename already exists")
@@ -657,12 +700,9 @@ def import_s3_input(kind: str, uri: str) -> str:
     if parsed.scheme != "s3" or not parsed.netloc or not filename:
         raise ValueError("Use a complete s3://bucket/path/file.csv URI")
     target = input_destination(kind, filename, allow_existing=True)
-    # S3 selection is idempotent: if this exact destination is already local,
-    # select it instead of forcing an overwrite or another network operation.
-    if target.exists():
-        return target.relative_to(ROOT).as_posix()
+    temp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.s3-download")
     try:
-        command = ["aws", "s3", "cp", uri, str(target), "--only-show-errors"]
+        command = ["aws", "s3", "cp", uri, str(temp), "--only-show-errors"]
         result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
         # Public buckets remain readable without credentials. AWS CLI may report
         # an expired session as ExpiredToken or only as an HTTP 400, so retry any
@@ -674,15 +714,18 @@ def import_s3_input(kind: str, uri: str) -> str:
             )
         if result.returncode != 0:
             raise ValueError((result.stderr or "S3 download failed; check AWS credentials and URI").strip()[:500])
-        if not target.is_file() or not 0 < target.stat().st_size <= 50 * 1024 * 1024:
+        if not temp.is_file() or not 0 < temp.stat().st_size <= 50 * 1024 * 1024:
             raise ValueError("Downloaded CSV must be between 1 byte and 50 MB")
+        os.replace(temp, target)
     except FileNotFoundError as exc:
         raise ValueError("AWS CLI is not installed on the UI host") from exc
     except subprocess.TimeoutExpired as exc:
         raise ValueError("S3 download timed out after 120 seconds") from exc
     except Exception:
-        target.unlink(missing_ok=True)
+        temp.unlink(missing_ok=True)
         raise
+    finally:
+        temp.unlink(missing_ok=True)
     return target.relative_to(ROOT).as_posix()
 
 
@@ -717,26 +760,45 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
     if (transport == "http") != is_http:
         raise ValueError(f"The selected connection is not a {transport.upper()} connection")
     query = _inside(str(config.get("query_file", "")), "data_files", ".csv")
+    test_properties_file = _inside(
+        str(config.get("test_properties_file") or PLAN_TEST_PROPERTIES[plan_key]),
+        "test_properties", ".properties",
+    )
+    property_defaults = read_preset(ROOT / test_properties_file)
 
     env = os.environ.copy()
     env.update({
         "RUN_ID": run_id,
         "CONNECTION_FILE": connection,
         "TEST_PLAN": plan_path,
+        "TEST_PROPERTIES_FILE": test_properties_file,
         "QUERY_FILE": query,
         "REPORT_PATH": f"reports/ui-{run_id}",
         "RUN_TYPE": f"ui_{plan_key}",
         "COPY_TO_S3": "true" if SYSTEM_COPY_TO_S3 else "false",
         "GENERATE_DASHBOARD": "true" if config.get("GENERATE_DASHBOARD", SYSTEM_GENERATE_DASHBOARD) is True else "false",
         "PROMETHEUS_ENABLED": "true" if config.get("PROMETHEUS_ENABLED", PROMETHEUS_DEFAULT_ENABLED) is True else "false",
-        "RANDOM_ORDER": "true" if config.get("RANDOM_ORDER") is True else "false",
+        "RANDOM_ORDER": "true" if config.get("RANDOM_ORDER", property_defaults.get("RANDOM_ORDER") == "true") is True else "false",
         # A run-once plan must terminate at EOF even if a stale browser form
         # submits RECYCLE_ON_EOF=true. Rate/concurrency plans default to repeat.
-        "RECYCLE_ON_EOF": "false" if plan_key.endswith("run_once") else ("true" if config.get("RECYCLE_ON_EOF", True) is True else "false"),
+        "RECYCLE_ON_EOF": "false" if plan_key in RUN_ONCE_PLANS else ("true" if config.get("RECYCLE_ON_EOF", property_defaults.get("RECYCLE_ON_EOF") == "true") is True else "false"),
         # UI telemetry tails the JMeter CSV while the process runs. CLI keeps
         # JMeter's lower-I/O buffered default unless explicitly overridden.
         "JMETER_RESULT_AUTOFLUSH": "true",
+        "WARMUP_ENABLED": "true" if config.get("WARMUP_ENABLED") is True else "false",
     })
+    warmup_file = str(config.get("WARMUP_QUERY_FILE") or "")
+    if env["WARMUP_ENABLED"] == "true":
+        if not warmup_file:
+            raise ValueError("Select a WARMUP_QUERY_FILE when warm-up is enabled")
+        env["WARMUP_QUERY_FILE"] = _inside(warmup_file, "data_files", ".csv")
+        try:
+            warmup_iterations = int(config.get("WARMUP_ITERATIONS", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("WARMUP_ITERATIONS must be an integer") from exc
+        if not 1 <= warmup_iterations <= 20:
+            raise ValueError("WARMUP_ITERATIONS must be between 1 and 20")
+        env["WARMUP_ITERATIONS"] = str(warmup_iterations)
     configured_engine = _property_value(config.get("engine"), "ENGINE") or "unknown"
     driver = next((line.split("=", 1)[1].strip() for line in connection_lines
                    if line.startswith("DRIVER_CLASS=")), "")
@@ -764,12 +826,15 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
         if value:
             env[key] = value
     defaults = {
-        "CONCURRENT_QUERY_COUNT": 2, "QPS": 1, "QPM": 60, "HOLD_PERIOD": 60,
-        "RAMP_UP_TIME": 1, "RAMP_UP_STEPS": 1, "MAX_CONCURRANCY": 100,
+        "CONCURRENT_QUERY_COUNT": 2, "QPS": 1, "QPM": 10, "HOLD_PERIOD": 300,
+        "RAMP_UP_TIME": 0, "RAMP_UP_STEPS": 1, "MAX_CONCURRANCY": 900,
         "QUERY_TIMEOUT": 300, "LIMIT_RESULTSET": 1000, "MAX_ERROR_PCT": 5,
     }
     for key, default in defaults.items():
-        env[key] = _number(config, key, default)
+        env[key] = _number(config, key, int(property_defaults.get(key, default)))
+    if plan_key == "jdbc_sequential":
+        env["CONCURRENT_QUERY_COUNT"] = "1"
+    env["MEASURED_ITERATIONS"] = _number(config, "MEASURED_ITERATIONS", 1) if plan_key in RUN_ONCE_PLANS else "1"
     try:
         prometheus_port = int(config.get("PROMETHEUS_PORT", PROMETHEUS_DEFAULT_PORT))
         prometheus_delay = int(PROMETHEUS_DEFAULT_DELAY)
@@ -993,7 +1058,7 @@ class Run:
         planned = self.config.get("planned_workload")
         # Older persisted run-once records predate planned query totals. Fill
         # them from the same validated query CSV without rewriting history.
-        if self.config.get("plan", "").endswith("run_once") \
+        if self.config.get("plan", "") in RUN_ONCE_PLANS \
                 and isinstance(planned, dict) and planned.get("expected_total") is None:
             try:
                 public_config = dict(self.config)
@@ -1088,8 +1153,17 @@ def _execute(run: Run, env: dict[str, str]) -> None:
         LOGGER.info("run=%s status=%s return_code=%s report=%s", run.run_id, run.status, run.return_code, run.report_root)
 
 
+def new_run_id(engine: str, plan: str) -> str:
+    """Return a sortable identifier that remains safe for report and S3 paths."""
+    timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    engine_slug = re.sub(r"[^a-z0-9]+", "-", engine.lower()).strip("-") or "engine"
+    plan_slug = re.sub(r"^(?:jdbc|http)_", "", plan.lower())
+    plan_slug = re.sub(r"[^a-z0-9]+", "-", plan_slug).strip("-") or "run"
+    return f"{timestamp}-{engine_slug[:20]}-{plan_slug[:24]}-{uuid.uuid4().hex[:6]}"
+
+
 def prepare_run(config: dict[str, Any], label: str = "Benchmark") -> tuple[Run, dict[str, str]]:
-    run_id = uuid.uuid4().hex[:10]
+    run_id = new_run_id(str(config.get("engine") or "engine"), str(config.get("plan") or "run"))
     env = build_environment(config, run_id)
     public_config = {key: value for key, value in config.items() if key in PUBLIC_RUN_FIELDS}
     public_config["engine"] = env["ENGINE"]
@@ -1536,7 +1610,7 @@ class Handler(SimpleHTTPRequestHandler):
                 connections = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "connection_properties").glob("*.properties"))
                 queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").rglob("*.csv"))
                 profiles = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "test_properties").glob("*.csv"))
-                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
+                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2], "test_properties": PLAN_TEST_PROPERTIES[k]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
             elif parsed.path == "/api/runs":
                 with RUN_LOCK:
                     self._json([run.public() for run in RUNS.values()])

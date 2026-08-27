@@ -41,6 +41,43 @@ class EC2RunnerTests(unittest.TestCase):
         self.assertNotIn("top-secret", flattened)
         self.assertIn("--sse", calls[-1])
 
+    def test_stage_job_includes_warmup_input_for_remote_worker(self):
+        captured = {}
+        def command(args, **kwargs):
+            if args[:3] == ["aws", "s3", "cp"]:
+                import zipfile
+                with zipfile.ZipFile(args[3]) as archive:
+                    captured["environment"] = json.loads(archive.read("environment.json"))
+                    captured["warmup"] = archive.read(
+                        "inputs/warmup_query_file/warmup.csv"
+                    ).decode()
+            return subprocess.CompletedProcess(args, 0, "", "")
+        runner = EC2Runner(
+            EC2Config("i-123", "us-east-1", "s3://private/control", "/worker"),
+            command,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "connection.properties").write_text("PASSWORD=secret\n")
+            (root / "test.properties").write_text("CONCURRENT_QUERY_COUNT=2\n")
+            (root / "queries.csv").write_text("query_alias,query_string\nq1,select 1\n")
+            (root / "warmup.csv").write_text("query_alias,query_string\nw1,select 1\n")
+            runner.stage_job("warm", {
+                "CONNECTION_FILE": "connection.properties",
+                "TEST_PROPERTIES_FILE": "test.properties",
+                "QUERY_FILE": "queries.csv",
+                "WARMUP_QUERY_FILE": "warmup.csv",
+            }, root)
+        self.assertEqual(captured["warmup"].splitlines()[-1], "w1,select 1")
+        self.assertEqual(
+            captured["environment"]["WARMUP_QUERY_FILE"],
+            "{JOB_DIR}/inputs/warmup_query_file/warmup.csv",
+        )
+        self.assertEqual(
+            captured["environment"]["TEST_PROPERTIES_FILE"],
+            "{JOB_DIR}/inputs/test_properties_file/test.properties",
+        )
+
     def test_cancel_targets_configured_instance(self):
         calls = []
         def command(args, **kwargs):
