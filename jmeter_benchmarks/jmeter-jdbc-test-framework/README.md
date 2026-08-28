@@ -321,7 +321,10 @@ Stop a UI started by `start_ui.sh` without affecting JMeter runs:
 ```
 
 The scripts use `logs/ui.pid` by default. Set `BENCHMARK_UI_PID_FILE` on both
-commands to use a different PID-file location. For a systemd deployment, use
+commands to use a different PID-file location. If that file is missing,
+`stop_ui.sh` safely checks the listener on port 8765 and stops it only when it
+is the Benchmark Studio process from this checkout. For a custom port use
+`./stop_ui.sh --port 8766`. For a systemd deployment, use
 `systemctl stop e6-benchmark-ui` instead.
 
 `run_ui.sh` remains as a backwards-compatible alias for `start_ui.sh`.
