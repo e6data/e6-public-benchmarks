@@ -475,6 +475,35 @@ class UiTests(unittest.TestCase):
             connection.unlink(missing_ok=True)
             query.unlink(missing_ok=True)
 
+    def test_paired_workloads_accept_dialect_sql_with_matching_aliases(self):
+        left = server.ROOT / "data_files" / "ui_pair_left.csv"
+        right = server.ROOT / "data_files" / "ui_pair_right.csv"
+        try:
+            left.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select date_add(d, 1)"\nTPCDS_Q02,"select 2"\n')
+            right.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select dateadd(day, 1, d)"\nTPCDS_Q02,"select 2"\n')
+            server.validate_paired_workloads([
+                {"QUERY_FILE": "data_files/ui_pair_left.csv", "WARMUP_ENABLED": "false"},
+                {"QUERY_FILE": "data_files/ui_pair_right.csv", "WARMUP_ENABLED": "false"},
+            ])
+        finally:
+            left.unlink(missing_ok=True)
+            right.unlink(missing_ok=True)
+
+    def test_paired_workloads_reject_mismatched_aliases(self):
+        left = server.ROOT / "data_files" / "ui_pair_left.csv"
+        right = server.ROOT / "data_files" / "ui_pair_right.csv"
+        try:
+            left.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select 1"\nTPCDS_Q02,"select 2"\n')
+            right.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select 1"\nTPCDS_Q03,"select 3"\n')
+            with self.assertRaisesRegex(ValueError, "same normalized QUERY_ALIAS"):
+                server.validate_paired_workloads([
+                    {"QUERY_FILE": "data_files/ui_pair_left.csv", "WARMUP_ENABLED": "false"},
+                    {"QUERY_FILE": "data_files/ui_pair_right.csv", "WARMUP_ENABLED": "false"},
+                ])
+        finally:
+            left.unlink(missing_ok=True)
+            right.unlink(missing_ok=True)
+
     def test_build_environment_keeps_metadata_descriptive(self):
         connection = server.ROOT / "connection_properties" / "ui_meta_test.properties"
         query = server.ROOT / "data_files" / "ui_meta_test.csv"

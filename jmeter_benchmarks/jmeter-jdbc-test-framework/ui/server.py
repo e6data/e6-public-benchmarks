@@ -447,6 +447,55 @@ def preflight(config: dict[str, Any]) -> dict[str, Any]:
             "environment": {key: env[key] for key in DISPLAY_ENV_FIELDS if key in env}, "host": host_snapshot()}
 
 
+def _ordered_query_aliases(path: Path) -> list[str]:
+    """Read the normalized comparison identity without retaining SQL text."""
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle, strict=True)
+        alias_header = next(
+            (name for name in (reader.fieldnames or [])
+             if name.strip().casefold() in {"query_alias", "query_alias_name", "alias"}),
+            None,
+        )
+        if not alias_header:
+            raise ValueError(f"{path.name} does not contain a query alias column")
+        return [str(row.get(alias_header) or "").strip().casefold() for row in reader]
+
+
+def validate_paired_workloads(environments: list[dict[str, str]]) -> None:
+    """Require dialect-specific files to represent the same logical workload."""
+    if len(environments) != 2:
+        return
+    left, right = environments
+    left_aliases = _ordered_query_aliases(ROOT / left["QUERY_FILE"])
+    right_aliases = _ordered_query_aliases(ROOT / right["QUERY_FILE"])
+    if left_aliases != right_aliases:
+        left_only = sorted(set(left_aliases) - set(right_aliases))[:5]
+        right_only = sorted(set(right_aliases) - set(left_aliases))[:5]
+        detail = []
+        if len(left_aliases) != len(right_aliases):
+            detail.append(f"row counts differ ({len(left_aliases)} vs {len(right_aliases)})")
+        if left_only:
+            detail.append("only in primary: " + ", ".join(left_only))
+        if right_only:
+            detail.append("only in comparison: " + ", ".join(right_only))
+        if not detail:
+            detail.append("aliases are in a different order")
+        raise ValueError(
+            "Paired QUERY_FILE values must contain the same normalized QUERY_ALIAS values in the same order; "
+            + "; ".join(detail)
+        )
+    warmup_enabled = [env.get("WARMUP_ENABLED") == "true" for env in environments]
+    if warmup_enabled[0] != warmup_enabled[1]:
+        raise ValueError("Paired runs must either both enable warm-up or both disable it")
+    if all(warmup_enabled):
+        left_warmup = _ordered_query_aliases(ROOT / left["WARMUP_QUERY_FILE"])
+        right_warmup = _ordered_query_aliases(ROOT / right["WARMUP_QUERY_FILE"])
+        if left_warmup != right_warmup:
+            raise ValueError(
+                "Paired WARMUP_QUERY_FILE values must contain the same normalized QUERY_ALIAS values in the same order"
+            )
+
+
 def _compress_preview(values: list[float], mode: str, max_points: int = 600) -> tuple[list[float], int]:
     bucket = max(1, (len(values) + max_points - 1) // max_points)
     if bucket == 1:
@@ -1661,10 +1710,12 @@ class Handler(SimpleHTTPRequestHandler):
                 if not isinstance(configs, list) or not 1 <= len(configs) <= 2:
                     raise ValueError("Start one or two runs at a time")
                 # Validate the complete pair before starting either process.
+                environments = []
                 for item in configs:
                     if not isinstance(item, dict):
                         raise ValueError("Each run must be an object")
-                    build_environment(item, "validation")
+                    environments.append(build_environment(item, "validation"))
+                validate_paired_workloads(environments)
                 execution_mode = str(body.get("execution_mode", "parallel"))
                 if execution_mode not in {"parallel", "sequential"}:
                     raise ValueError("execution_mode must be parallel or sequential")

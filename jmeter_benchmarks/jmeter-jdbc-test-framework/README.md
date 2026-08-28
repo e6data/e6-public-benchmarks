@@ -148,9 +148,13 @@ an older local copy with the same filename. The CLI accepts S3 URIs directly.
 Both paths validate the standard two-column query CSV before execution; the
 CLI also records its source URI and resolved SHA-256 with the run.
 
-For cross-engine comparisons, use stable logical aliases, equivalent data and
-execution policies, and retain the exact query-file hash. Dialect-specific or
-optimized suites should live outside this public repository.
+For cross-engine comparisons, use stable logical aliases and equivalent data
+and execution policies. A paired UI launch can select a different measured and
+warm-up CSV for each engine while sharing the test plan and load shape. Before
+starting either engine, the backend requires both dialect files to contain the
+same normalized aliases in the same order. Each resolved file and SHA-256 is
+recorded independently. Dialect-specific or optimized suites should live
+outside this public repository.
 
 ### Step 4: Run a test
 
@@ -330,7 +334,8 @@ Then open <http://127.0.0.1:8765>. The UI supports:
   rate, duration, and safety variables accepted by `run_test.sh`;
 - choosing an already-local CSV, uploading a CSV from the browser, or importing
   one from S3 using the UI host's configured AWS CLI credentials;
-- starting one engine or the same workload on two engines;
+- starting one engine or the same logical workload on two engines, with
+  optional per-engine measured and warm-up SQL files for dialect differences;
 - running two engines sequentially for cleaner measurements (the default) or
   in parallel for a live side-by-side demonstration;
 - live samples, throughput, errors, active threads, latency, and runner logs;

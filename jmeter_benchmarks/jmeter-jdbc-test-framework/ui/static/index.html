@@ -37,7 +37,7 @@
       <form id="runForm">
         <div id="engines" class="engine-grid"></div>
         <div class="card workload">
-          <div class="card-title"><span>02</span><div><h3>Workload</h3><p>Shared by both engines for a fair comparison</p></div></div>
+          <div class="card-title"><span>02</span><div><h3>Workload</h3><p>The load shape is shared; paired engines may use dialect-specific SQL datasets</p></div></div>
           <div class="preset-strip"><label>Saved workload preset <small>optional shortcut</small><select id="workloadPreset"><option value="">No saved preset — configure below</option></select></label><span>A preset fills the test plan and workload fields. Without one, start by selecting the test plan below.</span><button id="updateWorkloadFromLaunch" class="secondary" type="button" disabled>Update selected</button><button id="saveWorkloadFromLaunch" class="secondary" type="button">Save as new</button></div>
           <section class="workload-phase warmup-phase">
             <div class="workload-phase-header">
@@ -57,7 +57,7 @@
             <div class="fields">
               <label>TEST_PLAN <small>select the test pattern first</small><select id="plan"></select></label>
               <label>TEST_PROPERTIES <small>automatic for selected plan</small><input id="testPropertiesDisplay" readonly></label>
-              <label>QUERY_FILE <small>measured query dataset</small><select id="query_file" required></select><span class="source-actions"><input id="query_upload" type="file" accept=".csv"><button type="button" data-upload="query">Local CSV</button><button type="button" data-s3="query">S3 URI</button></span></label>
+              <label>QUERY_FILE <small>shared measured dataset or fallback</small><select id="query_file"></select><span class="source-actions"><input id="query_upload" type="file" accept=".csv"><button type="button" data-upload="query">Local CSV</button><button type="button" data-s3="query">S3 URI</button></span></label>
               <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
               <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
               <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>

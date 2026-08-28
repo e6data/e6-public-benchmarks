@@ -152,6 +152,10 @@ select:focus, input:focus { outline: 2px solid rgba(116, 28, 245, .16); border-c
 .primary { border: 1px solid var(--purple-600); background: var(--purple-600); color: white; box-shadow: 0 2px 4px rgba(83, 18, 207, .2); }
 .primary:hover { background: var(--purple-700); }
 .secondary { background: white; color: var(--purple-700); border: 1px solid #cec4df; }
+.engine-dataset-overrides { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.engine-dataset-overrides h4 { margin: 0 0 3px; }
+.engine-dataset-overrides h4 small { color: var(--purple-600); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.engine-dataset-overrides > p { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
 .error { color: var(--red); }
 .hidden { display: none !important; }
 
