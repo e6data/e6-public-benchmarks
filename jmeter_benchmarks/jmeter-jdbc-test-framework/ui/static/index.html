@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>e6data Benchmark Studio</title>
-  <link rel="stylesheet" href="/styles.css?v=paired-workloads-1">
+  <link rel="stylesheet" href="/styles.css?v=searchable-workloads-2">
 </head>
 <body>
   <header>
@@ -45,7 +45,7 @@
               <label class="phase-toggle"><input id="WARMUP_ENABLED" type="checkbox"><span>Enable warm-up</span></label>
             </div>
             <div class="fields warmup-fields">
-              <label>Warm-up query file <small>excluded query dataset</small><select id="WARMUP_QUERY_FILE"></select><span class="source-actions"><input id="warmup_upload" type="file" accept=".csv"><button type="button" data-upload="warmup">Local CSV</button><button type="button" data-s3="warmup">S3 URI</button></span></label>
+              <label>Warm-up query file <small>excluded query dataset · type to search</small><input id="WARMUP_QUERY_FILE" list="warmupQueryFiles" placeholder="Select an excluded warm-up dataset…"><datalist id="warmupQueryFiles"></datalist><span class="source-actions"><input id="warmup_upload" type="file" accept=".csv"><button type="button" data-upload="warmup">Local CSV</button><button type="button" data-s3="warmup">S3 URI</button></span></label>
               <label>Warm-up iterations <small>excluded sequential passes</small><input id="WARMUP_ITERATIONS" type="number" value="1" min="1"></label>
             </div>
             <p class="phase-note">Each iteration uses the Run Once plan at concurrency 1. For a three-pass experiment, choose 2 here; the third pass is the measured workload below.</p>
@@ -57,7 +57,7 @@
             <div class="fields">
               <label>TEST_PLAN <small>select the test pattern first</small><select id="plan"></select></label>
               <label>TEST_PROPERTIES <small>automatic for selected plan</small><input id="testPropertiesDisplay" readonly></label>
-              <label>QUERY_FILE <small>shared measured dataset or fallback</small><select id="query_file"></select><span class="source-actions"><input id="query_upload" type="file" accept=".csv"><button type="button" data-upload="query">Local CSV</button><button type="button" data-s3="query">S3 URI</button></span></label>
+              <label>Query file <small>shared measured dataset or fallback · type to search</small><input id="query_file" list="queryFiles" placeholder="Select a query dataset…"><datalist id="queryFiles"></datalist><span class="source-actions"><input id="query_upload" type="file" accept=".csv"><button type="button" data-upload="query">Local CSV</button><button type="button" data-s3="query">S3 URI</button></span></label>
               <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
               <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
               <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>
@@ -162,6 +162,6 @@
     </section>
   </main>
   <footer>Optional UI layer · Existing CLI execution remains unchanged · Credentials stay on this host</footer>
-  <script src="/app.js?v=paired-workloads-1"></script>
+  <script src="/app.js?v=searchable-workloads-2"></script>
 </body>
 </html>

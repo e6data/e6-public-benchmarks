@@ -156,6 +156,8 @@ select:focus, input:focus { outline: 2px solid rgba(116, 28, 245, .16); border-c
 .engine-dataset-overrides h4 { margin: 0 0 3px; }
 .engine-dataset-overrides h4 small { color: var(--purple-600); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .engine-dataset-overrides > p { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.engine-dataset-overrides .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dataset-search { padding-right: 28px; }
 .error { color: var(--red); }
 .hidden { display: none !important; }
 
