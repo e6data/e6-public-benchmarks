@@ -1586,6 +1586,10 @@ class Handler(SimpleHTTPRequestHandler):
         LOGGER.info("client=%s %s", self.address_string(), fmt % args)
 
     def end_headers(self) -> None:
+        if urlparse(self.path).path in {"/", "/index.html", "/app.js", "/styles.css"}:
+            # Benchmark Studio is frequently restarted while being configured.
+            # Never let a browser combine a new page with stale JS or CSS.
+            self.send_header("Cache-Control", "no-store, max-age=0")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
