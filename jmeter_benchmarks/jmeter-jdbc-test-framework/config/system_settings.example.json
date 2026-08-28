@@ -1,0 +1,11 @@
+{
+  "copy_to_s3": false,
+  "s3_report_path": "s3://your-bucket/benchmark-results/v1",
+  "generate_dashboard": true,
+  "prometheus_enabled": false,
+  "prometheus_port": 9270,
+  "prometheus_url": "http://localhost:9090",
+  "grafana_url": "http://localhost:3000/d/jmeter-prom/jmeter-performance?orgId=1",
+  "retention_days": 30,
+  "max_local_report_gb": 100
+}

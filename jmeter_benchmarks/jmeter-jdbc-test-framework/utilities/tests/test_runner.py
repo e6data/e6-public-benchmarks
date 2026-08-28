@@ -64,6 +64,7 @@ class RunnerIntegrationTests(unittest.TestCase):
             "REPORT_PATH": str(self.reports),
             "GENERATE_DASHBOARD": "false",
             "COPY_TO_S3": "false",
+            "PROMETHEUS_ENABLED": "false",
             "CONCURRENT_QUERY_COUNT": "4",
         })
         env.update(overrides)
@@ -85,6 +86,33 @@ class RunnerIntegrationTests(unittest.TestCase):
         self.assertEqual(summary["ignored_control_samples"], 0)
         self.assertEqual(summary["meta"]["requested_concurrency"], "4")
         self.assertEqual(len(summary["meta"]["query_sha256"]), 64)
+
+    def test_shared_system_settings_supply_cli_defaults_and_env_wins(self):
+        settings = Path(self.temp.name) / "system_settings.json"
+        settings.write_text(json.dumps({
+            "copy_to_s3": False,
+            "s3_report_path": "s3://shared/benchmark-results/v1",
+            "generate_dashboard": False,
+            "prometheus_enabled": False,
+        }))
+        args_capture = Path(self.temp.name) / "args.txt"
+        completed = self.run_runner(
+            BENCHMARK_SYSTEM_SETTINGS_FILE=str(settings),
+            CAPTURE_JMETER_ARGS=str(args_capture),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        args = args_capture.read_text().splitlines()
+        self.assertIn("-JS3_REPORT_PATH=s3://shared/benchmark-results/v1", args)
+
+        explicit_capture = Path(self.temp.name) / "explicit-args.txt"
+        completed = self.run_runner(
+            BENCHMARK_SYSTEM_SETTINGS_FILE=str(settings),
+            CAPTURE_JMETER_ARGS=str(explicit_capture),
+            S3_REPORT_PATH="s3://explicit/results",
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        args = explicit_capture.read_text().splitlines()
+        self.assertIn("-JS3_REPORT_PATH=s3://explicit/results", args)
 
     def test_jmeter_failure_is_finalized_and_propagated(self):
         completed = self.run_runner(FAKE_JMETER_RC="7")

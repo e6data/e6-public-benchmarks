@@ -47,7 +47,9 @@ STATIC = Path(__file__).resolve().parent / "static"
 REPORTS = ROOT / "reports"
 LOG_DIR = ROOT / "logs"
 LOGGER = logging.getLogger("benchmark-ui")
-SETTINGS_PATH = Path(os.environ.get("BENCHMARK_UI_SETTINGS_FILE", ROOT / "ui" / "system_settings.json"))
+SETTINGS_PATH = Path(os.environ.get("BENCHMARK_SYSTEM_SETTINGS_FILE",
+                                    os.environ.get("BENCHMARK_UI_SETTINGS_FILE",
+                                                   ROOT / "config" / "system_settings.json")))
 ALLOW_SETTINGS_WRITE = os.environ.get("BENCHMARK_UI_ALLOW_SETTINGS_WRITE", "false").lower() == "true"
 try:
     SAVED_SETTINGS = json.loads(SETTINGS_PATH.read_text()) if SETTINGS_PATH.is_file() else {}
@@ -63,7 +65,10 @@ PROMETHEUS_DEFAULT_PORT = str(SAVED_SETTINGS.get("prometheus_port", os.environ.g
 PROMETHEUS_DEFAULT_DELAY = os.environ.get("PROMETHEUS_DELAY", "15")
 PROMETHEUS_URL = str(SAVED_SETTINGS.get("prometheus_url", os.environ.get("PROMETHEUS_URL", "")))
 GRAFANA_URL = str(SAVED_SETTINGS.get("grafana_url", os.environ.get("GRAFANA_URL", "")))
-SYSTEM_COPY_TO_S3 = SAVED_SETTINGS.get("copy_to_s3", os.environ.get("BENCHMARK_UI_COPY_TO_S3", "false").lower() == "true")
+SYSTEM_COPY_TO_S3 = SAVED_SETTINGS.get(
+    "copy_to_s3",
+    os.environ.get("COPY_TO_S3", os.environ.get("BENCHMARK_UI_COPY_TO_S3", "false")).lower() == "true",
+)
 SYSTEM_S3_REPORT_PATH = str(SAVED_SETTINGS.get("s3_report_path", os.environ.get("S3_REPORT_PATH", "")))
 SYSTEM_GENERATE_DASHBOARD = SAVED_SETTINGS.get("generate_dashboard", os.environ.get("GENERATE_DASHBOARD", "true").lower() == "true")
 REPORT_RETENTION_DAYS = int(SAVED_SETTINGS.get("retention_days", os.environ.get("BENCHMARK_UI_REPORT_RETENTION_DAYS", "30")))

@@ -41,6 +41,7 @@ ui/*.db
 ui/*.db-shm
 ui/*.db-wal
 ui/system_settings.json
+config/system_settings.json
 .venv/
 .benchmark-ui.env
 

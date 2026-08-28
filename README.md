@@ -53,6 +53,12 @@ TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.j
 
 See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) for run-once, QPM, HTTP, custom profiles, reports, S3/Athena analysis, and metric definitions.
 
+To apply the same non-secret S3/observability defaults to CLI, interactive, and
+UI launches, copy `config/system_settings.example.json` to the gitignored
+`config/system_settings.json`. The existing runner uploader uses
+`COPY_TO_S3` and `S3_REPORT_PATH`; environment and suite-file overrides still
+take precedence.
+
 An optional local UI can create the local connection properties file, configure
 the exact environment variables accepted by the unchanged CLI runner, annotate
 runs with cluster/build sizing metadata, show live runs, start the same workload
@@ -75,6 +81,7 @@ backwards-compatible alias.
 │   ├── Test-Plans/          # JDBC and HTTP JMeter plans
 │   ├── test_properties/     # runtime and load-profile examples
 │   ├── test_configs/        # runner configuration examples
+│   ├── config/              # shared non-secret runner settings example
 │   ├── utilities/           # local, S3, and Athena analysis tools
 │   ├── ui/                  # optional local control and visualization layer
 │   ├── setup_ui.sh          # UI-only setup + optional local PostgreSQL

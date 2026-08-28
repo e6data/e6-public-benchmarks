@@ -210,6 +210,32 @@ if [ -n "$1" ]; then
     [ -n "$_SAVE_MEASURED_ITERATIONS" ] && MEASURED_ITERATIONS="$_SAVE_MEASURED_ITERATIONS"
 fi
 
+# Load non-secret deployment defaults after the optional suite. This file is
+# shared by CLI and Benchmark Studio; the UI is only an editor for the same
+# runner contract. Explicit environment variables and suite values always win.
+SYSTEM_SETTINGS_FILE="${BENCHMARK_SYSTEM_SETTINGS_FILE:-${BENCHMARK_UI_SETTINGS_FILE:-$PROJECT_ROOT/config/system_settings.json}}"
+if [ -f "$SYSTEM_SETTINGS_FILE" ]; then
+    if ! command -v jq >/dev/null 2>&1; then
+        echo -e "${YELLOW}Warning: jq is unavailable; ignoring ${SYSTEM_SETTINGS_FILE}.${NC}"
+    else
+        _system_default() {
+            local shell_name="$1" json_name="$2" value
+            [ -n "${!shell_name:-}" ] && return 0
+            value="$(jq -r --arg key "$json_name" 'if has($key) then .[$key] | if type == "boolean" then tostring else . end else empty end' "$SYSTEM_SETTINGS_FILE")"
+            [ -n "$value" ] && printf -v "$shell_name" '%s' "$value"
+            return 0
+        }
+        _system_default COPY_TO_S3 copy_to_s3
+        _system_default S3_REPORT_PATH s3_report_path
+        _system_default GENERATE_DASHBOARD generate_dashboard
+        _system_default PROMETHEUS_ENABLED prometheus_enabled
+        _system_default PROMETHEUS_PORT prometheus_port
+        _system_default PROMETHEUS_URL prometheus_url
+        _system_default GRAFANA_URL grafana_url
+        unset -f _system_default
+    fi
+fi
+
 # ============================================================================
 # Validate required variables
 # ============================================================================
@@ -324,7 +350,7 @@ fi
 RANDOM_ORDER="${RANDOM_ORDER:-false}"
 RECYCLE_ON_EOF="${RECYCLE_ON_EOF:-false}"
 COPY_TO_S3="${COPY_TO_S3:-false}"
-S3_REPORT_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
+S3_REPORT_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/benchmark-results/v1}"
 REPORT_PATH="${REPORT_PATH:-reports}"
 QUERY_TIMEOUT="${QUERY_TIMEOUT:-300}"
 LIMIT_RESULTSET="${LIMIT_RESULTSET:-1000}"
@@ -855,10 +881,16 @@ fi
 
 # Copy to S3 if enabled
 if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_UPLOAD_ROOT:-}" ]; then
-    ENGINE_VAL="${ENGINE:-unknown}"
-    CLUSTER_SIZE_VAL="${CLUSTER_SIZE:-unknown}"
-    BENCHMARK_VAL="${BENCHMARK_TYPE:-unknown}"
-    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/run_type=${RUN_TYPE}/run_date=${RUN_DATE}/run_id=${TIMESTAMP}-${RUN_ID}/"
+    s3_partition_value() {
+        printf '%s' "${1:-unknown}" | tr '[:space:]/' '__' | tr -cd '[:alnum:]_.-'
+    }
+    ENGINE_VAL="$(s3_partition_value "${ENGINE:-unknown}")"
+    BENCHMARK_VAL="$(s3_partition_value "${BENCHMARK_TYPE:-unknown}")"
+    DATA_SIZE_VAL="$(s3_partition_value "${DATA_SIZE:-unknown}")"
+    CLUSTER_SIZE_VAL="$(s3_partition_value "${CLUSTER_SIZE:-unknown}")"
+    RUN_TYPE_VAL="$(s3_partition_value "${RUN_TYPE:-unknown}")"
+    RUN_ID_VAL="$(s3_partition_value "${TIMESTAMP}-${RUN_ID}")"
+    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/benchmark=${BENCHMARK_VAL}/data_size=${DATA_SIZE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/run_type=${RUN_TYPE_VAL}/run_date=${RUN_DATE}/run_id=${RUN_ID_VAL}/"
 
     echo ""
     echo "Uploading results to S3..."

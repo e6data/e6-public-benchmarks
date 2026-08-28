@@ -661,7 +661,7 @@ export CONCURRENT_QUERY_COUNT=8
 | `WARMUP_ITERATIONS` | Number of separate excluded warm-up passes; default `1` | When warm-up is enabled |
 | `MEASURED_ITERATIONS` | Number of query-file passes included in one JMeter result; aliases remain unchanged for standard per-label aggregation | Run Once plans |
 | `COPY_TO_S3` | Upload results to S3 (`true`/`false`, default `false`) | All plans |
-| `S3_REPORT_PATH` | Root path for runner uploads; `S3_BASE_PATH` remains a legacy metadata alias | All plans |
+| `S3_REPORT_PATH` | Results root used by the existing runner uploader, for example `s3://my-bucket/benchmark-results/v1`; `S3_BASE_PATH` remains a legacy metadata alias | All plans |
 | `RUN_TYPE` | Optional S3 partition label; inferred from plan and concurrency/rate when omitted | All plans |
 | `MAX_ERROR_PCT` | Exit nonzero when sample error percentage exceeds this value | All plans |
 | `PROMETHEUS_ENABLED` | Expose live JMeter metrics for Prometheus; default `false` | All plans |
@@ -789,7 +789,33 @@ historical runs reproducible.
 
 For analysis and comparison tools, see [utilities/README.md](utilities/README.md).
 
-S3 uploads use the common partition layout `engine=.../cluster_size=.../benchmark=.../run_type=.../run_id=.../`. Set `S3_REPORT_PATH` to its root. Existing metadata that defines `S3_BASE_PATH` is supported as a deprecated alias.
+The existing `run_test.sh` uploader is controlled by `COPY_TO_S3` and
+`S3_REPORT_PATH`; the UI does not implement a separate upload path. Non-secret
+deployment defaults can be shared by CLI, interactive, and UI execution in the
+gitignored `config/system_settings.json` file:
+
+```bash
+cp config/system_settings.example.json config/system_settings.json
+```
+
+Explicit CLI exports and suite-file values take precedence over this file. The
+optional UI reads and, when administrator-write mode is enabled, edits the same
+file. Production services can move it outside the checkout with
+`BENCHMARK_SYSTEM_SETTINGS_FILE=/etc/e6-benchmark-studio/system_settings.json`.
+Removing the UI does not affect this runner configuration.
+
+For service deployments, the same two values may instead be supplied directly
+as `COPY_TO_S3` and `S3_REPORT_PATH` environment variables. The legacy
+`BENCHMARK_UI_COPY_TO_S3` name is still accepted by the UI but should not be
+used for new installations because the CLI does not need a UI-specific name.
+
+S3 uploads use the partition layout
+`engine=.../benchmark=.../data_size=.../cluster_size=.../run_type=.../run_date=.../run_id=.../`.
+Set `S3_REPORT_PATH` to the versioned results root, such as
+`s3://my-bucket/benchmark-results/v1`. Query CSVs, warm-up files, and load
+profiles may independently be read from `s3://.../benchmark-workloads/...`;
+connection profiles and credentials must remain on the runner host. Existing
+metadata that defines `S3_BASE_PATH` is supported as a deprecated alias.
 
 ## Developer checks
 
