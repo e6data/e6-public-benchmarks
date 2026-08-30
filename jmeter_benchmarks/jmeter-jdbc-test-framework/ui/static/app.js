@@ -264,4 +264,77 @@ function bindExecutionProfileMode(){
   $('plan').addEventListener('change',()=>{mode.value='custom';sync()});
   sync();
 }
-init().then(()=>{bindExecutionProfileMode();$('WARMUP_QUERY_FILE').value='';$('warmup_upload').onchange=async e=>{try{await uploadLocal('warmup',e.target.files[0])}catch(err){$('formError').textContent=err.message}finally{e.target.value=''}};updatePreview()}).catch(e=>{$('formError').textContent=`UI initialization failed: ${e.message}`});
+function suiteWorkloadRow(values={}){
+  const listId=`suiteQueryFiles${Math.random().toString(16).slice(2)}`,datasets=options(state.config.queries,x=>x);
+  return `<div class="suite-workload-row"><div class="suite-order"><button class="suite-up" type="button" title="Move earlier">↑</button><button class="suite-down" type="button" title="Move later">↓</button></div><label>Workload name<input class="suite-workload-name" value="${esc(values.id||'')}" placeholder="workload_1"></label><label>Measured query file<input class="suite-query-file" list="${listId}" value="${esc(values.query_file||'')}" placeholder="data_files/…csv"><datalist id="${listId}">${datasets}</datalist></label><label>Warm-up query file <small>optional</small><input class="suite-warmup-file" list="${listId}" value="${esc(values.warmup_query_file||'')}" placeholder="None"></label><label>Iterations<input class="suite-iterations" type="number" min="1" max="20" value="${esc(values.measured_iterations||1)}"></label><button class="danger suite-remove" type="button">Remove</button></div>`;
+}
+function addSuiteWorkload(values={}){
+  $('suiteWorkloads').insertAdjacentHTML('beforeend',suiteWorkloadRow(values));
+  const row=$('suiteWorkloads').lastElementChild;
+  row.querySelector('.suite-remove').onclick=()=>row.remove();
+  row.querySelector('.suite-up').onclick=()=>{if(row.previousElementSibling)row.parentNode.insertBefore(row,row.previousElementSibling)};
+  row.querySelector('.suite-down').onclick=()=>{if(row.nextElementSibling)row.parentNode.insertBefore(row.nextElementSibling,row)};
+}
+function selectedSuite(){return (state.suites||[]).find(item=>item.file===$('suiteDefinition').value)}
+function suiteQueryPath(workload,suite){
+  if(workload.query_file)return workload.query_file;
+  const base=suite.file.split('/').slice(0,-1).join('/');
+  const schemas=workload.schemas||[],plain=schemas.length===1&&schemas[0]==='tpcds_1000_delta';
+  const file=plain?workload.queries:(workload.queries_fqn||workload.queries);
+  return file?`${base}/${workload.id}/${file}`:'';
+}
+function suiteWarmupPath(workload,suite){
+  if(workload.warmup_query_file)return workload.warmup_query_file;
+  const base=suite.file.split('/').slice(0,-1).join('/'),schemas=workload.schemas||[],plain=schemas.length===1&&schemas[0]==='tpcds_1000_delta';
+  const file=plain?workload.warmup:(workload.warmup_fqn||workload.warmup);
+  return file?`${base}/${workload.id}/${file}`:'';
+}
+function renderSelectedSuite(){
+  const suite=selectedSuite();
+  if(!suite){$('suiteDefinitionSummary').textContent='Select a suite to review its workloads.';$('suiteCommand').textContent='Select a suite and connection.';return}
+  $('suiteDefinitionSummary').innerHTML=`<strong>${esc(suite.name)}</strong><p>${esc(suite.description||`${suite.workload_count} ordered workloads`)}</p><ol>${suite.workloads.map(item=>`<li><b>${esc(item.id)}</b><span>${esc(suiteQueryPath(item,suite))} · ${esc(item.measured_iterations||1)} iteration(s)</span></li>`).join('')}</ol>`;
+  if(suite.editable){
+    $('suiteName').value=suite.name;$('suiteDescription').value=suite.description||'';$('suiteWorkloads').innerHTML='';suite.workloads.forEach(addSuiteWorkload);$('deleteSuite').classList.remove('hidden');
+  }else $('deleteSuite').classList.add('hidden');
+  updateSuiteCommand();
+}
+function shellArg(value){return `'${String(value).replaceAll("'","'\\''")}'`}
+function updateSuiteCommand(){
+  const suite=$('suiteDefinition').value,connection=$('suiteConnection').value;
+  if(!suite||!connection){$('suiteCommand').textContent='Select a suite and connection.';return}
+  $('suiteCommand').textContent=`./run_benchmark_suite.sh ${shellArg(suite)} ${shellArg(connection)}${$('suiteContinue').checked?' --continue-on-failure':''}`;
+}
+function suiteRunCard(run){
+  const active=run.status==='running'||run.status==='queued',progress=run.workload_count?Math.round((run.completed+run.failed)/run.workload_count*100):0;
+  const rows=(run.results||[]).map(row=>`<tr><td>${esc(row.sequence)}</td><td>${esc(row.workload)}</td><td><span class="status ${esc(row.status)}">${esc(row.status)}</span></td><td>${esc(row.iterations)}</td><td title="${esc(row.report)}">${esc(row.report)}</td></tr>`).join('');
+  return `<article class="card suite-run-card"><div class="suite-run-head"><div><span class="run-type">Suite</span><h3>${esc(run.suite_name)}</h3><small>${esc(run.id)} · ${esc(run.connection)}</small></div><span class="status ${esc(run.status)}">${esc(run.status)}</span></div><div class="suite-progress"><span style="width:${progress}%"></span></div><p>${run.completed} completed · ${run.failed} failed · ${run.workload_count} total</p>${rows?`<div class="table-scroll"><table class="compare-table"><thead><tr><th>#</th><th>Workload</th><th>Status</th><th>Iterations</th><th>Report</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="chart-empty">Waiting for the first workload result…</div>'}<details><summary>CLI command and runner output</summary><pre>${esc(run.command)}\n\n${esc((run.logs||[]).slice(-40).join('\n'))}</pre></details>${active?`<button class="danger" onclick="cancelSuite('${esc(run.id)}')">Cancel suite</button>`:''}</article>`;
+}
+async function refreshSuiteRuns(){
+  state.suiteRuns=await api('/api/suite-runs');
+  const runs=[...state.suiteRuns].sort((a,b)=>(b.started_at||0)-(a.started_at||0));
+  $('suiteRuns').className=runs.length?'suite-runs':'suite-runs empty';$('suiteRuns').innerHTML=runs.length?runs.map(suiteRunCard).join(''):'No suite executions yet.';
+  const active=runs.some(run=>['queued','running'].includes(run.status));
+  if(active&&!state.suitePoll)state.suitePoll=setInterval(refreshSuiteRuns,2000);
+  if(!active&&state.suitePoll){clearInterval(state.suitePoll);state.suitePoll=null}
+}
+async function refreshSuites(){
+  state.suites=await api('/api/suites');
+  const current=$('suiteDefinition').value;
+  $('suiteDefinition').innerHTML='<option value="">Select a suite…</option>'+options(state.suites,item=>`${item.name} · ${item.workload_count} workloads`,item=>item.file);
+  if(state.suites.some(item=>item.file===current))$('suiteDefinition').value=current;
+  $('suiteConnection').innerHTML='<option value="">Select a connection…</option>'+options(state.config.connections,item=>item.split('/').pop(),item=>item);
+  renderSelectedSuite();await refreshSuiteRuns();
+}
+async function saveSuite(){
+  const workloads=[...document.querySelectorAll('.suite-workload-row')].map(row=>({id:row.querySelector('.suite-workload-name').value,query_file:row.querySelector('.suite-query-file').value,warmup_query_file:row.querySelector('.suite-warmup-file').value,measured_iterations:+row.querySelector('.suite-iterations').value}));
+  const existing=selectedSuite(),overwrite=Boolean(existing?.editable&&existing.name===$('suiteName').value);
+  try{const result=await api('/api/suites',{method:'POST',body:JSON.stringify({name:$('suiteName').value,description:$('suiteDescription').value,workloads,overwrite})});$('suiteSaveStatus').textContent=`Saved locally: ${result.file}`;await refreshSuites();$('suiteDefinition').value=result.file;renderSelectedSuite()}catch(error){$('suiteSaveStatus').textContent=error.message}
+}
+async function deleteSuite(){const suite=selectedSuite();if(!suite?.editable||!confirm(`Delete suite ${suite.name}?`))return;await api('/api/suites/delete',{method:'POST',body:JSON.stringify({name:suite.file})});$('suiteName').value='';$('suiteDescription').value='';$('suiteWorkloads').innerHTML='';await refreshSuites()}
+async function launchSuite(){try{$('suiteLaunchStatus').textContent='Starting suite…';await api('/api/suite-runs',{method:'POST',body:JSON.stringify({suite_file:$('suiteDefinition').value,connection:$('suiteConnection').value,continue_on_failure:$('suiteContinue').checked})});$('suiteLaunchStatus').textContent='Suite started.';await refreshSuiteRuns()}catch(error){$('suiteLaunchStatus').textContent=error.message}}
+async function cancelSuite(id){if(!confirm('Stop this suite and its active JMeter workload?'))return;await api(`/api/suite-runs/${id}/cancel`,{method:'POST',body:'{}'});await refreshSuiteRuns()}
+window.cancelSuite=cancelSuite;
+function bindSuites(){
+  $('suiteDefinition').onchange=renderSelectedSuite;$('suiteConnection').onchange=updateSuiteCommand;$('suiteContinue').onchange=updateSuiteCommand;$('refreshSuites').onclick=refreshSuites;$('addSuiteWorkload').onclick=()=>addSuiteWorkload();$('saveSuite').onclick=saveSuite;$('deleteSuite').onclick=deleteSuite;$('launchSuite').onclick=launchSuite;document.querySelector('[data-tab="suites"]').addEventListener('click',refreshSuites);if(!$('suiteWorkloads').children.length)addSuiteWorkload();
+}
+init().then(()=>{bindExecutionProfileMode();bindSuites();$('WARMUP_QUERY_FILE').value='';$('warmup_upload').onchange=async e=>{try{await uploadLocal('warmup',e.target.files[0])}catch(err){$('formError').textContent=err.message}finally{e.target.value=''}};updatePreview()}).catch(e=>{$('formError').textContent=`UI initialization failed: ${e.message}`});

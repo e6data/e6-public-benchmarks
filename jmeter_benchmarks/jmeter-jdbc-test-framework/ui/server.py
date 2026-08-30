@@ -19,6 +19,7 @@ import logging
 import mimetypes
 import os
 import re
+import shlex
 import signal
 import shutil
 import sqlite3
@@ -46,6 +47,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = Path(__file__).resolve().parent / "static"
 REPORTS = ROOT / "reports"
 LOG_DIR = ROOT / "logs"
+SUITE_MANIFESTS = ROOT / "suite_manifests"
 LOGGER = logging.getLogger("benchmark-ui")
 SETTINGS_PATH = Path(os.environ.get("BENCHMARK_SYSTEM_SETTINGS_FILE",
                                     os.environ.get("BENCHMARK_UI_SETTINGS_FILE",
@@ -665,6 +667,89 @@ def delete_preset(kind: str, name: str) -> str:
     return target.relative_to(ROOT).as_posix()
 
 
+def _suite_manifest(path: Path, editable: bool) -> dict[str, Any]:
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Invalid suite manifest: {path.name}") from exc
+    workloads = manifest.get("workloads")
+    if not isinstance(workloads, list) or not workloads:
+        raise ValueError(f"Suite manifest {path.name} must contain workloads")
+    return {
+        "file": path.relative_to(ROOT).as_posix(),
+        "name": str(manifest.get("name") or manifest.get("catalog_id") or path.stem),
+        "description": str(manifest.get("description") or manifest.get("selection") or ""),
+        "workload_count": len(workloads), "workloads": workloads, "editable": editable,
+    }
+
+
+def suite_catalog() -> list[dict[str, Any]]:
+    manifests: list[dict[str, Any]] = []
+    for path in sorted((ROOT / "data_files").rglob("manifest.json")):
+        try:
+            manifests.append(_suite_manifest(path, False))
+        except ValueError:
+            LOGGER.warning("Ignoring invalid tracked suite manifest %s", path)
+    for path in sorted(SUITE_MANIFESTS.glob("*.json")):
+        try:
+            manifests.append(_suite_manifest(path, path.stem.startswith("ui_")))
+        except ValueError:
+            LOGGER.warning("Ignoring invalid local suite manifest %s", path)
+    return manifests
+
+
+def create_suite_manifest(config: dict[str, Any], overwrite: bool = False) -> str:
+    name = _property_value(config.get("name"), "Suite name", required=True)
+    if not PROFILE_NAME.fullmatch(name):
+        raise ValueError("Suite name may contain only letters, numbers, dot, dash, and underscore")
+    stem = name if name.startswith("ui_") else f"ui_{name}"
+    workloads = config.get("workloads")
+    if not isinstance(workloads, list) or not workloads:
+        raise ValueError("A suite requires at least one workload")
+    clean_workloads = []
+    for index, workload in enumerate(workloads, 1):
+        if not isinstance(workload, dict):
+            raise ValueError(f"Workload {index} must be an object")
+        workload_id = _property_value(workload.get("id"), f"Workload {index} name", required=True)
+        if not PROFILE_NAME.fullmatch(workload_id):
+            raise ValueError(f"Workload {index} name contains unsupported characters")
+        query_file = _inside(str(workload.get("query_file", "")), "data_files", ".csv")
+        warmup_value = str(workload.get("warmup_query_file") or "")
+        warmup_file = _inside(warmup_value, "data_files", ".csv") if warmup_value else ""
+        try:
+            iterations = int(workload.get("measured_iterations", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Workload {index} iterations must be an integer") from exc
+        if not 1 <= iterations <= 20:
+            raise ValueError(f"Workload {index} iterations must be between 1 and 20")
+        clean_workloads.append({
+            "id": workload_id, "query_file": query_file,
+            "warmup_query_file": warmup_file, "measured_iterations": iterations,
+        })
+    SUITE_MANIFESTS.mkdir(parents=True, exist_ok=True)
+    target = SUITE_MANIFESTS / f"{stem}.json"
+    if target.exists() and not overwrite:
+        raise ValueError("A suite with this name already exists")
+    manifest = {
+        "schema_version": 1, "name": name.removeprefix("ui_"),
+        "description": _property_value(config.get("description"), "Description"),
+        "workloads": clean_workloads,
+    }
+    target.write_text(json.dumps(manifest, indent=2) + "\n")
+    return target.relative_to(ROOT).as_posix()
+
+
+def delete_suite_manifest(name: str) -> str:
+    stem = Path(name).stem
+    if not stem.startswith("ui_") or not PROFILE_NAME.fullmatch(stem):
+        raise ValueError("Only locally-created ui_* suites can be deleted")
+    target = SUITE_MANIFESTS / f"{stem}.json"
+    if not target.is_file():
+        raise ValueError("Suite not found")
+    target.unlink()
+    return target.relative_to(ROOT).as_posix()
+
+
 def create_connection_profile(config: dict[str, Any]) -> str:
     """Create a local properties file compatible with run_test.sh.
 
@@ -789,7 +874,7 @@ def _inside(relative: str, directory: str, suffix: str) -> str:
     base = (ROOT / directory).resolve()
     if not candidate.is_relative_to(base) or candidate.suffix.lower() != suffix or not candidate.is_file():
         raise ValueError(f"Invalid {directory} file")
-    return candidate.relative_to(ROOT).as_posix()
+    return candidate.relative_to(ROOT.resolve()).as_posix()
 
 
 def _number(config: dict[str, Any], key: str, default: int) -> str:
@@ -1135,6 +1220,145 @@ class Run:
 
 RUNS: dict[str, Run] = {}
 RUN_LOCK = threading.Lock()
+
+
+@dataclass
+class SuiteExecution:
+    suite_run_id: str
+    suite_file: str
+    suite_name: str
+    connection: str
+    report_root: Path
+    continue_on_failure: bool = False
+    status: str = "queued"
+    started_at: float | None = None
+    finished_at: float | None = None
+    return_code: int | None = None
+    process: subprocess.Popen[str] | None = field(default=None, repr=False)
+    logs: deque[str] = field(default_factory=lambda: deque(maxlen=300), repr=False)
+
+    def public(self) -> dict[str, Any]:
+        rows = []
+        summary = self.report_root / "suite_summary.tsv"
+        if summary.is_file():
+            try:
+                with summary.open(newline="", errors="replace") as handle:
+                    rows = list(csv.DictReader(handle, delimiter="\t"))
+            except (OSError, csv.Error):
+                rows = []
+        manifest_count = 0
+        try:
+            manifest_count = len(json.loads((ROOT / self.suite_file).read_text()).get("workloads", []))
+        except (OSError, json.JSONDecodeError):
+            pass
+        command = ["./run_benchmark_suite.sh", self.suite_file, self.connection]
+        if self.continue_on_failure:
+            command.append("--continue-on-failure")
+        return {
+            "id": self.suite_run_id, "suite_file": self.suite_file, "suite_name": self.suite_name,
+            "connection": self.connection, "status": self.status,
+            "continue_on_failure": self.continue_on_failure,
+            "started_at": self.started_at, "finished_at": self.finished_at,
+            "return_code": self.return_code, "workload_count": manifest_count,
+            "completed": sum(row.get("status") == "completed" for row in rows),
+            "failed": sum(str(row.get("status", "")).startswith("failed") for row in rows),
+            "results": rows, "logs": list(self.logs),
+            "report_path": self.report_root.relative_to(ROOT).as_posix(),
+            "command": " ".join(shlex.quote(part) for part in command),
+            "cancellable": self.status == "running" and self.process is not None,
+        }
+
+
+SUITE_EXECUTIONS: dict[str, SuiteExecution] = {}
+SUITE_LOCK = threading.Lock()
+
+
+def _persist_suite_execution(execution: SuiteExecution) -> None:
+    execution.report_root.mkdir(parents=True, exist_ok=True)
+    payload = execution.public()
+    payload.pop("cancellable", None)
+    (execution.report_root / "suite_status.json").write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def restore_suite_executions() -> None:
+    for path in sorted(REPORTS.glob("suite-ui-*/suite_status.json")):
+        try:
+            item = json.loads(path.read_text())
+            status = str(item.get("status", "interrupted"))
+            if status in {"queued", "running"}:
+                status = "interrupted"
+            execution = SuiteExecution(
+                str(item["id"]), str(item["suite_file"]), str(item.get("suite_name") or "Suite"),
+                str(item["connection"]), path.parent,
+                bool(item.get("continue_on_failure", False)), status,
+                item.get("started_at"), item.get("finished_at"), item.get("return_code"),
+                logs=deque(item.get("logs", []), maxlen=300),
+            )
+            SUITE_EXECUTIONS[execution.suite_run_id] = execution
+        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
+            LOGGER.warning("Ignoring invalid persisted suite execution %s", path)
+
+
+def _execute_suite(execution: SuiteExecution) -> None:
+    execution.status, execution.started_at = "running", time.time()
+    _persist_suite_execution(execution)
+    env = os.environ.copy()
+    env.update({
+        "SUITE_RUN_ID": execution.suite_run_id,
+        "SUITE_REPORT_PATH": str(execution.report_root.relative_to(ROOT)),
+        "COPY_TO_S3": "true" if SYSTEM_COPY_TO_S3 else "false",
+        "GENERATE_DASHBOARD": "true" if SYSTEM_GENERATE_DASHBOARD else "false",
+    })
+    if SYSTEM_S3_REPORT_PATH:
+        env["S3_REPORT_PATH"] = SYSTEM_S3_REPORT_PATH
+    command = [str(ROOT / "run_benchmark_suite.sh"), execution.suite_file, execution.connection]
+    if execution.continue_on_failure:
+        command.append("--continue-on-failure")
+    try:
+        execution.process = subprocess.Popen(
+            command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, start_new_session=True,
+        )
+        assert execution.process.stdout
+        with (execution.report_root / "suite_runner.log").open("a") as log:
+            for line in execution.process.stdout:
+                clean = line.rstrip()
+                execution.logs.append(clean)
+                log.write(line)
+                log.flush()
+        execution.return_code = execution.process.wait()
+        if execution.status != "cancelled":
+            execution.status = "completed" if execution.return_code == 0 else "failed"
+    except Exception as exc:
+        execution.logs.append(f"Suite runner error: {exc}")
+        execution.return_code, execution.status = 1, "failed"
+        LOGGER.exception("suite=%s runner failure", execution.suite_run_id)
+    finally:
+        execution.finished_at = time.time()
+        _persist_suite_execution(execution)
+
+
+def start_suite_execution(suite_file: str, connection: str, continue_on_failure: bool) -> SuiteExecution:
+    if RUNNER_BACKEND != "local":
+        raise ValueError(
+            "Suite launches currently require the UI and JMeter runner on the same host; "
+            "run the suite CLI on the remote worker"
+        )
+    suite = next((item for item in suite_catalog() if item["file"] == suite_file), None)
+    if not suite:
+        raise ValueError("Unknown suite manifest")
+    connection_file = _inside(connection, "connection_properties", ".properties")
+    timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    suite_run_id = f"{timestamp}-{re.sub(r'[^a-z0-9]+', '-', suite['name'].lower()).strip('-')[:32]}-{uuid.uuid4().hex[:6]}"
+    execution = SuiteExecution(
+        suite_run_id, suite_file, suite["name"], connection_file,
+        REPORTS / f"suite-ui-{suite_run_id}", continue_on_failure,
+    )
+    with SUITE_LOCK:
+        SUITE_EXECUTIONS[suite_run_id] = execution
+    _persist_suite_execution(execution)
+    threading.Thread(target=_execute_suite, args=(execution,), daemon=True).start()
+    return execution
 
 
 def _execute(run: Run, env: dict[str, str]) -> None:
@@ -1672,6 +1896,11 @@ class Handler(SimpleHTTPRequestHandler):
             elif parsed.path == "/api/runs":
                 with RUN_LOCK:
                     self._json([run.public() for run in RUNS.values()])
+            elif parsed.path == "/api/suites":
+                self._json(suite_catalog())
+            elif parsed.path == "/api/suite-runs":
+                with SUITE_LOCK:
+                    self._json([run.public() for run in SUITE_EXECUTIONS.values()])
             elif parsed.path.startswith("/api/runs/"):
                 run_id = parsed.path.rsplit("/", 1)[-1]
                 with RUN_LOCK:
@@ -1749,6 +1978,17 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/presets/delete":
                 deleted = delete_preset(str(body.get("kind", "")), str(body.get("name", "")))
                 self._json({"file": deleted})
+            elif self.path == "/api/suites":
+                saved = create_suite_manifest(body, overwrite=body.get("overwrite") is True)
+                self._json({"file": saved}, HTTPStatus.CREATED)
+            elif self.path == "/api/suites/delete":
+                self._json({"file": delete_suite_manifest(str(body.get("name", "")))})
+            elif self.path == "/api/suite-runs":
+                execution = start_suite_execution(
+                    str(body.get("suite_file", "")), str(body.get("connection", "")),
+                    body.get("continue_on_failure") is True,
+                )
+                self._json(execution.public(), HTTPStatus.ACCEPTED)
             elif self.path == "/api/system-settings":
                 self._json(update_system_settings(body))
             elif self.path == "/api/workload-preview":
@@ -1778,6 +2018,16 @@ class Handler(SimpleHTTPRequestHandler):
                 persist_run(run)
                 LOGGER.info("run=%s cancellation requested", run.run_id)
                 self._json(run.public())
+            elif self.path.endswith("/cancel") and self.path.startswith("/api/suite-runs/"):
+                suite_run_id = self.path.split("/")[3]
+                with SUITE_LOCK:
+                    execution = SUITE_EXECUTIONS.get(suite_run_id)
+                if not execution or not execution.process or execution.status != "running":
+                    raise ValueError("Suite is not active")
+                os.killpg(execution.process.pid, signal.SIGTERM)
+                execution.status = "cancelled"
+                _persist_suite_execution(execution)
+                self._json(execution.public())
             elif self.path == "/api/compare":
                 left_id, right_id = str(body.get("left", "")), str(body.get("right", ""))
                 left, right = report_by_id(left_id), report_by_id(right_id)
@@ -1812,6 +2062,7 @@ def main() -> None:
         parser.exit(2, "Remote binding requires BENCHMARK_UI_TOKEN. Put TLS in front of this service.\n")
     init_registry()
     restore_runs()
+    restore_suite_executions()
     try:
         server = ThreadingHTTPServer((args.host, args.port), Handler)
     except OSError as exc:

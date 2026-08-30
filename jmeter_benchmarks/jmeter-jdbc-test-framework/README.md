@@ -363,7 +363,30 @@ Then open <http://127.0.0.1:8765>. The UI supports:
   it with actual arrivals/in-flight behavior read from JMeter's result CSV;
 - applying tracked or locally-created execution-profile and metadata presets through the
   **Presets** tab. Presets populate visible Launch fields and never
-  bypass the resolved-configuration preview.
+  bypass the resolved-configuration preview;
+- creating, selecting, launching, monitoring, and cancelling ordered benchmark
+  suites through the **Suites** tab. The UI invokes the same
+  `run_benchmark_suite.sh` command available to CLI users.
+
+### Benchmark suites
+
+A suite is an ordered JSON manifest of Run Once workloads. Each workload still
+executes through `run_test.sh`, so the JMX plans, validation, reports, S3 upload,
+and CLI behavior remain unchanged. Run a tracked or UI-created suite directly:
+
+```bash
+./run_benchmark_suite.sh \
+  suite_manifests/example_smoke.json \
+  connection_properties/my_connection.properties \
+  --continue-on-failure
+```
+
+Use `--dry-run` to validate every query/warm-up CSV without starting JMeter.
+The **Suites** page produces the same command, displays ordered progress and
+keeps the suite summary under `reports/suite-ui-<suite-run-id>/`. UI-created
+definitions use repository-relative `data_files/...csv` paths and are stored as
+ignored `suite_manifests/ui_*.json` files. They contain no credentials; the
+connection profile is selected separately at launch time.
 
 The **Advanced runner settings** section exposes `RAMP_UP_TIME`,
 `RAMP_UP_STEPS`, `QUERY_TIMEOUT`, and `LIMIT_RESULTSET`. The resolved preview

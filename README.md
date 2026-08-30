@@ -73,6 +73,14 @@ Open <http://127.0.0.1:8765>. The CLI remains fully supported and has no UI
 dependency. Stop only the UI with `./stop_ui.sh`; `run_ui.sh` remains a
 backwards-compatible alias.
 
+For an ordered multi-workload benchmark, use the **Suites** page or invoke its
+same CLI contract directly:
+
+```bash
+./run_benchmark_suite.sh suite_manifests/example_smoke.json \
+  connection_properties/my_connection.properties
+```
+
 ## Repository layout
 
 ```text
@@ -84,6 +92,8 @@ backwards-compatible alias.
 │   ├── config/              # shared non-secret runner settings example
 │   ├── utilities/           # local, S3, and Athena analysis tools
 │   ├── ui/                  # optional local control and visualization layer
+│   ├── suite_manifests/     # tracked examples + ignored local suite definitions
+│   ├── run_benchmark_suite.sh # ordered multi-workload CLI runner
 │   ├── setup_ui.sh          # UI-only setup + optional local PostgreSQL
 │   ├── start_ui.sh          # optional UI launcher
 │   ├── stop_ui.sh           # stop this checkout's UI process

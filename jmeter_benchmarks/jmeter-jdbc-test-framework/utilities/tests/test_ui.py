@@ -770,6 +770,48 @@ class UiTests(unittest.TestCase):
             with self.subTest(plan=plan):
                 self.assertEqual(server.workload_preview({**base, "plan": plan})["pattern"], label)
 
+    def test_create_suite_manifest_uses_root_relative_workloads(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "data_files").mkdir()
+            (root / "data_files" / "queries.csv").write_text(
+                "query_alias,query_string\nq1,select 1\n"
+            )
+            original_root, original_suites = server.ROOT, server.SUITE_MANIFESTS
+            server.ROOT, server.SUITE_MANIFESTS = root, root / "suite_manifests"
+            try:
+                relative = server.create_suite_manifest({
+                    "name": "smoke", "description": "Smoke suite",
+                    "workloads": [{
+                        "id": "queries", "query_file": "data_files/queries.csv",
+                        "warmup_query_file": "", "measured_iterations": 2,
+                    }],
+                })
+                manifest = json.loads((root / relative).read_text())
+                catalog = server.suite_catalog()
+            finally:
+                server.ROOT, server.SUITE_MANIFESTS = original_root, original_suites
+            self.assertEqual(relative, "suite_manifests/ui_smoke.json")
+            self.assertEqual(manifest["workloads"][0]["query_file"], "data_files/queries.csv")
+            self.assertEqual(catalog[0]["workload_count"], 1)
+
+    def test_suite_manifest_rejects_files_outside_data_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "data_files").mkdir()
+            (root / "outside.csv").write_text("query_alias,query_string\nq1,select 1\n")
+            original_root, original_suites = server.ROOT, server.SUITE_MANIFESTS
+            server.ROOT, server.SUITE_MANIFESTS = root, root / "suite_manifests"
+            try:
+                with self.assertRaisesRegex(ValueError, "Invalid data_files file"):
+                    server.create_suite_manifest({
+                        "name": "bad", "workloads": [{
+                            "id": "bad", "query_file": "outside.csv",
+                        }],
+                    })
+            finally:
+                server.ROOT, server.SUITE_MANIFESTS = original_root, original_suites
+
 
 if __name__ == "__main__":
     unittest.main()

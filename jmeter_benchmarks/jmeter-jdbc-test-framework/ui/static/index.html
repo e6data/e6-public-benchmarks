@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>e6data Benchmark Studio</title>
-  <link rel="stylesheet" href="/styles.css?v=execution-model-3">
+  <link rel="stylesheet" href="/styles.css?v=suites-1">
 </head>
 <body>
   <header>
@@ -23,6 +23,7 @@
     <button class="tab active" data-tab="launch"><b>＋</b> Launch test</button>
     <button class="tab" data-tab="live"><b>◉</b> Live runs <span id="liveCount">0</span></button>
     <button class="tab" data-tab="history"><b>◷</b> Run history</button>
+    <button class="tab" data-tab="suites"><b>▦</b> Suites</button>
     <button class="tab" data-tab="compare"><b>⇄</b> Compare runs</button>
     <button class="tab" data-tab="presets"><b>◇</b> Presets</button>
     <button class="tab" data-tab="settings"><b>⚙</b> System settings</button>
@@ -139,6 +140,32 @@
       <div id="historyRuns" class="run-grid empty">No runs match these filters.</div>
     </section>
 
+    <section id="suites" class="panel">
+      <div class="section-heading"><div><span class="eyebrow">MULTI-WORKLOAD EXECUTION</span><h2>Benchmark suites</h2><p>Create an ordered collection of workloads and run it through the same <code>run_benchmark_suite.sh</code> CLI contract.</p></div><button id="refreshSuites" class="secondary">Refresh</button></div>
+      <div class="suite-layout">
+        <div class="card suite-launch-card">
+          <h3>Run a suite</h3>
+          <div class="fields">
+            <label>Suite definition<select id="suiteDefinition"><option value="">Select a suite…</option></select></label>
+            <label>Connection profile<select id="suiteConnection"><option value="">Select a connection…</option></select></label>
+          </div>
+          <div id="suiteDefinitionSummary" class="suite-definition-summary">Select a suite to review its workloads.</div>
+          <label class="check-line"><input id="suiteContinue" type="checkbox"> Continue with remaining workloads after a failure</label>
+          <details class="resolved-suite-command"><summary>Resolved CLI command</summary><pre id="suiteCommand">Select a suite and connection.</pre></details>
+          <div class="actions"><p id="suiteLaunchStatus" class="error"></p><button id="launchSuite" class="primary" type="button">Run suite <span>→</span></button></div>
+        </div>
+        <div class="card suite-builder-card">
+          <h3>Create or edit a local suite</h3>
+          <div class="fields"><label>Suite name<input id="suiteName" placeholder="tpcds_regression"></label><label>Description<input id="suiteDescription" placeholder="Ordered regression workloads"></label></div>
+          <div id="suiteWorkloads" class="suite-workloads"></div>
+          <div class="suite-builder-actions"><button id="addSuiteWorkload" class="secondary" type="button">Add workload</button><button id="saveSuite" class="primary" type="button">Save suite</button><button id="deleteSuite" class="danger hidden" type="button">Delete suite</button></div>
+          <p id="suiteSaveStatus" class="artifact-list"></p>
+        </div>
+      </div>
+      <div class="section-heading suite-runs-heading"><div><h3>Suite executions</h3><p>Progress and logs from CLI suite processes started by this UI.</p></div></div>
+      <div id="suiteRuns" class="suite-runs empty">No suite executions yet.</div>
+    </section>
+
     <section id="compare" class="panel">
       <div class="section-heading"><div><span class="eyebrow">RUN ANALYSIS</span><h2>Compare completed results</h2><p>Local report storage · <code>reports/**/run_summary.json</code> · no database required</p></div></div>
       <div class="report-filters card"><label>Baseline engine<select id="filterLeftEngine"><option value="">All engines</option></select></label><label>Candidate engine<select id="filterRightEngine"><option value="">All engines</option></select></label><label>Benchmark<select id="filterBenchmark"><option value="">All benchmarks</option></select></label><label>Run type<select id="filterRunType"><option value="">All run types</option></select></label><label>Query dataset<select id="filterQueries"><option value="">All datasets</option></select></label><label>Test plan<select id="filterTestPlan"><option value="">All plans</option></select></label><label>Cluster size<select id="filterCluster"><option value="">All sizes</option></select></label><label>Engine build<select id="filterBuild"><option value="">All builds</option></select></label><label>Scope<select id="filterScope"><option value="">All scopes</option><option value="internal">Internal</option><option value="external">External</option></select></label><label>Purpose<select id="filterPurpose"><option value="">All purposes</option><option value="adhoc">Ad hoc</option><option value="reference-candidate">Reference candidate</option><option value="nightly">Nightly</option><option value="validation">Validation</option></select></label><label>Validity<select id="filterValidity"><option value="valid">Valid only</option><option value="">All validity states</option><option value="pending">Pending</option><option value="invalid">Invalid</option></select></label><label>Reference<select id="filterReference"><option value="">All runs</option><option value="active">Active references</option><option value="ordinary">Non-reference runs</option></select></label><label>Tag contains<input id="filterTag" placeholder="paired, release"></label><label>From date<input id="filterDateFrom" type="date"></label><label>Through date<input id="filterDateTo" type="date"></label><div></div><label class="compare-status-filter"><input id="compatibleOnly" type="checkbox"> Restrict candidates to the same query file and test plan</label><label class="compare-status-filter"><input id="includeInvalidReports" type="checkbox"> Include failed, cancelled, or interrupted runs</label></div>
@@ -163,6 +190,6 @@
     </section>
   </main>
   <footer>Optional UI layer · Existing CLI execution remains unchanged · Credentials stay on this host</footer>
-  <script src="/app.js?v=execution-model-4"></script>
+  <script src="/app.js?v=suites-1"></script>
 </body>
 </html>

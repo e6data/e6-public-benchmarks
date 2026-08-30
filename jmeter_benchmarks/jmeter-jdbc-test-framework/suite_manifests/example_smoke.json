@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "name": "Example smoke suite",
+  "description": "Two small sequential workloads that demonstrate suite orchestration.",
+  "workloads": [
+    {
+      "id": "simple-queries",
+      "query_file": "data_files/simple_queries.csv",
+      "warmup_query_file": "",
+      "measured_iterations": 1
+    },
+    {
+      "id": "sample-queries",
+      "query_file": "data_files/sample_jmeter_queries.csv",
+      "warmup_query_file": "",
+      "measured_iterations": 1
+    }
+  ]
+}
