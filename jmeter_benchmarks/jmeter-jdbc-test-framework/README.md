@@ -370,24 +370,30 @@ Then open <http://127.0.0.1:8765>. The UI supports:
 
 ### Performance Suites
 
-A Performance Suite is an engine-specific, ordered JSON manifest of executable
-scenarios. A scenario selects its JMeter plan, query and optional warm-up/load
-profile files, measured iterations, and load overrides. Suite-level metadata
-and a `comparison_key` make compatible engine-specific suites discoverable for
-later comparison. Each scenario still executes through `run_test.sh`, so JMX
-plans, validation, reports, S3 upload, and CLI behavior remain unchanged.
+A Performance Suite is an ordered collection of complete saved benchmark
+forms. Each form uses the same contract as an ad-hoc Launch: **where to run**
+(engine and local connection-profile reference), **what to run** (warm-up and
+measured query files), **how to run** (JMeter plan, load profile and settings),
+and descriptive metadata. Users can save benchmarks such as `tpcds25-fast`,
+`tpcds99`, `clickbench`, and `aggregation`, then select and order any subset.
 
-The suite may reference a default local connection-profile filename for
-one-click use, but never embeds JDBC credentials. The connection remains a
-separate CLI argument and can always be replaced at launch. Run a tracked or
-UI-created suite directly:
+Saving a suite copies immutable snapshots of those forms and their source
+names, so later edits do not silently change an existing suite. Definitions
+never embed JDBC credentials; they only refer to connection-property filenames
+on the runner host. Every entry still executes through `run_test.sh`, preserving
+JMX plans, validation, reports, S3 upload, and standalone CLI behavior.
+
+Run a schema-v3 suite directly. No connection argument is needed because each
+saved form identifies its host-local profile:
 
 ```bash
 ./run_benchmark_suite.sh \
-  suite_manifests/example_smoke.json \
-  connection_properties/my_connection.properties \
+  suite_manifests/example_saved_benchmarks.json \
   --continue-on-failure
 ```
+
+An optional connection argument remains an explicit override and is still
+required by schema-v1/v2 suites.
 
 Use `--dry-run` to validate every query/warm-up CSV, plan, properties file and
 load profile without starting JMeter. The **Performance suites** page produces
@@ -395,9 +401,8 @@ the same command, displays ordered progress and
 keeps the suite summary under `reports/suite-ui-<suite-run-id>/`. UI-created
 definitions use repository-relative `data_files/...csv` paths and are stored as
 ignored `suite_manifests/ui_*.json` files. They contain no credentials; the
-connection profile is resolved from the optional local reference or selected
-separately at launch time. Schema-v1 query collections remain compatible and
-run as sequential Run Once scenarios.
+connection profile is resolved independently on the runner host. Schema-v1
+query collections and schema-v2 workload suites remain compatible.
 
 For a shared catalog, place a schema-v2 `suite.json` and its non-secret CSV or
 custom properties files under one S3 prefix, for example

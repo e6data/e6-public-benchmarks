@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>e6data Benchmark Studio</title>
-  <link rel="stylesheet" href="/styles.css?v=performance-suites-1">
+  <link rel="stylesheet" href="/styles.css?v=saved-benchmark-suites-1">
 </head>
 <body>
   <header>
@@ -117,7 +117,7 @@
           <pre id="configPreview"></pre>
           <div class="config-actions"><button id="exportConfig" type="button" class="secondary">Export .env</button><label class="secondary import-label">Import .env<input id="importConfig" type="file" accept=".env,.txt"></label></div>
         </details>
-        <div class="actions"><p id="formError" class="error"></p><button class="primary" type="submit">Launch benchmark <span>→</span></button></div>
+        <div class="actions"><p id="formError" class="error"></p><button id="saveBenchmarkDefinition" class="secondary" type="button">Save as benchmark</button><button class="primary" type="submit">Launch benchmark <span>→</span></button></div>
       </form>
     </section>
 
@@ -147,7 +147,7 @@
           <h3>Run a Performance Suite</h3>
           <div class="fields">
             <label>Suite definition<select id="suiteDefinition"><option value="">Select a suite…</option></select></label>
-            <label>Connection profile<select id="suiteConnection"><option value="">Select a connection…</option></select></label>
+            <label>Connection override <small>legacy suites only</small><select id="suiteConnection"><option value="">Use each saved benchmark profile</option></select></label>
           </div>
           <div class="suite-s3-import"><label>S3 suite.json <small>optional catalog import</small><input id="suiteS3Uri" placeholder="s3://bucket/performance-suites/e6data/example/suite.json"></label><button id="importSuiteS3" class="secondary" type="button">Import</button></div>
           <div id="suiteDefinitionSummary" class="suite-definition-summary">Select a suite to review its workloads.</div>
@@ -157,9 +157,12 @@
         </div>
         <div class="card suite-builder-card">
           <h3>Create or edit a local Performance Suite</h3>
-          <div class="suite-identity-grid"><label>Suite name<input id="suiteName" placeholder="tpcds99_e6data"></label><label>Engine<select id="suiteEngine"></select></label><label>Comparison key <small>optional</small><input id="suiteComparisonKey" placeholder="tpcds99-sequential-1tb"></label><label>Default connection <small>optional local reference</small><select id="suiteDefaultConnection"><option value="">Require selection at launch</option></select></label><label class="suite-description">Description<input id="suiteDescription" placeholder="Reusable engine-specific benchmark"></label><label>Metadata preset <small>optional defaults</small><select id="suiteMetadataPreset"><option value="">No metadata defaults</option></select></label></div>
-          <div id="suiteWorkloads" class="suite-workloads"></div>
-          <div class="suite-builder-actions"><button id="addSuiteWorkload" class="secondary" type="button">Add workload</button><button id="saveSuite" class="primary" type="button">Save suite</button><button id="deleteSuite" class="danger hidden" type="button">Delete suite</button></div>
+          <p class="artifact-list">A suite is an ordered selection of complete saved benchmark forms: where, what, how, and metadata.</p>
+          <div class="suite-identity-grid"><label>Suite name<input id="suiteName" placeholder="release_validation"></label><label class="suite-description">Description<input id="suiteDescription" placeholder="TPC-DS, ClickBench and aggregation checks"></label></div>
+          <div class="suite-definition-picker"><label>Saved benchmarks <small>select one or more</small><select id="suiteBenchmarkPicker" multiple></select></label><button id="addSuiteBenchmarks" class="secondary" type="button">Add selected</button></div>
+          <div id="suiteSelectedBenchmarks" class="suite-workloads"></div>
+          <div class="legacy-suite-builder hidden" aria-hidden="true"><select id="suiteEngine"></select><input id="suiteComparisonKey"><select id="suiteDefaultConnection"></select><select id="suiteMetadataPreset"></select><div id="suiteWorkloads"></div><button id="addSuiteWorkload" type="button"></button></div>
+          <div class="suite-builder-actions"><button id="saveSuite" class="primary" type="button">Save suite</button><button id="deleteSuite" class="danger hidden" type="button">Delete suite</button></div>
           <p id="suiteSaveStatus" class="artifact-list"></p>
         </div>
       </div>
@@ -191,6 +194,6 @@
     </section>
   </main>
   <footer>Optional UI layer · Existing CLI execution remains unchanged · Credentials stay on this host</footer>
-  <script src="/app.js?v=performance-suites-1"></script>
+  <script src="/app.js?v=saved-benchmark-suites-1"></script>
 </body>
 </html>

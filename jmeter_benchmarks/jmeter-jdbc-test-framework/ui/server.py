@@ -48,6 +48,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 REPORTS = ROOT / "reports"
 LOG_DIR = ROOT / "logs"
 SUITE_MANIFESTS = ROOT / "suite_manifests"
+BENCHMARK_DEFINITIONS = ROOT / "benchmark_definitions"
 LOGGER = logging.getLogger("benchmark-ui")
 SETTINGS_PATH = Path(os.environ.get("BENCHMARK_SYSTEM_SETTINGS_FILE",
                                     os.environ.get("BENCHMARK_UI_SETTINGS_FILE",
@@ -672,9 +673,10 @@ def _suite_manifest(path: Path, editable: bool) -> dict[str, Any]:
         manifest = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"Invalid suite manifest: {path.name}") from exc
-    workloads = manifest.get("workloads")
+    schema_version = int(manifest.get("schema_version", 1))
+    workloads = manifest.get("benchmarks") if schema_version >= 3 else manifest.get("workloads")
     if not isinstance(workloads, list) or not workloads:
-        raise ValueError(f"Suite manifest {path.name} must contain workloads")
+        raise ValueError(f"Suite manifest {path.name} must contain benchmarks")
     return {
         "file": path.relative_to(ROOT).as_posix(),
         "name": str(manifest.get("name") or manifest.get("catalog_id") or path.stem),
@@ -684,8 +686,9 @@ def _suite_manifest(path: Path, editable: bool) -> dict[str, Any]:
         "source_uri": str(manifest.get("source_uri") or ""),
         "default_connection": str(manifest.get("default_connection") or ""),
         "metadata": manifest.get("metadata") if isinstance(manifest.get("metadata"), dict) else {},
-        "schema_version": int(manifest.get("schema_version", 1)),
-        "workload_count": len(workloads), "workloads": workloads, "editable": editable,
+        "schema_version": schema_version,
+        "workload_count": len(workloads), "workloads": workloads,
+        "benchmarks": workloads if schema_version >= 3 else [], "editable": editable,
     }
 
 
@@ -702,6 +705,65 @@ def suite_catalog() -> list[dict[str, Any]]:
         except ValueError:
             LOGGER.warning("Ignoring invalid local suite manifest %s", path)
     return manifests
+
+
+def benchmark_definition_catalog() -> list[dict[str, Any]]:
+    """Return non-secret, complete ad-hoc run forms available for suite composition."""
+    definitions = []
+    for path in sorted(BENCHMARK_DEFINITIONS.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text())
+            run = payload.get("run")
+            if not isinstance(run, dict):
+                raise ValueError("run must be an object")
+            definitions.append({
+                "file": path.relative_to(ROOT).as_posix(),
+                "name": str(payload.get("name") or path.stem),
+                "description": str(payload.get("description") or ""),
+                "run": run,
+                "editable": path.stem.startswith("ui_"),
+            })
+        except (OSError, ValueError, json.JSONDecodeError):
+            LOGGER.warning("Ignoring invalid benchmark definition %s", path)
+    return definitions
+
+
+def create_benchmark_definition(config: dict[str, Any], overwrite: bool = False) -> str:
+    name = _property_value(config.get("name"), "Benchmark name", required=True)
+    if not PROFILE_NAME.fullmatch(name):
+        raise ValueError("Benchmark name may contain only letters, numbers, dot, dash, and underscore")
+    run = config.get("run")
+    if not isinstance(run, dict):
+        raise ValueError("Benchmark run form must be an object")
+    # Resolve the exact ad-hoc contract before saving it. This performs the same
+    # file, plan, connection and numeric validation used at launch.
+    build_environment(run, "definition-validation")
+    safe_run = {key: value for key, value in run.items() if key in PUBLIC_RUN_FIELDS}
+    safe_run["label"] = str(run.get("label") or name)[:80]
+    if not safe_run.get("connection"):
+        raise ValueError("Save the connection profile locally before saving a benchmark")
+    target = BENCHMARK_DEFINITIONS / f"ui_{name.removeprefix('ui_')}.json"
+    if target.exists() and not overwrite:
+        raise ValueError("A benchmark with this name already exists")
+    BENCHMARK_DEFINITIONS.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps({
+        "schema_version": 1,
+        "name": name.removeprefix("ui_"),
+        "description": _property_value(config.get("description"), "Description"),
+        "run": safe_run,
+    }, indent=2) + "\n")
+    return target.relative_to(ROOT).as_posix()
+
+
+def delete_benchmark_definition(name: str) -> str:
+    stem = Path(name).stem
+    if not stem.startswith("ui_") or not PROFILE_NAME.fullmatch(stem):
+        raise ValueError("Only locally-created ui_* benchmarks can be deleted")
+    target = BENCHMARK_DEFINITIONS / f"{stem}.json"
+    if not target.is_file():
+        raise ValueError("Benchmark definition not found")
+    target.unlink()
+    return target.relative_to(ROOT).as_posix()
 
 
 def import_s3_suite(uri: str) -> str:
@@ -784,6 +846,32 @@ def create_suite_manifest(config: dict[str, Any], overwrite: bool = False) -> st
     if not PROFILE_NAME.fullmatch(name):
         raise ValueError("Suite name may contain only letters, numbers, dot, dash, and underscore")
     stem = name if name.startswith("ui_") else f"ui_{name}"
+    selected_benchmarks = config.get("benchmarks")
+    if isinstance(selected_benchmarks, list):
+        if not selected_benchmarks:
+            raise ValueError("A Performance Suite requires at least one saved benchmark")
+        catalog = {item["file"]: item for item in benchmark_definition_catalog()}
+        snapshots = []
+        for sequence, selected in enumerate(selected_benchmarks, 1):
+            definition = catalog.get(str(selected))
+            if not definition:
+                raise ValueError(f"Unknown saved benchmark at position {sequence}")
+            # Copy the resolved form into the suite so later edits to the source
+            # definition cannot silently alter a reproducible suite.
+            snapshots.append({
+                "definition": definition["file"], "name": definition["name"],
+                "run": definition["run"],
+            })
+        SUITE_MANIFESTS.mkdir(parents=True, exist_ok=True)
+        target = SUITE_MANIFESTS / f"{stem}.json"
+        if target.exists() and not overwrite:
+            raise ValueError("A suite with this name already exists")
+        target.write_text(json.dumps({
+            "schema_version": 3, "name": name.removeprefix("ui_"),
+            "description": _property_value(config.get("description"), "Description"),
+            "benchmarks": snapshots,
+        }, indent=2) + "\n")
+        return target.relative_to(ROOT).as_posix()
     engine = _property_value(config.get("engine"), "Engine", required=True).lower()
     if engine not in JDBC_DRIVERS:
         raise ValueError("Performance Suite engine is not supported")
@@ -1379,10 +1467,13 @@ class SuiteExecution:
                 rows = []
         manifest_count = 0
         try:
-            manifest_count = len(json.loads((ROOT / self.suite_file).read_text()).get("workloads", []))
+            manifest = json.loads((ROOT / self.suite_file).read_text())
+            manifest_count = len(manifest.get("benchmarks") or manifest.get("workloads") or [])
         except (OSError, json.JSONDecodeError):
             pass
-        command = ["./run_benchmark_suite.sh", self.suite_file, self.connection]
+        command = ["./run_benchmark_suite.sh", self.suite_file]
+        if self.connection:
+            command.append(self.connection)
         if self.continue_on_failure:
             command.append("--continue-on-failure")
         return {
@@ -1420,7 +1511,7 @@ def restore_suite_executions() -> None:
                 status = "interrupted"
             execution = SuiteExecution(
                 str(item["id"]), str(item["suite_file"]), str(item.get("suite_name") or "Suite"),
-                str(item["connection"]), path.parent,
+                str(item.get("connection") or ""), path.parent,
                 bool(item.get("continue_on_failure", False)), status,
                 item.get("started_at"), item.get("finished_at"), item.get("return_code"),
                 logs=deque(item.get("logs", []), maxlen=300),
@@ -1446,7 +1537,9 @@ def _execute_suite(execution: SuiteExecution) -> None:
     })
     if SYSTEM_S3_REPORT_PATH:
         env["S3_REPORT_PATH"] = SYSTEM_S3_REPORT_PATH
-    command = [str(ROOT / "run_benchmark_suite.sh"), execution.suite_file, execution.connection]
+    command = [str(ROOT / "run_benchmark_suite.sh"), execution.suite_file]
+    if execution.connection:
+        command.append(execution.connection)
     if execution.continue_on_failure:
         command.append("--continue-on-failure")
     try:
@@ -1482,7 +1575,11 @@ def start_suite_execution(suite_file: str, connection: str, continue_on_failure:
     suite = next((item for item in suite_catalog() if item["file"] == suite_file), None)
     if not suite:
         raise ValueError("Unknown suite manifest")
-    connection_file = _inside(connection or str(suite.get("default_connection") or ""), "connection_properties", ".properties")
+    schema_version = int(suite.get("schema_version", 1))
+    connection_value = connection or str(suite.get("default_connection") or "")
+    connection_file = _inside(connection_value, "connection_properties", ".properties") if connection_value else ""
+    if schema_version < 3 and not connection_file:
+        raise ValueError("This legacy suite requires a connection profile")
     timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     suite_run_id = f"{timestamp}-{re.sub(r'[^a-z0-9]+', '-', suite['name'].lower()).strip('-')[:32]}-{uuid.uuid4().hex[:6]}"
     execution = SuiteExecution(
@@ -2033,6 +2130,8 @@ class Handler(SimpleHTTPRequestHandler):
                     self._json([run.public() for run in RUNS.values()])
             elif parsed.path == "/api/suites":
                 self._json(suite_catalog())
+            elif parsed.path == "/api/benchmark-definitions":
+                self._json(benchmark_definition_catalog())
             elif parsed.path == "/api/suite-runs":
                 with SUITE_LOCK:
                     self._json([run.public() for run in SUITE_EXECUTIONS.values()])
@@ -2116,6 +2215,11 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/suites":
                 saved = create_suite_manifest(body, overwrite=body.get("overwrite") is True)
                 self._json({"file": saved}, HTTPStatus.CREATED)
+            elif self.path == "/api/benchmark-definitions":
+                saved = create_benchmark_definition(body, overwrite=body.get("overwrite") is True)
+                self._json({"file": saved}, HTTPStatus.CREATED)
+            elif self.path == "/api/benchmark-definitions/delete":
+                self._json({"file": delete_benchmark_definition(str(body.get("name", "")))})
             elif self.path == "/api/suites/import-s3":
                 self._json({"file": import_s3_suite(str(body.get("uri", "")))}, HTTPStatus.CREATED)
             elif self.path == "/api/suites/delete":

@@ -823,6 +823,36 @@ class UiTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "S3 suite URI"):
             server.import_s3_suite("https://example.com/suite.json")
 
+    def test_saved_benchmarks_compose_schema_v3_suite_as_snapshots(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            definitions, suites = root / "benchmark_definitions", root / "suite_manifests"
+            original_root, original_definitions, original_suites = server.ROOT, server.BENCHMARK_DEFINITIONS, server.SUITE_MANIFESTS
+            server.ROOT, server.BENCHMARK_DEFINITIONS, server.SUITE_MANIFESTS = root, definitions, suites
+            run = {
+                "label": "TPCDS fast", "engine": "e6data",
+                "connection": "connection_properties/e6.properties",
+                "plan": "jdbc_sequential", "query_file": "data_files/tpcds.csv",
+                "metadata": {"BENCHMARK_TYPE": "tpcds25"},
+            }
+            try:
+                with mock.patch.object(server, "build_environment", return_value={}):
+                    definition_file = server.create_benchmark_definition({"name": "tpcds25-fast", "run": run})
+                suite_file = server.create_suite_manifest({
+                    "name": "release", "description": "Ordered checks",
+                    "benchmarks": [definition_file],
+                })
+                manifest = json.loads((root / suite_file).read_text())
+                definition = json.loads((root / definition_file).read_text())
+                definition["run"]["query_file"] = "data_files/changed.csv"
+                (root / definition_file).write_text(json.dumps(definition))
+            finally:
+                server.ROOT, server.BENCHMARK_DEFINITIONS, server.SUITE_MANIFESTS = original_root, original_definitions, original_suites
+            self.assertEqual(manifest["schema_version"], 3)
+            self.assertEqual(manifest["benchmarks"][0]["name"], "tpcds25-fast")
+            self.assertEqual(manifest["benchmarks"][0]["run"]["query_file"], "data_files/tpcds.csv")
+            self.assertNotIn("password", json.dumps(manifest).lower())
+
 
 if __name__ == "__main__":
     unittest.main()

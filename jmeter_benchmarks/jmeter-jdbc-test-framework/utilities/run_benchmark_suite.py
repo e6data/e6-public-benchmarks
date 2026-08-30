@@ -62,6 +62,21 @@ def legacy_workload(item: dict, manifest_root: Path) -> dict:
     return {**item, "plan": "jdbc_sequential", "query_file": str(base / str(query or "")), "warmup_query_file": str(base / str(warmup or "")) if warmup else "", "settings": {"CONCURRENT_QUERY_COUNT": 1, "RAMP_UP_TIME": 0, "RECYCLE_ON_EOF": False}}
 
 def normalized_workloads(manifest: dict, manifest_root: Path) -> list[dict]:
+    if int(manifest.get("schema_version", 1)) >= 3:
+        result = []
+        for index, snapshot in enumerate(manifest.get("benchmarks") or [], 1):
+            run = dict(snapshot.get("run") or {})
+            run.update({
+                "id": str(snapshot.get("name") or run.get("label") or f"benchmark-{index}"),
+                "settings": {key: run[key] for key in (*SETTING_DEFAULTS, *BOOL_SETTINGS) if key in run},
+                "warmup_query_file": run.get("WARMUP_QUERY_FILE", "") if run.get("WARMUP_ENABLED") else "",
+                "warmup_iterations": run.get("WARMUP_ITERATIONS", 1),
+                "measured_iterations": run.get("MEASURED_ITERATIONS", 1),
+                "metadata": run.get("metadata") if isinstance(run.get("metadata"), dict) else {},
+            })
+            result.append(run)
+        if not result: raise ValueError("Suite manifest must contain a non-empty benchmarks array")
+        return result
     result = []
     for index, raw in enumerate(manifest.get("workloads") or [], 1):
         item = dict(raw)
@@ -89,12 +104,13 @@ def network_preflight(path: Path) -> None:
 
 def run(args: argparse.Namespace) -> int:
     global ACTIVE
-    manifest_path, connection = Path(args.manifest).resolve(), Path(args.connection).resolve()
-    if not manifest_path.is_file() or not connection.is_file(): raise ValueError("Suite manifest or connection profile not found")
+    manifest_path = Path(args.manifest).resolve()
+    override_connection = Path(args.connection).resolve() if args.connection else None
+    if not manifest_path.is_file() or (override_connection and not override_connection.is_file()): raise ValueError("Suite manifest or connection profile not found")
     manifest = json.loads(manifest_path.read_text()); workloads = normalized_workloads(manifest, manifest_path.parent)
-    suite_engine, actual_engine = str(manifest.get("engine") or "").lower(), connection_engine(connection)
-    if suite_engine and actual_engine and suite_engine != actual_engine: raise ValueError(f"Suite requires engine {suite_engine}; selected profile is {actual_engine}")
-    if not args.dry_run: network_preflight(connection)
+    if int(manifest.get("schema_version", 1)) < 3 and not override_connection:
+        raise ValueError("Schema-v1/v2 suites require a connection profile argument")
+    checked_connections: set[Path] = set()
     suite_id = os.environ.get("SUITE_RUN_ID") or f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:6]}"
     report_root = Path(os.environ.get("SUITE_REPORT_PATH", f"reports/suite-{suite_id}")); report_root = report_root if report_root.is_absolute() else ROOT / report_root
     report_root.mkdir(parents=True, exist_ok=True); shutil.copy2(manifest_path, report_root / "suite_manifest.json")
@@ -104,6 +120,14 @@ def run(args: argparse.Namespace) -> int:
         for sequence, item in enumerate(workloads, 1):
             workload_id, plan = str(item["id"]), str(item["plan"])
             if plan not in PLAN_DEFAULTS: raise ValueError(f"{workload_id}: unknown plan {plan}")
+            connection_value = str(item.get("connection") or "")
+            connection = override_connection or inside(connection_value, "connection_properties", ".properties", manifest_path.parent)
+            required_engine = str(item.get("engine") or manifest.get("engine") or "").lower()
+            actual_engine = connection_engine(connection)
+            if required_engine and actual_engine and required_engine != actual_engine:
+                raise ValueError(f"{workload_id}: benchmark requires {required_engine}; profile is {actual_engine}")
+            if not args.dry_run and connection not in checked_connections:
+                network_preflight(connection); checked_connections.add(connection)
             query = inside(str(item.get("query_file", "")), "data_files", ".csv", manifest_path.parent)
             warmup_value = str(item.get("warmup_query_file") or ""); warmup = inside(warmup_value, "data_files", ".csv", manifest_path.parent) if warmup_value else None
             profile_value = str(item.get("load_profile") or ""); load_profile = inside(profile_value, "test_properties", ".csv", manifest_path.parent) if profile_value else None
@@ -119,7 +143,8 @@ def run(args: argparse.Namespace) -> int:
             settings = {**SETTING_DEFAULTS, **allowed_settings}; env = os.environ.copy()
             env.update({"CONNECTION_FILE": str(connection), "TEST_PLAN": PLAN_DEFAULTS[plan][0], "TEST_PROPERTIES_FILE": str(props), "QUERY_FILE": str(query), "WARMUP_ENABLED": "true" if warmup else "false", "WARMUP_QUERY_FILE": str(warmup or ""), "WARMUP_ITERATIONS": str(item.get("warmup_iterations", 1)), "MEASURED_ITERATIONS": str(item.get("measured_iterations", 1)), "LOAD_PROFILE": str(load_profile or ""), "REPORT_PATH": str(report), "RUN_TYPE": f"suite_{plan}", "SUITE_ID": suite_id, "SUITE_RUN_ID": suite_id, "SUITE_SEQUENCE": str(sequence), "SUITE_WORKLOAD": workload_id, "SUITE_NAME": str(manifest.get("name") or manifest.get("catalog_id") or manifest_path.stem), "SUITE_COMPARISON_KEY": str(manifest.get("comparison_key") or "")})
             for key, value in settings.items(): env[key] = ("true" if value else "false") if key in BOOL_SETTINGS and isinstance(value, bool) else str(value)
-            for key, value in metadata.items():
+            item_metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else metadata
+            for key, value in item_metadata.items():
                 if key in METADATA_KEYS and value not in {None, ""}: env[key] = str(value)
             ACTIVE = subprocess.Popen([str(ROOT / "run_test.sh")], cwd=ROOT, env=env, start_new_session=True, text=True); rc = ACTIVE.wait(); ACTIVE = None
             status = "completed" if rc == 0 else "failed"; writer.writerow([sequence, workload_id, status, plan, query, warmup or "", item["measured_iterations"], report]); summary.flush()
@@ -128,7 +153,7 @@ def run(args: argparse.Namespace) -> int:
     print(f"\nSuite reports: {report_root}\nCompleted workloads: {completed}\nFailed workloads: {failures}"); return 1 if failures else 0
 
 def main() -> int:
-    parser = argparse.ArgumentParser(); parser.add_argument("manifest"); parser.add_argument("connection"); parser.add_argument("--dry-run", action="store_true"); parser.add_argument("--continue-on-failure", action="store_true")
+    parser = argparse.ArgumentParser(); parser.add_argument("manifest"); parser.add_argument("connection", nargs="?"); parser.add_argument("--dry-run", action="store_true"); parser.add_argument("--continue-on-failure", action="store_true")
     try: return run(parser.parse_args())
     except (OSError, ValueError, json.JSONDecodeError) as exc: print(f"Suite error: {exc}", file=sys.stderr); return 1
 

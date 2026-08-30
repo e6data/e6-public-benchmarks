@@ -73,13 +73,11 @@ Open <http://127.0.0.1:8765>. The CLI remains fully supported and has no UI
 dependency. Stop only the UI with `./stop_ui.sh`; `run_ui.sh` remains a
 backwards-compatible alias.
 
-For an engine-specific ordered benchmark containing one or more JMeter test
-plans, use the **Performance suites** page or invoke its same CLI contract
-directly:
+To run an ordered collection of complete saved benchmark forms, use the
+**Performance suites** page or invoke the same CLI contract directly:
 
 ```bash
-./run_benchmark_suite.sh suite_manifests/example_smoke.json \
-  connection_properties/my_connection.properties
+./run_benchmark_suite.sh suite_manifests/example_saved_benchmarks.json
 ```
 
 ## Repository layout

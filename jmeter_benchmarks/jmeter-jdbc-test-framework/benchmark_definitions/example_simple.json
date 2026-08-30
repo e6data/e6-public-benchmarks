@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "name": "example-simple-sequential",
+  "description": "Non-secret example of a complete saved benchmark form.",
+  "run": {
+    "label": "Simple sequential smoke",
+    "engine": "e6data",
+    "connection": "connection_properties/sample_connection.properties",
+    "plan": "jdbc_sequential",
+    "test_properties_file": "test_properties/run_once.properties",
+    "query_file": "data_files/simple_queries.csv",
+    "load_profile": "",
+    "CONCURRENT_QUERY_COUNT": 1,
+    "HOLD_PERIOD": 60,
+    "RAMP_UP_TIME": 0,
+    "RAMP_UP_STEPS": 1,
+    "MAX_CONCURRANCY": 100,
+    "QUERY_TIMEOUT": 300,
+    "LIMIT_RESULTSET": 1000,
+    "MAX_ERROR_PCT": 5,
+    "RECYCLE_ON_EOF": false,
+    "RANDOM_ORDER": false,
+    "GENERATE_DASHBOARD": true,
+    "WARMUP_ENABLED": false,
+    "WARMUP_QUERY_FILE": "",
+    "WARMUP_ITERATIONS": 1,
+    "MEASURED_ITERATIONS": 1,
+    "metadata": {
+      "RUN_SCOPE": "internal",
+      "RUN_PURPOSE": "validation",
+      "RUN_VALIDITY": "valid"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 3,
+  "name": "Example saved benchmarks",
+  "description": "An ordered suite composed from two complete saved ad-hoc benchmark forms.",
+  "benchmarks": [
+    {
+      "definition": "benchmark_definitions/example_simple.json",
+      "name": "example-simple-sequential",
+      "run": {
+        "label": "Simple sequential smoke",
+        "engine": "e6data",
+        "connection": "connection_properties/sample_connection.properties",
+        "plan": "jdbc_sequential",
+        "test_properties_file": "test_properties/run_once.properties",
+        "query_file": "data_files/simple_queries.csv",
+        "CONCURRENT_QUERY_COUNT": 1,
+        "MEASURED_ITERATIONS": 1,
+        "WARMUP_ENABLED": false,
+        "GENERATE_DASHBOARD": true,
+        "metadata": {"RUN_SCOPE": "internal", "RUN_PURPOSE": "validation", "RUN_VALIDITY": "valid"}
+      }
+    },
+    {
+      "definition": "benchmark_definitions/example_concurrent.json",
+      "name": "example-sample-concurrent",
+      "run": {
+        "label": "Sample concurrent smoke",
+        "engine": "e6data",
+        "connection": "connection_properties/sample_connection.properties",
+        "plan": "jdbc_run_once",
+        "test_properties_file": "test_properties/run_once.properties",
+        "query_file": "data_files/sample_jmeter_queries.csv",
+        "CONCURRENT_QUERY_COUNT": 2,
+        "MEASURED_ITERATIONS": 1,
+        "WARMUP_ENABLED": false,
+        "GENERATE_DASHBOARD": true,
+        "metadata": {"RUN_SCOPE": "internal", "RUN_PURPOSE": "validation", "RUN_VALIDITY": "valid"}
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-const state={config:null,runs:[],reports:[],poll:null,previewTimer:null,previewRequest:0,rerunOf:null};
+const state={config:null,runs:[],reports:[],poll:null,previewTimer:null,previewRequest:0,rerunOf:null,benchmarkDefinitions:[],suiteSelection:[]};
 const metadataKeys=['CLUSTER_SIZE','ESTIMATED_CORES','MEMORY_GB','EXECUTORS','CORES_PER_EXECUTOR','INSTANCE_TYPE','SERVERLESS','ENGINE_BUILD','BENCHMARK_TYPE','DATA_SIZE','DATA_TYPE','RUN_MODE','RUN_SCOPE','RUN_PURPOSE','RUN_VALIDITY','CUSTOMER','CONFIG','TAGS','COMMENTS'];
 const advancedKeys=['RAMP_UP_TIME','RAMP_UP_STEPS','QUERY_TIMEOUT','LIMIT_RESULTSET'];
 const $=id=>document.getElementById(id);
@@ -264,6 +264,26 @@ function bindExecutionProfileMode(){
   $('plan').addEventListener('change',()=>{mode.value='custom';sync()});
   sync();
 }
+function currentBenchmarkDefinition(){
+  if($('parallel').checked)throw new Error('Save each engine as its own benchmark definition; disable Compare two engines first.');
+  const card=document.querySelector('.engine'),common=commonConfig();
+  if(!card||card.querySelector('.connection-mode').value!=='existing')throw new Error('Select an existing local connection profile before saving a benchmark.');
+  const connection=card.querySelector('.connection').value;
+  if(!connection)throw new Error('Select a connection profile before saving a benchmark.');
+  return {...common,label:card.querySelector('.engine-label').value,engine:card.querySelector('.engine-kind').value,connection,query_file:card.querySelector('.engine-query').value,WARMUP_ENABLED:card.querySelector('.engine-warmup-enabled').checked,WARMUP_QUERY_FILE:card.querySelector('.engine-warmup').value,WARMUP_ITERATIONS:+card.querySelector('.engine-warmup-iterations').value,metadata:metadataFromCard(card)};
+}
+async function saveCurrentBenchmark(){
+  const name=String(prompt('Name this complete benchmark:','tpcds25-fast')||'').trim();if(!name)return;
+  try{const result=await api('/api/benchmark-definitions',{method:'POST',body:JSON.stringify({name,run:currentBenchmarkDefinition()})});$('formError').textContent=`Saved benchmark: ${result.file}`;await refreshSuites()}catch(error){$('formError').textContent=error.message}
+}
+function renderSuiteSelection(){
+  const root=$('suiteSelectedBenchmarks');
+  root.innerHTML=state.suiteSelection.map((file,index)=>{const item=state.benchmarkDefinitions.find(x=>x.file===file);if(!item)return'';const run=item.run||{};return `<div class="suite-selected-benchmark"><div class="suite-order"><button type="button" onclick="moveSuiteBenchmark(${index},-1)">↑</button><button type="button" onclick="moveSuiteBenchmark(${index},1)">↓</button></div><div><strong>${esc(item.name)}</strong><small>${esc(run.engine)} · ${esc((run.query_file||'').split('/').pop())} · ${esc(run.plan)}</small></div><button class="danger" type="button" onclick="removeSuiteBenchmark(${index})">Remove</button></div>`}).join('')||'<div class="chart-empty">Select one or more saved benchmarks above.</div>';
+}
+function addSelectedBenchmarks(){for(const option of $('suiteBenchmarkPicker').selectedOptions)if(!state.suiteSelection.includes(option.value))state.suiteSelection.push(option.value);renderSuiteSelection()}
+function moveSuiteBenchmark(index,delta){const target=index+delta;if(target<0||target>=state.suiteSelection.length)return;[state.suiteSelection[index],state.suiteSelection[target]]=[state.suiteSelection[target],state.suiteSelection[index]];renderSuiteSelection()}
+function removeSuiteBenchmark(index){state.suiteSelection.splice(index,1);renderSuiteSelection()}
+window.moveSuiteBenchmark=moveSuiteBenchmark;window.removeSuiteBenchmark=removeSuiteBenchmark;
 function suiteWorkloadRow(values={}){
   const listId=`suiteQueryFiles${Math.random().toString(16).slice(2)}`,profileId=`suiteProfiles${Math.random().toString(16).slice(2)}`,datasets=options(state.config.queries,x=>x),profiles=options(state.config.profiles,x=>x),settings=values.settings||{};
   const planOptions=options((state.config.plans||[]).filter(item=>item.transport==='jdbc'),item=>item.label,item=>item.id);
@@ -295,7 +315,9 @@ function suiteWarmupPath(workload,suite){
 function renderSelectedSuite(){
   const suite=selectedSuite();
   if(!suite){$('suiteDefinitionSummary').textContent='Select a suite to review its workloads.';$('suiteCommand').textContent='Select a suite and connection.';return}
-  $('suiteDefinitionSummary').innerHTML=`<strong>${esc(suite.name)}</strong><span class="suite-engine-badge">${esc(suite.engine||'legacy')}</span><p>${esc(suite.description||`${suite.workload_count} ordered scenarios`)}</p>${suite.comparison_key?`<p>Comparison key: <code>${esc(suite.comparison_key)}</code></p>`:''}<ol>${suite.workloads.map(item=>`<li><b>${esc(item.id)}</b><span>${esc(item.plan||'jdbc_sequential')} · ${esc(suiteQueryPath(item,suite))} · ${esc(item.measured_iterations||1)} iteration(s)</span></li>`).join('')}</ol>`;
+  const schema3=suite.schema_version>=3,items=schema3?suite.benchmarks:suite.workloads;
+  $('suiteDefinitionSummary').innerHTML=`<strong>${esc(suite.name)}</strong><span class="suite-engine-badge">${esc(schema3?'saved forms':suite.engine||'legacy')}</span><p>${esc(suite.description||`${suite.workload_count} ordered benchmarks`)}</p><ol>${items.map(item=>{const run=schema3?(item.run||{}):item;return `<li><b>${esc(schema3?item.name:item.id)}</b><span>${esc(run.engine||suite.engine||'')} · ${esc(run.plan||'jdbc_sequential')} · ${esc(schema3?run.query_file:suiteQueryPath(item,suite))}</span></li>`}).join('')}</ol>`;
+  if(schema3){state.suiteSelection=items.map(item=>item.definition).filter(file=>state.benchmarkDefinitions.some(def=>def.file===file));renderSuiteSelection()}
   if(suite.default_connection&&[...$('suiteConnection').options].some(option=>option.value===suite.default_connection))$('suiteConnection').value=suite.default_connection;
   if(suite.editable){
     $('suiteName').value=suite.name;$('suiteDescription').value=suite.description||'';$('suiteEngine').value=suite.engine||'e6data';$('suiteComparisonKey').value=suite.comparison_key||'';$('suiteDefaultConnection').value=suite.default_connection||'';$('suiteWorkloads').innerHTML='';suite.workloads.forEach(addSuiteWorkload);$('deleteSuite').classList.remove('hidden');
@@ -304,9 +326,10 @@ function renderSelectedSuite(){
 }
 function shellArg(value){return `'${String(value).replaceAll("'","'\\''")}'`}
 function updateSuiteCommand(){
-  const suite=$('suiteDefinition').value,connection=$('suiteConnection').value;
-  if(!suite||!connection){$('suiteCommand').textContent='Select a suite and connection.';return}
-  $('suiteCommand').textContent=`./run_benchmark_suite.sh ${shellArg(suite)} ${shellArg(connection)}${$('suiteContinue').checked?' --continue-on-failure':''}`;
+  const suiteFile=$('suiteDefinition').value,connection=$('suiteConnection').value,suite=selectedSuite();
+  if(!suiteFile){$('suiteCommand').textContent='Select a suite.';return}
+  if((suite?.schema_version||1)<3&&!connection){$('suiteCommand').textContent='This legacy suite also requires a connection override.';return}
+  $('suiteCommand').textContent=`./run_benchmark_suite.sh ${shellArg(suiteFile)}${connection?` ${shellArg(connection)}`:''}${$('suiteContinue').checked?' --continue-on-failure':''}`;
 }
 function suiteRunCard(run){
   const active=run.status==='running'||run.status==='queued',progress=run.workload_count?Math.round((run.completed+run.failed)/run.workload_count*100):0;
@@ -322,7 +345,7 @@ async function refreshSuiteRuns(){
   if(!active&&state.suitePoll){clearInterval(state.suitePoll);state.suitePoll=null}
 }
 async function refreshSuites(){
-  state.suites=await api('/api/suites');
+  [state.suites,state.benchmarkDefinitions]=await Promise.all([api('/api/suites'),api('/api/benchmark-definitions')]);
   const current=$('suiteDefinition').value;
   $('suiteDefinition').innerHTML='<option value="">Select a suite…</option>'+options(state.suites,item=>`${item.name} · ${item.workload_count} workloads`,item=>item.file);
   if(state.suites.some(item=>item.file===current))$('suiteDefinition').value=current;
@@ -330,9 +353,16 @@ async function refreshSuites(){
   $('suiteDefaultConnection').innerHTML='<option value="">Require selection at launch</option>'+options(state.config.connections,item=>item.split('/').pop(),item=>item);
   $('suiteEngine').innerHTML=options(Object.keys({e6data:1,databricks:1,snowflake:1,trino:1}),x=>x,x=>x);
   $('suiteMetadataPreset').innerHTML='<option value="">No metadata defaults</option>'+options(state.config.metadata_presets,item=>item.name,item=>item.file);
+  $('suiteBenchmarkPicker').innerHTML=options(state.benchmarkDefinitions,item=>`${item.name} · ${item.run.engine} · ${(item.run.query_file||'').split('/').pop()}`,item=>item.file);
+  renderSuiteSelection();
   renderSelectedSuite();await refreshSuiteRuns();
 }
 async function saveSuite(){
+  if(state.suiteSelection.length){
+    const existing=selectedSuite(),overwrite=Boolean(existing?.editable&&existing.name===$('suiteName').value);
+    try{const result=await api('/api/suites',{method:'POST',body:JSON.stringify({name:$('suiteName').value,description:$('suiteDescription').value,benchmarks:state.suiteSelection,overwrite})});$('suiteSaveStatus').textContent=`Saved locally: ${result.file}`;await refreshSuites();$('suiteDefinition').value=result.file;renderSelectedSuite()}catch(error){$('suiteSaveStatus').textContent=error.message}return;
+  }
+  $('suiteSaveStatus').textContent='Select at least one saved benchmark.';return;
   const workloads=[...document.querySelectorAll('.suite-workload-row')].map(row=>{const plan=row.querySelector('.suite-plan').value,level=+row.querySelector('.suite-level').value,settings={HOLD_PERIOD:+row.querySelector('.suite-duration').value};if(['jdbc_sequential','jdbc_run_once','jdbc_concurrency'].includes(plan))settings.CONCURRENT_QUERY_COUNT=level;else if(plan==='jdbc_qps')settings.QPS=level;else if(plan==='jdbc_qpm')settings.QPM=level;else settings.MAX_CONCURRANCY=level;return{id:row.querySelector('.suite-workload-name').value,plan,query_file:row.querySelector('.suite-query-file').value,warmup_query_file:row.querySelector('.suite-warmup-file').value,warmup_iterations:1,load_profile:row.querySelector('.suite-load-profile').value,measured_iterations:+row.querySelector('.suite-iterations').value,settings}});
   const metadataPreset=(state.config.metadata_presets||[]).find(item=>item.file===$('suiteMetadataPreset').value);
   const existing=selectedSuite(),overwrite=Boolean(existing?.editable&&existing.name===$('suiteName').value);
@@ -353,6 +383,6 @@ async function launchSuite(){try{$('suiteLaunchStatus').textContent='Starting su
 async function cancelSuite(id){if(!confirm('Stop this suite and its active JMeter workload?'))return;await api(`/api/suite-runs/${id}/cancel`,{method:'POST',body:'{}'});await refreshSuiteRuns()}
 window.cancelSuite=cancelSuite;
 function bindSuites(){
-  $('suiteDefinition').onchange=renderSelectedSuite;$('suiteConnection').onchange=updateSuiteCommand;$('suiteContinue').onchange=updateSuiteCommand;$('refreshSuites').onclick=refreshSuites;$('importSuiteS3').onclick=importSuiteFromS3;$('addSuiteWorkload').onclick=()=>addSuiteWorkload();$('saveSuite').onclick=saveSuite;$('deleteSuite').onclick=deleteSuite;$('launchSuite').onclick=launchSuite;document.querySelector('[data-tab="suites"]').addEventListener('click',refreshSuites);if(!$('suiteWorkloads').children.length)addSuiteWorkload();
+  $('suiteDefinition').onchange=renderSelectedSuite;$('suiteConnection').onchange=updateSuiteCommand;$('suiteContinue').onchange=updateSuiteCommand;$('refreshSuites').onclick=refreshSuites;$('importSuiteS3').onclick=importSuiteFromS3;$('addSuiteBenchmarks').onclick=addSelectedBenchmarks;$('addSuiteWorkload').onclick=()=>addSuiteWorkload();$('saveSuite').onclick=saveSuite;$('deleteSuite').onclick=deleteSuite;$('launchSuite').onclick=launchSuite;document.querySelector('[data-tab="suites"]').addEventListener('click',refreshSuites);if(!$('suiteWorkloads').children.length)addSuiteWorkload();
 }
-init().then(()=>{bindExecutionProfileMode();bindSuites();$('WARMUP_QUERY_FILE').value='';$('warmup_upload').onchange=async e=>{try{await uploadLocal('warmup',e.target.files[0])}catch(err){$('formError').textContent=err.message}finally{e.target.value=''}};updatePreview()}).catch(e=>{$('formError').textContent=`UI initialization failed: ${e.message}`});
+init().then(()=>{bindExecutionProfileMode();bindSuites();$('saveBenchmarkDefinition').onclick=saveCurrentBenchmark;$('WARMUP_QUERY_FILE').value='';$('warmup_upload').onchange=async e=>{try{await uploadLocal('warmup',e.target.files[0])}catch(err){$('formError').textContent=err.message}finally{e.target.value=''}};updatePreview()}).catch(e=>{$('formError').textContent=`UI initialization failed: ${e.message}`});
