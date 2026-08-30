@@ -364,15 +364,23 @@ Then open <http://127.0.0.1:8765>. The UI supports:
 - applying tracked or locally-created execution-profile and metadata presets through the
   **Presets** tab. Presets populate visible Launch fields and never
   bypass the resolved-configuration preview;
-- creating, selecting, launching, monitoring, and cancelling ordered benchmark
-  suites through the **Suites** tab. The UI invokes the same
+- creating, selecting, launching, monitoring, and cancelling engine-specific
+  Performance Suites through the **Performance suites** tab. The UI invokes the same
   `run_benchmark_suite.sh` command available to CLI users.
 
-### Benchmark suites
+### Performance Suites
 
-A suite is an ordered JSON manifest of Run Once workloads. Each workload still
-executes through `run_test.sh`, so the JMX plans, validation, reports, S3 upload,
-and CLI behavior remain unchanged. Run a tracked or UI-created suite directly:
+A Performance Suite is an engine-specific, ordered JSON manifest of executable
+scenarios. A scenario selects its JMeter plan, query and optional warm-up/load
+profile files, measured iterations, and load overrides. Suite-level metadata
+and a `comparison_key` make compatible engine-specific suites discoverable for
+later comparison. Each scenario still executes through `run_test.sh`, so JMX
+plans, validation, reports, S3 upload, and CLI behavior remain unchanged.
+
+The suite may reference a default local connection-profile filename for
+one-click use, but never embeds JDBC credentials. The connection remains a
+separate CLI argument and can always be replaced at launch. Run a tracked or
+UI-created suite directly:
 
 ```bash
 ./run_benchmark_suite.sh \
@@ -381,12 +389,25 @@ and CLI behavior remain unchanged. Run a tracked or UI-created suite directly:
   --continue-on-failure
 ```
 
-Use `--dry-run` to validate every query/warm-up CSV without starting JMeter.
-The **Suites** page produces the same command, displays ordered progress and
+Use `--dry-run` to validate every query/warm-up CSV, plan, properties file and
+load profile without starting JMeter. The **Performance suites** page produces
+the same command, displays ordered progress and
 keeps the suite summary under `reports/suite-ui-<suite-run-id>/`. UI-created
 definitions use repository-relative `data_files/...csv` paths and are stored as
 ignored `suite_manifests/ui_*.json` files. They contain no credentials; the
-connection profile is selected separately at launch time.
+connection profile is resolved from the optional local reference or selected
+separately at launch time. Schema-v1 query collections remain compatible and
+run as sequential Run Once scenarios.
+
+For a shared catalog, place a schema-v2 `suite.json` and its non-secret CSV or
+custom properties files under one S3 prefix, for example
+`s3://<bucket>/performance-suites/e6data/tpcds-smoke/`. Artifact paths inside
+`suite.json` are relative to that file. Use **Import from S3** on the Performance
+Suites page; the UI caches the definition and artifacts on its runner host but
+always requires a host-local connection profile. Imported definitions cannot
+select a credential file, and cached files are ignored by Git. The equivalent
+CLI workflow is to download the same prefix and pass its local `suite.json` to
+`run_benchmark_suite.sh`.
 
 The **Advanced runner settings** section exposes `RAMP_UP_TIME`,
 `RAMP_UP_STEPS`, `QUERY_TIMEOUT`, and `LIMIT_RESULTSET`. The resolved preview

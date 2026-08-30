@@ -774,6 +774,8 @@ class UiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "data_files").mkdir()
+            (root / "test_properties").mkdir()
+            (root / "test_properties" / "run_once.properties").write_text("CONCURRENT_QUERY_COUNT=1\n")
             (root / "data_files" / "queries.csv").write_text(
                 "query_alias,query_string\nq1,select 1\n"
             )
@@ -781,9 +783,9 @@ class UiTests(unittest.TestCase):
             server.ROOT, server.SUITE_MANIFESTS = root, root / "suite_manifests"
             try:
                 relative = server.create_suite_manifest({
-                    "name": "smoke", "description": "Smoke suite",
+                    "name": "smoke", "description": "Smoke suite", "engine": "e6data",
                     "workloads": [{
-                        "id": "queries", "query_file": "data_files/queries.csv",
+                        "id": "queries", "plan": "jdbc_sequential", "query_file": "data_files/queries.csv",
                         "warmup_query_file": "", "measured_iterations": 2,
                     }],
                 })
@@ -792,6 +794,9 @@ class UiTests(unittest.TestCase):
             finally:
                 server.ROOT, server.SUITE_MANIFESTS = original_root, original_suites
             self.assertEqual(relative, "suite_manifests/ui_smoke.json")
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["engine"], "e6data")
+            self.assertEqual(manifest["workloads"][0]["plan"], "jdbc_sequential")
             self.assertEqual(manifest["workloads"][0]["query_file"], "data_files/queries.csv")
             self.assertEqual(catalog[0]["workload_count"], 1)
 
@@ -799,18 +804,24 @@ class UiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "data_files").mkdir()
+            (root / "test_properties").mkdir()
+            (root / "test_properties" / "run_once.properties").write_text("CONCURRENT_QUERY_COUNT=1\n")
             (root / "outside.csv").write_text("query_alias,query_string\nq1,select 1\n")
             original_root, original_suites = server.ROOT, server.SUITE_MANIFESTS
             server.ROOT, server.SUITE_MANIFESTS = root, root / "suite_manifests"
             try:
                 with self.assertRaisesRegex(ValueError, "Invalid data_files file"):
                     server.create_suite_manifest({
-                        "name": "bad", "workloads": [{
-                            "id": "bad", "query_file": "outside.csv",
+                        "name": "bad", "engine": "e6data", "workloads": [{
+                            "id": "bad", "plan": "jdbc_sequential", "query_file": "outside.csv",
                         }],
                     })
             finally:
                 server.ROOT, server.SUITE_MANIFESTS = original_root, original_suites
+
+    def test_import_s3_suite_rejects_non_s3_uri(self):
+        with self.assertRaisesRegex(ValueError, "S3 suite URI"):
+            server.import_s3_suite("https://example.com/suite.json")
 
 
 if __name__ == "__main__":

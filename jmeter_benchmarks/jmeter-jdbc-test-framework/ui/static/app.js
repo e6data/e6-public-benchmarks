@@ -265,12 +265,15 @@ function bindExecutionProfileMode(){
   sync();
 }
 function suiteWorkloadRow(values={}){
-  const listId=`suiteQueryFiles${Math.random().toString(16).slice(2)}`,datasets=options(state.config.queries,x=>x);
-  return `<div class="suite-workload-row"><div class="suite-order"><button class="suite-up" type="button" title="Move earlier">↑</button><button class="suite-down" type="button" title="Move later">↓</button></div><label>Workload name<input class="suite-workload-name" value="${esc(values.id||'')}" placeholder="workload_1"></label><label>Measured query file<input class="suite-query-file" list="${listId}" value="${esc(values.query_file||'')}" placeholder="data_files/…csv"><datalist id="${listId}">${datasets}</datalist></label><label>Warm-up query file <small>optional</small><input class="suite-warmup-file" list="${listId}" value="${esc(values.warmup_query_file||'')}" placeholder="None"></label><label>Iterations<input class="suite-iterations" type="number" min="1" max="20" value="${esc(values.measured_iterations||1)}"></label><button class="danger suite-remove" type="button">Remove</button></div>`;
+  const listId=`suiteQueryFiles${Math.random().toString(16).slice(2)}`,profileId=`suiteProfiles${Math.random().toString(16).slice(2)}`,datasets=options(state.config.queries,x=>x),profiles=options(state.config.profiles,x=>x),settings=values.settings||{};
+  const planOptions=options((state.config.plans||[]).filter(item=>item.transport==='jdbc'),item=>item.label,item=>item.id);
+  const plan=values.plan||'jdbc_sequential',level=settings.CONCURRENT_QUERY_COUNT??settings.QPS??settings.QPM??settings.MAX_CONCURRANCY??1;
+  return `<div class="suite-workload-row"><div class="suite-order"><button class="suite-up" type="button" title="Move earlier">↑</button><button class="suite-down" type="button" title="Move later">↓</button></div><div class="suite-workload-fields"><label>Scenario name<input class="suite-workload-name" value="${esc(values.id||'')}" placeholder="fixed_concurrency_4"></label><label>Test plan<select class="suite-plan">${planOptions}</select></label><label>Measured query file<input class="suite-query-file" list="${listId}" value="${esc(values.query_file||'')}" placeholder="data_files/…csv"><datalist id="${listId}">${datasets}</datalist></label><label>Warm-up query file <small>optional</small><input class="suite-warmup-file" list="${listId}" value="${esc(values.warmup_query_file||'')}" placeholder="None"></label><label>Load profile <small>profile plans</small><input class="suite-load-profile" list="${profileId}" value="${esc(values.load_profile||'')}" placeholder="Required for variable load"><datalist id="${profileId}">${profiles}</datalist></label><label>Concurrency / rate<input class="suite-level" type="number" min="1" value="${esc(level)}"></label><label>Duration seconds<input class="suite-duration" type="number" min="1" value="${esc(settings.HOLD_PERIOD||300)}"></label><label>Measured iterations<input class="suite-iterations" type="number" min="1" max="20" value="${esc(values.measured_iterations||1)}"></label></div><button class="danger suite-remove" type="button">Remove</button></div>`;
 }
 function addSuiteWorkload(values={}){
   $('suiteWorkloads').insertAdjacentHTML('beforeend',suiteWorkloadRow(values));
   const row=$('suiteWorkloads').lastElementChild;
+  row.querySelector('.suite-plan').value=values.plan||'jdbc_sequential';
   row.querySelector('.suite-remove').onclick=()=>row.remove();
   row.querySelector('.suite-up').onclick=()=>{if(row.previousElementSibling)row.parentNode.insertBefore(row,row.previousElementSibling)};
   row.querySelector('.suite-down').onclick=()=>{if(row.nextElementSibling)row.parentNode.insertBefore(row.nextElementSibling,row)};
@@ -292,9 +295,10 @@ function suiteWarmupPath(workload,suite){
 function renderSelectedSuite(){
   const suite=selectedSuite();
   if(!suite){$('suiteDefinitionSummary').textContent='Select a suite to review its workloads.';$('suiteCommand').textContent='Select a suite and connection.';return}
-  $('suiteDefinitionSummary').innerHTML=`<strong>${esc(suite.name)}</strong><p>${esc(suite.description||`${suite.workload_count} ordered workloads`)}</p><ol>${suite.workloads.map(item=>`<li><b>${esc(item.id)}</b><span>${esc(suiteQueryPath(item,suite))} · ${esc(item.measured_iterations||1)} iteration(s)</span></li>`).join('')}</ol>`;
+  $('suiteDefinitionSummary').innerHTML=`<strong>${esc(suite.name)}</strong><span class="suite-engine-badge">${esc(suite.engine||'legacy')}</span><p>${esc(suite.description||`${suite.workload_count} ordered scenarios`)}</p>${suite.comparison_key?`<p>Comparison key: <code>${esc(suite.comparison_key)}</code></p>`:''}<ol>${suite.workloads.map(item=>`<li><b>${esc(item.id)}</b><span>${esc(item.plan||'jdbc_sequential')} · ${esc(suiteQueryPath(item,suite))} · ${esc(item.measured_iterations||1)} iteration(s)</span></li>`).join('')}</ol>`;
+  if(suite.default_connection&&[...$('suiteConnection').options].some(option=>option.value===suite.default_connection))$('suiteConnection').value=suite.default_connection;
   if(suite.editable){
-    $('suiteName').value=suite.name;$('suiteDescription').value=suite.description||'';$('suiteWorkloads').innerHTML='';suite.workloads.forEach(addSuiteWorkload);$('deleteSuite').classList.remove('hidden');
+    $('suiteName').value=suite.name;$('suiteDescription').value=suite.description||'';$('suiteEngine').value=suite.engine||'e6data';$('suiteComparisonKey').value=suite.comparison_key||'';$('suiteDefaultConnection').value=suite.default_connection||'';$('suiteWorkloads').innerHTML='';suite.workloads.forEach(addSuiteWorkload);$('deleteSuite').classList.remove('hidden');
   }else $('deleteSuite').classList.add('hidden');
   updateSuiteCommand();
 }
@@ -323,18 +327,32 @@ async function refreshSuites(){
   $('suiteDefinition').innerHTML='<option value="">Select a suite…</option>'+options(state.suites,item=>`${item.name} · ${item.workload_count} workloads`,item=>item.file);
   if(state.suites.some(item=>item.file===current))$('suiteDefinition').value=current;
   $('suiteConnection').innerHTML='<option value="">Select a connection…</option>'+options(state.config.connections,item=>item.split('/').pop(),item=>item);
+  $('suiteDefaultConnection').innerHTML='<option value="">Require selection at launch</option>'+options(state.config.connections,item=>item.split('/').pop(),item=>item);
+  $('suiteEngine').innerHTML=options(Object.keys({e6data:1,databricks:1,snowflake:1,trino:1}),x=>x,x=>x);
+  $('suiteMetadataPreset').innerHTML='<option value="">No metadata defaults</option>'+options(state.config.metadata_presets,item=>item.name,item=>item.file);
   renderSelectedSuite();await refreshSuiteRuns();
 }
 async function saveSuite(){
-  const workloads=[...document.querySelectorAll('.suite-workload-row')].map(row=>({id:row.querySelector('.suite-workload-name').value,query_file:row.querySelector('.suite-query-file').value,warmup_query_file:row.querySelector('.suite-warmup-file').value,measured_iterations:+row.querySelector('.suite-iterations').value}));
+  const workloads=[...document.querySelectorAll('.suite-workload-row')].map(row=>{const plan=row.querySelector('.suite-plan').value,level=+row.querySelector('.suite-level').value,settings={HOLD_PERIOD:+row.querySelector('.suite-duration').value};if(['jdbc_sequential','jdbc_run_once','jdbc_concurrency'].includes(plan))settings.CONCURRENT_QUERY_COUNT=level;else if(plan==='jdbc_qps')settings.QPS=level;else if(plan==='jdbc_qpm')settings.QPM=level;else settings.MAX_CONCURRANCY=level;return{id:row.querySelector('.suite-workload-name').value,plan,query_file:row.querySelector('.suite-query-file').value,warmup_query_file:row.querySelector('.suite-warmup-file').value,warmup_iterations:1,load_profile:row.querySelector('.suite-load-profile').value,measured_iterations:+row.querySelector('.suite-iterations').value,settings}});
+  const metadataPreset=(state.config.metadata_presets||[]).find(item=>item.file===$('suiteMetadataPreset').value);
   const existing=selectedSuite(),overwrite=Boolean(existing?.editable&&existing.name===$('suiteName').value);
-  try{const result=await api('/api/suites',{method:'POST',body:JSON.stringify({name:$('suiteName').value,description:$('suiteDescription').value,workloads,overwrite})});$('suiteSaveStatus').textContent=`Saved locally: ${result.file}`;await refreshSuites();$('suiteDefinition').value=result.file;renderSelectedSuite()}catch(error){$('suiteSaveStatus').textContent=error.message}
+  try{const result=await api('/api/suites',{method:'POST',body:JSON.stringify({name:$('suiteName').value,description:$('suiteDescription').value,engine:$('suiteEngine').value,comparison_key:$('suiteComparisonKey').value,default_connection:$('suiteDefaultConnection').value,metadata:metadataPreset?.values||{},workloads,overwrite})});$('suiteSaveStatus').textContent=`Saved locally: ${result.file}`;await refreshSuites();$('suiteDefinition').value=result.file;renderSelectedSuite()}catch(error){$('suiteSaveStatus').textContent=error.message}
 }
 async function deleteSuite(){const suite=selectedSuite();if(!suite?.editable||!confirm(`Delete suite ${suite.name}?`))return;await api('/api/suites/delete',{method:'POST',body:JSON.stringify({name:suite.file})});$('suiteName').value='';$('suiteDescription').value='';$('suiteWorkloads').innerHTML='';await refreshSuites()}
+async function importSuiteFromS3(){
+  const uri=$('suiteS3Uri').value.trim();
+  if(!uri){$('suiteLaunchStatus').textContent='Enter an S3 suite.json URI.';return}
+  try{
+    $('suiteLaunchStatus').textContent='Importing suite and referenced artifacts…';
+    const result=await api('/api/suites/import-s3',{method:'POST',body:JSON.stringify({uri})});
+    await refreshSuites();$('suiteDefinition').value=result.file;renderSelectedSuite();
+    $('suiteLaunchStatus').textContent='Suite imported. Select a host-local connection and run it.';
+  }catch(error){$('suiteLaunchStatus').textContent=error.message}
+}
 async function launchSuite(){try{$('suiteLaunchStatus').textContent='Starting suite…';await api('/api/suite-runs',{method:'POST',body:JSON.stringify({suite_file:$('suiteDefinition').value,connection:$('suiteConnection').value,continue_on_failure:$('suiteContinue').checked})});$('suiteLaunchStatus').textContent='Suite started.';await refreshSuiteRuns()}catch(error){$('suiteLaunchStatus').textContent=error.message}}
 async function cancelSuite(id){if(!confirm('Stop this suite and its active JMeter workload?'))return;await api(`/api/suite-runs/${id}/cancel`,{method:'POST',body:'{}'});await refreshSuiteRuns()}
 window.cancelSuite=cancelSuite;
 function bindSuites(){
-  $('suiteDefinition').onchange=renderSelectedSuite;$('suiteConnection').onchange=updateSuiteCommand;$('suiteContinue').onchange=updateSuiteCommand;$('refreshSuites').onclick=refreshSuites;$('addSuiteWorkload').onclick=()=>addSuiteWorkload();$('saveSuite').onclick=saveSuite;$('deleteSuite').onclick=deleteSuite;$('launchSuite').onclick=launchSuite;document.querySelector('[data-tab="suites"]').addEventListener('click',refreshSuites);if(!$('suiteWorkloads').children.length)addSuiteWorkload();
+  $('suiteDefinition').onchange=renderSelectedSuite;$('suiteConnection').onchange=updateSuiteCommand;$('suiteContinue').onchange=updateSuiteCommand;$('refreshSuites').onclick=refreshSuites;$('importSuiteS3').onclick=importSuiteFromS3;$('addSuiteWorkload').onclick=()=>addSuiteWorkload();$('saveSuite').onclick=saveSuite;$('deleteSuite').onclick=deleteSuite;$('launchSuite').onclick=launchSuite;document.querySelector('[data-tab="suites"]').addEventListener('click',refreshSuites);if(!$('suiteWorkloads').children.length)addSuiteWorkload();
 }
 init().then(()=>{bindExecutionProfileMode();bindSuites();$('WARMUP_QUERY_FILE').value='';$('warmup_upload').onchange=async e=>{try{await uploadLocal('warmup',e.target.files[0])}catch(err){$('formError').textContent=err.message}finally{e.target.value=''}};updatePreview()}).catch(e=>{$('formError').textContent=`UI initialization failed: ${e.message}`});

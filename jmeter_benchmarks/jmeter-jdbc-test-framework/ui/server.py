@@ -679,6 +679,12 @@ def _suite_manifest(path: Path, editable: bool) -> dict[str, Any]:
         "file": path.relative_to(ROOT).as_posix(),
         "name": str(manifest.get("name") or manifest.get("catalog_id") or path.stem),
         "description": str(manifest.get("description") or manifest.get("selection") or ""),
+        "engine": str(manifest.get("engine") or ""),
+        "comparison_key": str(manifest.get("comparison_key") or ""),
+        "source_uri": str(manifest.get("source_uri") or ""),
+        "default_connection": str(manifest.get("default_connection") or ""),
+        "metadata": manifest.get("metadata") if isinstance(manifest.get("metadata"), dict) else {},
+        "schema_version": int(manifest.get("schema_version", 1)),
         "workload_count": len(workloads), "workloads": workloads, "editable": editable,
     }
 
@@ -698,11 +704,112 @@ def suite_catalog() -> list[dict[str, Any]]:
     return manifests
 
 
+def import_s3_suite(uri: str) -> str:
+    """Cache a non-secret Performance Suite and its relative artifacts from S3."""
+    uri = _property_value(uri, "S3 suite URI", required=True)
+    if not re.fullmatch(r"s3://[A-Za-z0-9._-]+/[A-Za-z0-9._~!$&'()+,;=:@%/-]+\.json", uri):
+        raise ValueError("S3 suite URI must point to a JSON file")
+    digest = hashlib.sha256(uri.encode()).hexdigest()[:16]
+    target = SUITE_MANIFESTS / f"s3_{digest}.json"
+    query_root = ROOT / "data_files" / "suite_cache" / digest
+    property_root = ROOT / "test_properties" / "suite_cache" / digest
+    SUITE_MANIFESTS.mkdir(parents=True, exist_ok=True)
+    query_root.mkdir(parents=True, exist_ok=True)
+    property_root.mkdir(parents=True, exist_ok=True)
+    base_uri = uri.rsplit("/", 1)[0]
+
+    def download(source: str, destination: Path, max_bytes: int) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(["aws", "s3", "cp", source, str(destination), "--only-show-errors"], capture_output=True, text=True, timeout=120, check=False)
+        if result.returncode != 0:
+            raise ValueError((result.stderr or f"Could not download {source}").strip()[:500])
+        if not destination.is_file() or not 0 < destination.stat().st_size <= max_bytes:
+            destination.unlink(missing_ok=True)
+            raise ValueError(f"Downloaded suite artifact has an invalid size: {source}")
+
+    temporary = SUITE_MANIFESTS / f".{target.name}.download"
+    try:
+        download(uri, temporary, 1024 * 1024)
+        manifest = json.loads(temporary.read_text())
+        if int(manifest.get("schema_version", 0)) != 2:
+            raise ValueError("S3 Performance Suite must use schema_version 2")
+        workloads = manifest.get("workloads")
+        if not isinstance(workloads, list) or not workloads:
+            raise ValueError("S3 Performance Suite must contain workloads")
+        engine = str(manifest.get("engine") or "").lower()
+        if engine not in JDBC_DRIVERS:
+            raise ValueError("S3 Performance Suite engine is not supported")
+        # Credential profiles are deliberately host-local. An imported suite
+        # must never select a local credential file by name.
+        manifest["default_connection"] = ""
+        for index, workload in enumerate(workloads, 1):
+            if not isinstance(workload, dict):
+                raise ValueError(f"Workload {index} must be an object")
+            plan = str(workload.get("plan") or "")
+            if plan not in PLANS or PLANS[plan][2] != "jdbc":
+                raise ValueError(f"Workload {index} has an unsupported JDBC test plan")
+            for field in ("query_file", "warmup_query_file"):
+                value = str(workload.get(field) or "")
+                if not value:
+                    continue
+                if value.startswith("s3://") or Path(value).is_absolute() or ".." in Path(value).parts:
+                    raise ValueError(f"S3 suite {field} must be relative to suite.json")
+                destination = query_root / Path(value).name
+                download(f"{base_uri}/{value}", destination, 50 * 1024 * 1024)
+                workload[field] = destination.relative_to(ROOT).as_posix()
+            for field, suffix in (("load_profile", ".csv"), ("test_properties_file", ".properties")):
+                value = str(workload.get(field) or "")
+                if not value:
+                    continue
+                if value.startswith("test_properties/") and (ROOT / value).is_file():
+                    continue
+                if value.startswith("s3://") or Path(value).is_absolute() or ".." in Path(value).parts or Path(value).suffix != suffix:
+                    raise ValueError(f"S3 suite {field} must be a relative {suffix} file")
+                destination = property_root / Path(value).name
+                download(f"{base_uri}/{value}", destination, 5 * 1024 * 1024)
+                workload[field] = destination.relative_to(ROOT).as_posix()
+        manifest["source_uri"] = uri
+        target.write_text(json.dumps(manifest, indent=2) + "\n")
+    except FileNotFoundError as exc:
+        raise ValueError("AWS CLI is not installed on the UI host") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("S3 suite download timed out") from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target.relative_to(ROOT).as_posix()
+
+
 def create_suite_manifest(config: dict[str, Any], overwrite: bool = False) -> str:
     name = _property_value(config.get("name"), "Suite name", required=True)
     if not PROFILE_NAME.fullmatch(name):
         raise ValueError("Suite name may contain only letters, numbers, dot, dash, and underscore")
     stem = name if name.startswith("ui_") else f"ui_{name}"
+    engine = _property_value(config.get("engine"), "Engine", required=True).lower()
+    if engine not in JDBC_DRIVERS:
+        raise ValueError("Performance Suite engine is not supported")
+    comparison_key = _property_value(config.get("comparison_key"), "Comparison key")
+    if comparison_key and not PROFILE_NAME.fullmatch(comparison_key):
+        raise ValueError("Comparison key contains unsupported characters")
+    default_connection_value = str(config.get("default_connection") or "")
+    default_connection = _inside(default_connection_value, "connection_properties", ".properties") if default_connection_value else ""
+    if default_connection:
+        driver = next((line.split("=", 1)[1].strip() for line in (ROOT / default_connection).read_text(errors="ignore").splitlines() if line.startswith("DRIVER_CLASS=")), "")
+        profile_engine = {value: key for key, value in JDBC_DRIVERS.items()}.get(driver)
+        if profile_engine and profile_engine != engine:
+            raise ValueError(f"Default connection belongs to {profile_engine}, not {engine}")
+    metadata = config.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        raise ValueError("Suite metadata must be an object")
+    clean_metadata = {}
+    metadata_enums = {"RUN_SCOPE": RUN_SCOPES, "RUN_PURPOSE": RUN_PURPOSES, "RUN_VALIDITY": RUN_VALIDITIES}
+    for key, limit in METADATA_FIELDS.items():
+        value = _property_value(metadata.get(key), key)
+        if len(value) > limit:
+            raise ValueError(f"{key} must not exceed {limit} characters")
+        if value and key in metadata_enums and value not in metadata_enums[key]:
+            raise ValueError(f"{key} has an unsupported value")
+        if value:
+            clean_metadata[key] = value
     workloads = config.get("workloads")
     if not isinstance(workloads, list) or not workloads:
         raise ValueError("A suite requires at least one workload")
@@ -714,26 +821,50 @@ def create_suite_manifest(config: dict[str, Any], overwrite: bool = False) -> st
         if not PROFILE_NAME.fullmatch(workload_id):
             raise ValueError(f"Workload {index} name contains unsupported characters")
         query_file = _inside(str(workload.get("query_file", "")), "data_files", ".csv")
+        plan = _property_value(workload.get("plan"), f"Workload {index} plan", required=True)
+        if plan not in PLANS:
+            raise ValueError(f"Workload {index} has an unknown test plan")
+        if PLANS[plan][2] != "jdbc":
+            raise ValueError("Performance Suites currently support JDBC plans")
+        test_properties_value = str(workload.get("test_properties_file") or PLAN_TEST_PROPERTIES[plan])
+        test_properties_file = _inside(test_properties_value, "test_properties", ".properties")
         warmup_value = str(workload.get("warmup_query_file") or "")
         warmup_file = _inside(warmup_value, "data_files", ".csv") if warmup_value else ""
+        load_profile_value = str(workload.get("load_profile") or "")
+        needs_profile = plan in {"jdbc_arrivals", "jdbc_variable_concurrency"}
+        if needs_profile and not load_profile_value:
+            raise ValueError(f"Workload {index} requires a load profile")
+        load_profile = _inside(load_profile_value, "test_properties", ".csv") if load_profile_value else ""
         try:
             iterations = int(workload.get("measured_iterations", 1))
+            warmup_iterations = int(workload.get("warmup_iterations", 1))
         except (TypeError, ValueError) as exc:
-            raise ValueError(f"Workload {index} iterations must be an integer") from exc
-        if not 1 <= iterations <= 20:
+            raise ValueError(f"Workload {index} iterations must be integers") from exc
+        if not 1 <= iterations <= 20 or not 1 <= warmup_iterations <= 20:
             raise ValueError(f"Workload {index} iterations must be between 1 and 20")
-        clean_workloads.append({
-            "id": workload_id, "query_file": query_file,
-            "warmup_query_file": warmup_file, "measured_iterations": iterations,
-        })
+        settings = workload.get("settings") or {}
+        if not isinstance(settings, dict):
+            raise ValueError(f"Workload {index} settings must be an object")
+        clean_settings = {}
+        for key in NUMERIC_LIMITS:
+            if key in settings and settings[key] not in {None, ""}:
+                clean_settings[key] = int(_number(settings, key, 1))
+        for key in {"RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD"}:
+            if key in settings:
+                clean_settings[key] = settings[key] is True
+        clean_workloads.append({"id": workload_id, "plan": plan,
+            "test_properties_file": test_properties_file, "query_file": query_file,
+            "warmup_query_file": warmup_file, "warmup_iterations": warmup_iterations,
+            "load_profile": load_profile, "measured_iterations": iterations, "settings": clean_settings})
     SUITE_MANIFESTS.mkdir(parents=True, exist_ok=True)
     target = SUITE_MANIFESTS / f"{stem}.json"
     if target.exists() and not overwrite:
         raise ValueError("A suite with this name already exists")
     manifest = {
-        "schema_version": 1, "name": name.removeprefix("ui_"),
+        "schema_version": 2, "name": name.removeprefix("ui_"), "engine": engine,
+        "comparison_key": comparison_key, "default_connection": default_connection,
         "description": _property_value(config.get("description"), "Description"),
-        "workloads": clean_workloads,
+        "metadata": clean_metadata, "workloads": clean_workloads,
     }
     target.write_text(json.dumps(manifest, indent=2) + "\n")
     return target.relative_to(ROOT).as_posix()
@@ -1308,6 +1439,10 @@ def _execute_suite(execution: SuiteExecution) -> None:
         "SUITE_REPORT_PATH": str(execution.report_root.relative_to(ROOT)),
         "COPY_TO_S3": "true" if SYSTEM_COPY_TO_S3 else "false",
         "GENERATE_DASHBOARD": "true" if SYSTEM_GENERATE_DASHBOARD else "false",
+        "PROMETHEUS_ENABLED": "true" if PROMETHEUS_DEFAULT_ENABLED else "false",
+        "PROMETHEUS_IP": PROMETHEUS_DEFAULT_IP,
+        "PROMETHEUS_PORT": PROMETHEUS_DEFAULT_PORT,
+        "PROMETHEUS_DELAY": PROMETHEUS_DEFAULT_DELAY,
     })
     if SYSTEM_S3_REPORT_PATH:
         env["S3_REPORT_PATH"] = SYSTEM_S3_REPORT_PATH
@@ -1347,7 +1482,7 @@ def start_suite_execution(suite_file: str, connection: str, continue_on_failure:
     suite = next((item for item in suite_catalog() if item["file"] == suite_file), None)
     if not suite:
         raise ValueError("Unknown suite manifest")
-    connection_file = _inside(connection, "connection_properties", ".properties")
+    connection_file = _inside(connection or str(suite.get("default_connection") or ""), "connection_properties", ".properties")
     timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     suite_run_id = f"{timestamp}-{re.sub(r'[^a-z0-9]+', '-', suite['name'].lower()).strip('-')[:32]}-{uuid.uuid4().hex[:6]}"
     execution = SuiteExecution(
@@ -1981,6 +2116,8 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/suites":
                 saved = create_suite_manifest(body, overwrite=body.get("overwrite") is True)
                 self._json({"file": saved}, HTTPStatus.CREATED)
+            elif self.path == "/api/suites/import-s3":
+                self._json({"file": import_s3_suite(str(body.get("uri", "")))}, HTTPStatus.CREATED)
             elif self.path == "/api/suites/delete":
                 self._json({"file": delete_suite_manifest(str(body.get("name", "")))})
             elif self.path == "/api/suite-runs":

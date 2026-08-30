@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>e6data Benchmark Studio</title>
-  <link rel="stylesheet" href="/styles.css?v=suites-1">
+  <link rel="stylesheet" href="/styles.css?v=performance-suites-1">
 </head>
 <body>
   <header>
@@ -23,7 +23,7 @@
     <button class="tab active" data-tab="launch"><b>＋</b> Launch test</button>
     <button class="tab" data-tab="live"><b>◉</b> Live runs <span id="liveCount">0</span></button>
     <button class="tab" data-tab="history"><b>◷</b> Run history</button>
-    <button class="tab" data-tab="suites"><b>▦</b> Suites</button>
+    <button class="tab" data-tab="suites"><b>▦</b> Performance suites</button>
     <button class="tab" data-tab="compare"><b>⇄</b> Compare runs</button>
     <button class="tab" data-tab="presets"><b>◇</b> Presets</button>
     <button class="tab" data-tab="settings"><b>⚙</b> System settings</button>
@@ -141,28 +141,29 @@
     </section>
 
     <section id="suites" class="panel">
-      <div class="section-heading"><div><span class="eyebrow">MULTI-WORKLOAD EXECUTION</span><h2>Benchmark suites</h2><p>Create an ordered collection of workloads and run it through the same <code>run_benchmark_suite.sh</code> CLI contract.</p></div><button id="refreshSuites" class="secondary">Refresh</button></div>
+      <div class="section-heading"><div><span class="eyebrow">REUSABLE BENCHMARKS</span><h2>Performance suites</h2><p>Select an engine-specific suite and run its ordered test plans through the same <code>run_benchmark_suite.sh</code> CLI contract.</p></div><button id="refreshSuites" class="secondary">Refresh</button></div>
       <div class="suite-layout">
         <div class="card suite-launch-card">
-          <h3>Run a suite</h3>
+          <h3>Run a Performance Suite</h3>
           <div class="fields">
             <label>Suite definition<select id="suiteDefinition"><option value="">Select a suite…</option></select></label>
             <label>Connection profile<select id="suiteConnection"><option value="">Select a connection…</option></select></label>
           </div>
+          <div class="suite-s3-import"><label>S3 suite.json <small>optional catalog import</small><input id="suiteS3Uri" placeholder="s3://bucket/performance-suites/e6data/example/suite.json"></label><button id="importSuiteS3" class="secondary" type="button">Import</button></div>
           <div id="suiteDefinitionSummary" class="suite-definition-summary">Select a suite to review its workloads.</div>
           <label class="check-line"><input id="suiteContinue" type="checkbox"> Continue with remaining workloads after a failure</label>
           <details class="resolved-suite-command"><summary>Resolved CLI command</summary><pre id="suiteCommand">Select a suite and connection.</pre></details>
           <div class="actions"><p id="suiteLaunchStatus" class="error"></p><button id="launchSuite" class="primary" type="button">Run suite <span>→</span></button></div>
         </div>
         <div class="card suite-builder-card">
-          <h3>Create or edit a local suite</h3>
-          <div class="fields"><label>Suite name<input id="suiteName" placeholder="tpcds_regression"></label><label>Description<input id="suiteDescription" placeholder="Ordered regression workloads"></label></div>
+          <h3>Create or edit a local Performance Suite</h3>
+          <div class="suite-identity-grid"><label>Suite name<input id="suiteName" placeholder="tpcds99_e6data"></label><label>Engine<select id="suiteEngine"></select></label><label>Comparison key <small>optional</small><input id="suiteComparisonKey" placeholder="tpcds99-sequential-1tb"></label><label>Default connection <small>optional local reference</small><select id="suiteDefaultConnection"><option value="">Require selection at launch</option></select></label><label class="suite-description">Description<input id="suiteDescription" placeholder="Reusable engine-specific benchmark"></label><label>Metadata preset <small>optional defaults</small><select id="suiteMetadataPreset"><option value="">No metadata defaults</option></select></label></div>
           <div id="suiteWorkloads" class="suite-workloads"></div>
           <div class="suite-builder-actions"><button id="addSuiteWorkload" class="secondary" type="button">Add workload</button><button id="saveSuite" class="primary" type="button">Save suite</button><button id="deleteSuite" class="danger hidden" type="button">Delete suite</button></div>
           <p id="suiteSaveStatus" class="artifact-list"></p>
         </div>
       </div>
-      <div class="section-heading suite-runs-heading"><div><h3>Suite executions</h3><p>Progress and logs from CLI suite processes started by this UI.</p></div></div>
+      <div class="section-heading suite-runs-heading"><div><h3>Performance Suite executions</h3><p>Progress and logs from CLI suite processes started by this UI.</p></div></div>
       <div id="suiteRuns" class="suite-runs empty">No suite executions yet.</div>
     </section>
 
@@ -190,6 +191,6 @@
     </section>
   </main>
   <footer>Optional UI layer · Existing CLI execution remains unchanged · Credentials stay on this host</footer>
-  <script src="/app.js?v=suites-1"></script>
+  <script src="/app.js?v=performance-suites-1"></script>
 </body>
 </html>
