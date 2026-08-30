@@ -23,7 +23,7 @@ function applyMetadataPreset(values){metadataKeys.forEach(key=>{if($(key))$(key)
 function presetValues(kind){const c=commonConfig();return kind==='workload'?{TEST_PLAN:state.config.plans.find(p=>p.id===c.plan)?.path,CONCURRENT_QUERY_COUNT:c.CONCURRENT_QUERY_COUNT,QPS:c.QPS,QPM:c.QPM,HOLD_PERIOD:c.HOLD_PERIOD,RAMP_UP_TIME:c.RAMP_UP_TIME,RAMP_UP_STEPS:c.RAMP_UP_STEPS,MAX_CONCURRANCY:c.MAX_CONCURRANCY,QUERY_TIMEOUT:c.QUERY_TIMEOUT,LIMIT_RESULTSET:c.LIMIT_RESULTSET,MAX_ERROR_PCT:c.MAX_ERROR_PCT,WARMUP_ENABLED:c.WARMUP_ENABLED,WARMUP_QUERY_FILE:c.WARMUP_QUERY_FILE,WARMUP_ITERATIONS:c.WARMUP_ITERATIONS,MEASURED_ITERATIONS:c.MEASURED_ITERATIONS,RECYCLE_ON_EOF:c.RECYCLE_ON_EOF,RANDOM_ORDER:c.RANDOM_ORDER,GENERATE_DASHBOARD:c.GENERATE_DASHBOARD,QUERY_PATH:c.query_file,LOAD_PROFILE:c.load_profile}:c.metadata}
 function renderPresetControls(){const workloads=state.config.workload_presets||[],savedWorkloads=workloads.filter(x=>x.editable),metadata=state.config.metadata_presets||[];$('workloadPreset').innerHTML='<option value="">No saved preset — configure below</option>'+options(savedWorkloads,x=>x.name,x=>x.file);$('metadataPreset').innerHTML='<option value="">Custom metadata</option>'+options(metadata,x=>x.name,x=>x.file);$('updateWorkloadFromLaunch').disabled=true;$('workloadPreset').onchange=e=>{const preset=savedWorkloads.find(x=>x.file===e.target.value);$('updateWorkloadFromLaunch').disabled=!preset;if(preset)applyWorkloadPreset(preset.values)};$('metadataPreset').onchange=e=>{const preset=metadata.find(x=>x.file===e.target.value);if(preset)applyMetadataPreset(preset.values)};const inventory=[['workload',savedWorkloads],['metadata',metadata]].map(([kind,list])=>`<div class="card preset-list"><h3>${kind==='workload'?'Workload':'Metadata'} preset inventory</h3>${list.map(p=>`<div><span><strong>${esc(p.name)}</strong><small>${p.editable?'Local · editable':'Repository · read-only'}</small></span><span><button class="secondary" onclick="usePreset('${kind}','${esc(p.file)}')">Apply</button>${p.editable?`<button class="secondary" onclick="updatePreset('${kind}','${esc(p.name)}')">Update from Launch</button><button class="danger" onclick="removePreset('${kind}','${esc(p.name)}')">Delete</button>`:''}</span></div>`).join('')}</div>`).join('');$('presetInventory').innerHTML=inventory;const system=state.config.system||{},obs=state.config.observability||{},items=[['Authentication',system.auth_enabled?'Enabled':'Disabled'],['Registry backend',system.registry_backend||'sqlite'],['Registry path',system.db_path],['Artifact backend',system.artifact_backend||'local'],['Reports path',system.reports_path],['Disk free',`${system.disk_free_gb} GB`],['Retention target',`${system.retention_days} days`],['Local storage limit',`${system.max_local_report_gb} GB`],['Automatic cleanup',system.automatic_cleanup?'Enabled':'Disabled — advisory only'],['Delete after S3',system.delete_local_after_s3?'Requested; verification required':'Disabled'],['JMeter dashboard',system.generate_dashboard?'Enabled':'Disabled'],['S3 upload',system.copy_to_s3?'Enabled':'Disabled'],['S3 root',system.s3_report_path||'Not configured'],['Prometheus',obs.enabled?`Enabled · port ${obs.port}`:'Disabled'],['Prometheus URL',obs.prometheus_url||'Not configured'],['Grafana URL',obs.grafana_url||'Not configured']];$('systemSettings').innerHTML=items.map(([k,v])=>`<div><span>${esc(k)}</span><strong title="${esc(v)}">${esc(v)}</strong></div>`).join('')}
 async function savePreset(kind,fromLaunch=false,fixedName='',overwrite=false){const input=$(kind==='workload'?'newWorkloadPreset':'newMetadataPreset'),status=fromLaunch?$('formError'):$(kind==='workload'?'workloadPresetStatus':'metadataPresetStatus'),suggestion=kind==='workload'?'smoke_concurrency_4':'dbr_small_warehouse',name=String(fixedName||(fromLaunch?prompt(`Name this ${kind} preset:`,suggestion)||'':input.value)).trim();if(!name){status.textContent='Preset was not saved.';return}try{const result=await api('/api/presets',{method:'POST',body:JSON.stringify({kind,name,values:presetValues(kind),overwrite})});status.textContent=`Saved locally: ${result.file}`;state.config=await api('/api/config');renderPresetControls();$(kind==='workload'?'workloadPreset':'metadataPreset').value=result.file;if(kind==='workload')$('updateWorkloadFromLaunch').disabled=false}catch(e){status.textContent=e.message}}
-function usePreset(kind,file){const list=kind==='workload'?state.config.workload_presets:state.config.metadata_presets,preset=list.find(x=>x.file===file);if(!preset)return;if(kind==='workload'){$('workloadPreset').value=file;$('updateWorkloadFromLaunch').disabled=!preset.editable;applyWorkloadPreset(preset.values)}else applyMetadataPreset(preset.values);document.querySelector('[data-tab="launch"]').click()}
+function usePreset(kind,file){const list=kind==='workload'?state.config.workload_presets:state.config.metadata_presets,preset=list.find(x=>x.file===file);if(!preset)return;if(kind==='workload'){$('workloadPreset').value=file;$('executionProfileMode').value='existing';$('savedExecutionProfileWrap').classList.remove('hidden');$('updateWorkloadFromLaunch').classList.toggle('hidden',!preset.editable);$('updateWorkloadFromLaunch').disabled=!preset.editable;applyWorkloadPreset(preset.values)}else applyMetadataPreset(preset.values);document.querySelector('[data-tab="launch"]').click()}
 async function updatePreset(kind,name){if(confirm(`Replace ${name} with the current Launch ${kind} values?`))await savePreset(kind,false,name,true)}
 async function updateSelectedWorkloadPreset(){const file=$('workloadPreset').value,preset=(state.config.workload_presets||[]).find(x=>x.file===file&&x.editable);if(!preset)return;if(confirm(`Replace ${preset.name} with the current Launch workload values?`)){await savePreset('workload',false,preset.name,true);$('workloadPreset').value=file;$('updateWorkloadFromLaunch').disabled=false}}
 async function removePreset(kind,name){if(!confirm(`Delete local preset ${name}?`))return;await api('/api/presets/delete',{method:'POST',body:JSON.stringify({kind,name})});state.config=await api('/api/config');renderPresetControls()}
@@ -96,7 +96,7 @@ function runCard(r,index,context='live'){
   const errorItems=failureMessages.map(item=>`<li><strong>${fmt(item.count)}×</strong> ${esc(item.message)}</li>`).join('');
   const errorPanel=reason?`<details class="failure-details"><summary><strong>Runner failure</strong><span>${failed} failed · ${esc(reason)}</span></summary>${errorItems?`<ul>${errorItems}</ul>`:`<p>${esc(reason)}</p>`}</details>`:'';
   const active=['queued','worker_starting','running','finalizing'].includes(r.status);
-  return `<article class="run-card" data-run-id="${esc(cardId)}"><div class="run-head"><div><span class="run-type">${index===0?'<b class="latest-badge">Latest</b> ':''}${esc(planLabel(r.config.plan))}</span><h3>${esc(r.label)}</h3><small>Run ${esc(r.id)} · ${esc(runTime(r.started_at))}${r.config?.rerun_of?` · re-run of ${esc(r.config.rerun_of)}`:''}</small></div><span class="status ${r.status}">${esc(r.status.replace('_',' '))}</span></div><div class="contract important-contract">${summary}</div>${outcomeSection}${performanceSection}${deliverySection}${latencyDistribution}${diagnostics}${errorPanel}${artifactWarning}${cancelExplanation?`<div class="status-explanation"><strong>Cancellation detail</strong><p>${esc(cancelExplanation)}</p></div>`:''}${chart(series,r,successful)}<p class="data-note">Organized view of JMeter result data. Derived values are labelled; final artifacts remain authoritative.</p><details class="run-configuration"><summary>All resolved run_test.sh inputs</summary><div class="contract">${env}</div></details><div id="details-${cardId}"></div><details class="runner-output"><summary>Runner output</summary><div class="logs">${esc((r.logs||[]).slice(-30).join('\n'))}</div></details><div class="run-actions">${!active?`<button class="secondary" onclick="rerunRun('${r.id}')">Re-run</button>`:''}${dashboard}${r.report_id?` <button class="secondary" onclick="loadDetails('${cardId}','${esc(r.report_id)}')">Per-query results</button>`:''}${r.cancellable?`<button class="danger" onclick="cancelRun('${r.id}')">Cancel run</button>`:''}${s3}</div></article>`
+  return `<article class="run-card" data-run-id="${esc(cardId)}"><div class="run-head"><div><span class="run-type">${index===0?'<b class="latest-badge">Latest</b> ':''}${esc(planLabel(r.config.plan))}</span><h3>${esc(r.label)}</h3><small>Run ${esc(r.id)} · ${esc(runTime(r.started_at))}${r.config?.rerun_of?` · re-run of ${esc(r.config.rerun_of)}`:''}</small></div><span class="status ${r.status}">${esc(r.status.replace('_',' '))}</span></div><div class="contract important-contract">${summary}</div>${outcomeSection}${latencyDistribution}${deliverySection}${performanceSection}${diagnostics}${errorPanel}${artifactWarning}${cancelExplanation?`<div class="status-explanation"><strong>Cancellation detail</strong><p>${esc(cancelExplanation)}</p></div>`:''}${chart(series,r,successful)}<p class="data-note">Organized view of JMeter result data. Derived values are labelled; final artifacts remain authoritative.</p><details class="run-configuration"><summary>All resolved run_test.sh inputs</summary><div class="contract">${env}</div></details><div id="details-${cardId}"></div><details class="runner-output"><summary>Runner output</summary><div class="logs">${esc((r.logs||[]).slice(-30).join('\n'))}</div></details><div class="run-actions">${!active?`<button class="secondary" onclick="rerunRun('${r.id}')">Re-run</button>`:''}${dashboard}${r.report_id?` <button class="secondary" onclick="loadDetails('${cardId}','${esc(r.report_id)}')">Per-query results</button>`:''}${r.cancellable?`<button class="danger" onclick="cancelRun('${r.id}')">Cancel run</button>`:''}${s3}</div></article>`
 }
 function captureRunViewState(){const saved=new Map();document.querySelectorAll('.run-card').forEach(card=>{const id=card.dataset.runId;if(!id)return;const open=[...card.querySelectorAll('details')].map((details,index)=>details.open?index:-1).filter(index=>index>=0),detailHost=card.querySelector(`[id="details-${CSS.escape(id)}"]`);saved.set(id,{open,detailHtml:detailHost?.innerHTML||''})});return saved}
 function restoreRunViewState(saved){saved.forEach((view,id)=>{const card=document.querySelector(`.run-card[data-run-id="${CSS.escape(id)}"]`);if(!card)return;const details=[...card.querySelectorAll('details')];view.open.forEach(index=>{if(details[index])details[index].open=true});const detailHost=card.querySelector(`[id="details-${CSS.escape(id)}"]`);if(detailHost&&view.detailHtml)detailHost.innerHTML=view.detailHtml})}
@@ -142,4 +142,126 @@ window.exportComparison=exportComparison;
 window.promoteReport=promoteReport;
 window.classifyReport=classifyReport;
 window.setReportValidity=setReportValidity;
-init().then(()=>{$('WARMUP_QUERY_FILE').value='';$('warmup_upload').onchange=async e=>{try{await uploadLocal('warmup',e.target.files[0])}catch(err){$('formError').textContent=err.message}finally{e.target.value=''}};updatePreview()}).catch(e=>{$('formError').textContent=`UI initialization failed: ${e.message}`});
+
+// Launch form model: each engine owns its target, SQL datasets and descriptive
+// context. Only the JMeter execution profile is shared between paired runs.
+function metadataControl(key){
+  const choices={
+    SERVERLESS:[['','Not specified'],['Y','Y'],['N','N']],
+    RUN_MODE:[['','Not specified'],['benchmark','benchmark'],['test','test'],['prod','prod']],
+    RUN_SCOPE:[['internal','Internal'],['external','External reference']],
+    RUN_PURPOSE:[['adhoc','Ad hoc'],['reference-candidate','Reference candidate'],['nightly','Nightly'],['validation','Validation']],
+    RUN_VALIDITY:[['valid','Valid'],['pending','Pending review'],['invalid','Invalid']],
+  };
+  const numeric=new Set(['ESTIMATED_CORES','MEMORY_GB','EXECUTORS','CORES_PER_EXECUTOR']);
+  if(choices[key])return `<select class="engine-metadata" data-key="${key}">${choices[key].map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select>`;
+  return `<input class="engine-metadata" data-key="${key}"${numeric.has(key)?' type="number" min="1"':''}>`;
+}
+function engineMetadataFields(){
+  return metadataKeys.map(key=>`<label class="${key==='COMMENTS'?'wide':''}">${key}${metadataControl(key)}</label>`).join('');
+}
+function engineCard(i){
+  const transport=state.config.plans.find(p=>p.id===$('plan').value)?.transport||'jdbc';
+  const stamp=new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
+  const datasets=options(state.config.queries,x=>x);
+  const metadataPresets=options(state.config.metadata_presets||[],x=>x.name,x=>x.file);
+  const warmupList=`engineWarmupFiles${i}`,queryList=`engineQueryFiles${i}`;
+  return `<article class="card engine" data-transport="${transport}">
+    <div class="engine-card-heading"><span>${i?'Engine B':'Engine A'}</span><div><h3>${i?'Comparison engine':'Primary engine'}</h3><p>Target, query datasets and comparison context for this engine.</p></div></div>
+    <section class="engine-section target-section"><div class="engine-section-header"><b>Where to run</b><small>JDBC target and credentials</small></div>
+      <div class="fields"><label>Run label<input class="engine-label" value="${i?'Engine B':'Engine A'}"></label><label>ENGINE<select class="engine-kind"><option value="e6data">e6data</option><option value="databricks">Databricks</option><option value="snowflake">Snowflake</option><option value="trino">Trino</option><option value="custom">Custom</option></select></label><label>CONNECTION_FILE mode<select class="connection-mode"><option value="create">Create local profile</option><option value="existing">Use existing profile</option></select></label><label class="existing-connection hidden">CONNECTION_FILE<select class="connection"><option value="">Select a connection…</option>${options(state.config.connections,x=>x.split('/').pop())}</select></label></div>
+      <div class="new-connection"><div class="fields connection-fields"><label>Profile name<input class="new-name" value="ui_${stamp}_engine_${i+1}" required></label>${connectionFields(transport)}<label>USER<input class="new-user" autocomplete="username"></label><label>PASSWORD<input class="new-password" type="password" autocomplete="new-password"></label></div><p class="local-secret-note">Saved only under <code>connection_properties/</code> on this runner. Passwords are never returned to the browser.</p></div>
+    </section>
+    <section class="engine-section dataset-section"><div class="engine-section-header"><b>What to run</b><small>Engine-specific SQL dialect files</small></div>
+      <div class="warmup-choice"><label class="phase-toggle"><input class="engine-warmup-enabled" type="checkbox"><span>Enable excluded warm-up</span></label></div>
+      <div class="fields engine-warmup-fields inactive"><label>Warm-up query file <small>excluded from measured statistics</small><input class="engine-warmup dataset-search" list="${warmupList}" placeholder="Select warm-up CSV…"><datalist id="${warmupList}">${datasets}</datalist><span class="source-actions"><input class="engine-warmup-upload" type="file" accept=".csv"><button type="button" class="engine-upload" data-kind="warmup">Local CSV</button><button type="button" class="engine-s3" data-kind="warmup">S3 URI</button></span></label><label>Warm-up iterations <small>sequential passes</small><input class="engine-warmup-iterations" type="number" value="1" min="1"></label></div>
+      <div class="fields measured-dataset"><label>Query file <small>measured dataset · type to search</small><input class="engine-query dataset-search" list="${queryList}" placeholder="Select measured query CSV…" required><datalist id="${queryList}">${datasets}</datalist><span class="source-actions"><input class="engine-query-upload" type="file" accept=".csv"><button type="button" class="engine-upload" data-kind="query">Local CSV</button><button type="button" class="engine-s3" data-kind="query">S3 URI</button></span></label></div>
+    </section>
+    <details class="engine-section context-section"><summary><span><b>More details about the run</b><small>Cluster, build, dataset and classification metadata</small></span></summary>
+      <div class="engine-metadata-preset-row"><label>Metadata preset<select class="engine-metadata-preset"><option value="">Custom metadata</option>${metadataPresets}</select></label></div>
+      <div class="fields engine-metadata-fields">${engineMetadataFields()}</div>
+    </details>
+  </article>`;
+}
+function metadataFromCard(card){
+  const metadata={};
+  card?.querySelectorAll('.engine-metadata').forEach(input=>{const value=String(input.value||'').trim();if(value)metadata[input.dataset.key]=value});
+  return metadata;
+}
+function applyMetadataToCard(card,values={}){
+  card?.querySelectorAll('.engine-metadata').forEach(input=>{input.value=values[input.dataset.key]??''});
+  updatePreview();
+}
+function applyMetadataPreset(values,card=document.querySelector('.engine')){applyMetadataToCard(card,values)}
+function bindEngineConfiguration(){
+  bindConnectionModes();
+  bindEngineDatasetOverrides();
+  document.querySelectorAll('.engine').forEach(card=>{
+    const toggle=card.querySelector('.engine-warmup-enabled');
+    toggle.onchange=()=>{card.querySelector('.engine-warmup-fields').classList.toggle('inactive',!toggle.checked);updatePreview()};
+    card.querySelector('.engine-metadata-preset').onchange=event=>{const preset=(state.config.metadata_presets||[]).find(item=>item.file===event.target.value);if(preset)applyMetadataToCard(card,preset.values)};
+  });
+}
+function renderEngines(){
+  const count=$('parallel').checked?2:1;
+  $('engines').className='engine-grid'+(count===2?' parallel':'');
+  $('engines').innerHTML=Array.from({length:count},(_,i)=>engineCard(i)).join('');
+  $('executionModeWrap').classList.toggle('hidden',count===1);
+  bindEngineConfiguration();
+  updatePreview();
+}
+function commonConfig(){
+  const plan=$('plan').value,obs=state.config?.observability||{},first=document.querySelector('.engine');
+  const config={plan,test_properties_file:state.config.plans.find(p=>p.id===plan)?.test_properties,query_file:first?.querySelector('.engine-query')?.value||'',load_profile:$('load_profile').value,CONCURRENT_QUERY_COUNT:plan==='jdbc_sequential'?1:+$('CONCURRENT_QUERY_COUNT').value,QPS:+$('QPS').value,QPM:+$('QPM').value,HOLD_PERIOD:+$('HOLD_PERIOD').value,MEASURED_ITERATIONS:isRunOncePlan(plan)?+$('MEASURED_ITERATIONS').value:1,MAX_CONCURRANCY:+$('MAX_CONCURRANCY').value,MAX_ERROR_PCT:+$('MAX_ERROR_PCT').value,WARMUP_ENABLED:!!first?.querySelector('.engine-warmup-enabled')?.checked,WARMUP_QUERY_FILE:first?.querySelector('.engine-warmup')?.value||'',WARMUP_ITERATIONS:+(first?.querySelector('.engine-warmup-iterations')?.value||1),RECYCLE_ON_EOF:isRunOncePlan(plan)?false:$('RECYCLE_ON_EOF').checked,RANDOM_ORDER:$('RANDOM_ORDER').checked,GENERATE_DASHBOARD:$('GENERATE_DASHBOARD').checked,PROMETHEUS_ENABLED:!!obs.enabled,PROMETHEUS_PORT:+(obs.port||9270),metadata:metadataFromCard(first)};
+  if(state.rerunOf)config.rerun_of=state.rerunOf;
+  advancedKeys.forEach(key=>config[key]=+$(key).value);
+  return config;
+}
+function previewEnvironment(){
+  const c=commonConfig(),card=document.querySelector('.engine');if(!card)return{};
+  const selectedPlan=state.config?.plans.find(p=>p.id===c.plan),mode=card.querySelector('.connection-mode').value,name=card.querySelector('.new-name')?.value;
+  return {ENGINE:card.querySelector('.engine-kind').value,CONNECTION_FILE:mode==='existing'?card.querySelector('.connection').value:`connection_properties/${name?.endsWith('_connection')?name:name+'_connection'}.properties`,TEST_PLAN:selectedPlan?.path||'',TEST_PROPERTIES_FILE:c.test_properties_file,QUERY_FILE:c.query_file,LOAD_PROFILE:(c.plan.includes('arrivals')||c.plan.includes('variable_concurrency'))?c.load_profile:undefined,WARMUP_ENABLED:c.WARMUP_ENABLED,WARMUP_QUERY_FILE:c.WARMUP_ENABLED?c.WARMUP_QUERY_FILE:undefined,WARMUP_ITERATIONS:c.WARMUP_ENABLED?c.WARMUP_ITERATIONS:undefined,MEASURED_ITERATIONS:c.MEASURED_ITERATIONS,CONCURRENT_QUERY_COUNT:c.CONCURRENT_QUERY_COUNT,QPS:c.QPS,QPM:c.QPM,HOLD_PERIOD:c.HOLD_PERIOD,RAMP_UP_TIME:c.RAMP_UP_TIME,RAMP_UP_STEPS:c.RAMP_UP_STEPS,MAX_CONCURRANCY:c.MAX_CONCURRANCY,QUERY_TIMEOUT:c.QUERY_TIMEOUT,LIMIT_RESULTSET:c.LIMIT_RESULTSET,MAX_ERROR_PCT:c.MAX_ERROR_PCT,RECYCLE_ON_EOF:c.RECYCLE_ON_EOF,RANDOM_ORDER:c.RANDOM_ORDER,GENERATE_DASHBOARD:c.GENERATE_DASHBOARD,PROMETHEUS_ENABLED:c.PROMETHEUS_ENABLED,PROMETHEUS_PORT:c.PROMETHEUS_PORT,...c.metadata};
+}
+function presetValues(kind){
+  const c=commonConfig();
+  if(kind==='metadata')return metadataFromCard(document.querySelector('.engine'));
+  return {TEST_PLAN:state.config.plans.find(p=>p.id===c.plan)?.path,CONCURRENT_QUERY_COUNT:c.CONCURRENT_QUERY_COUNT,QPS:c.QPS,QPM:c.QPM,HOLD_PERIOD:c.HOLD_PERIOD,RAMP_UP_TIME:c.RAMP_UP_TIME,RAMP_UP_STEPS:c.RAMP_UP_STEPS,MAX_CONCURRANCY:c.MAX_CONCURRANCY,QUERY_TIMEOUT:c.QUERY_TIMEOUT,LIMIT_RESULTSET:c.LIMIT_RESULTSET,MAX_ERROR_PCT:c.MAX_ERROR_PCT,MEASURED_ITERATIONS:c.MEASURED_ITERATIONS,RECYCLE_ON_EOF:c.RECYCLE_ON_EOF,RANDOM_ORDER:c.RANDOM_ORDER,GENERATE_DASHBOARD:c.GENERATE_DASHBOARD,LOAD_PROFILE:c.load_profile};
+}
+function updatePreview(){
+  if(!$('configPreview')||!state.config)return;
+  document.querySelectorAll('.engine').forEach(card=>card.querySelector('.engine-warmup-fields')?.classList.toggle('inactive',!card.querySelector('.engine-warmup-enabled')?.checked));
+  configureAdvancedForPlan();
+  const env=previewEnvironment();
+  $('configPreview').textContent=Object.entries(env).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>`${k}=${v}`).join('\n');
+  scheduleWorkloadPreview();
+}
+$('runForm').onsubmit=async event=>{
+  event.preventDefault();$('formError').textContent='Running preflight checks…';
+  const common=commonConfig(),cards=[...document.querySelectorAll('.engine')];
+  try{
+    const connections=await Promise.all(cards.map(connectionFor));
+    const runs=cards.map((card,index)=>({...common,query_file:card.querySelector('.engine-query').value,WARMUP_ENABLED:card.querySelector('.engine-warmup-enabled').checked,WARMUP_QUERY_FILE:card.querySelector('.engine-warmup').value,WARMUP_ITERATIONS:+card.querySelector('.engine-warmup-iterations').value,metadata:metadataFromCard(card),label:card.querySelector('.engine-label').value,engine:card.querySelector('.engine-kind').value,connection:connections[index]}));
+    const checks=await Promise.all(runs.map(run=>api('/api/preflight',{method:'POST',body:JSON.stringify(run)})));
+    const warnings=checks.flatMap((check,index)=>check.warnings.map(message=>`${runs[index].label}: ${message}`));
+    if(warnings.length&&!confirm(`Preflight warnings:\n\n${warnings.join('\n')}\n\nLaunch anyway?`)){$('formError').textContent='Launch cancelled after preflight.';return}
+    $('formError').textContent=`Preflight passed · ${checks.map(x=>x.query_count).join(' / ')} queries`;
+    await api('/api/runs',{method:'POST',body:JSON.stringify({runs,execution_mode:cards.length===2?$('execution_mode').value:'parallel'})});
+    state.rerunOf=null;document.querySelector('[data-tab="live"]').click();await refreshRuns();
+  }catch(error){$('formError').textContent=error.message}
+};
+function bindExecutionProfileMode(){
+  const mode=$('executionProfileMode'),wrap=$('savedExecutionProfileWrap'),preset=$('workloadPreset'),update=$('updateWorkloadFromLaunch');
+  if(!mode||!wrap||!preset)return;
+  const sync=()=>{
+    const existing=mode.value==='existing';
+    wrap.classList.toggle('hidden',!existing);
+    update.classList.toggle('hidden',!existing||!preset.value);
+    if(!existing){preset.value='';update.disabled=true}
+  };
+  if(preset.options[0])preset.options[0].textContent='Select a saved profile…';
+  mode.onchange=sync;
+  preset.addEventListener('change',()=>{if(preset.value)mode.value='existing';sync()});
+  $('plan').addEventListener('change',()=>{mode.value='custom';sync()});
+  sync();
+}
+init().then(()=>{bindExecutionProfileMode();$('WARMUP_QUERY_FILE').value='';$('warmup_upload').onchange=async e=>{try{await uploadLocal('warmup',e.target.files[0])}catch(err){$('formError').textContent=err.message}finally{e.target.value=''}};updatePreview()}).catch(e=>{$('formError').textContent=`UI initialization failed: ${e.message}`});

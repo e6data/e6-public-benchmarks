@@ -337,8 +337,12 @@ Then open <http://127.0.0.1:8765>. The UI supports:
   rate, duration, and safety variables accepted by `run_test.sh`;
 - choosing an already-local CSV, uploading a CSV from the browser, or importing
   one from S3 using the UI host's configured AWS CLI credentials;
-- starting one engine or the same logical workload on two engines, with
-  optional per-engine measured and warm-up SQL files for dialect differences;
+- configuring each engine through four explicit concerns: where to run
+  (connection target), what to run (warm-up and measured SQL files), how to run
+  (the shared JMeter execution profile), and descriptive run context;
+- starting one engine or the same logical benchmark on two engines, with
+  independent measured/warm-up SQL files and metadata for dialect and sizing
+  differences while keeping the execution profile shared;
 - running two engines sequentially for cleaner measurements (the default) or
   in parallel for a live side-by-side demonstration;
 - live samples, throughput, errors, active threads, latency, and runner logs;
@@ -357,7 +361,7 @@ Then open <http://127.0.0.1:8765>. The UI supports:
   promotion history, and never replaces a reference automatically;
 - previewing the backend-resolved planned workload before launch and comparing
   it with actual arrivals/in-flight behavior read from JMeter's result CSV;
-- applying tracked or locally-created workload and metadata presets through the
+- applying tracked or locally-created execution-profile and metadata presets through the
   **Presets** tab. Presets populate visible Launch fields and never
   bypass the resolved-configuration preview.
 
@@ -384,8 +388,9 @@ the included local pre-commit hook once per clone from the repository root:
 git config core.hooksPath .githooks
 ```
 
-The UI's **Workload preset** is the same JMeter properties format used by the
-CLI. Selecting a plan loads its canonical defaults into the visible fields;
+The UI's **Execution profile preset** uses the same JMeter properties format as
+the CLI. It stores the test plan and load-generation settings, while query files
+and run metadata remain attached to each engine card. Selecting a plan loads its canonical defaults into the visible fields;
 editing a field creates the same explicit override that `run_test.sh` would
 receive from an exported variable. UI-created workload presets are stored as ignored
 `test_properties/ui_*.properties` files; metadata presets use ignored

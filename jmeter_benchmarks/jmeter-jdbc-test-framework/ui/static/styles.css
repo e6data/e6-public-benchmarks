@@ -103,6 +103,35 @@ h3 { font-size: 15px; }
 .engine-grid { display: grid; grid-template-columns: 1fr; gap: 18px; margin-bottom: 18px; }
 .engine-grid.parallel { grid-template-columns: 1fr 1fr; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 24px; box-shadow: var(--shadow); }
+.engine-card-heading { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+.engine-card-heading > span { padding:5px 8px; border-radius:4px; background:var(--purple-600); color:white; font:700 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace; text-transform:uppercase; letter-spacing:.7px; }
+.engine-card-heading p { margin-top:3px; color:var(--muted); font-size:11px; }
+.engine-section { display:block; margin-top:14px; border:1px solid var(--line); border-radius:7px; background:white; overflow:hidden; }
+.engine-section > .engine-section-header, .engine-section > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; background:#faf9fc; border-bottom:1px solid var(--line); list-style:none; }
+.engine-section > .engine-section-header small, .engine-section > summary small { color:var(--muted); font-size:10px; font-weight:500; }
+.engine-section > summary { cursor:pointer; }
+.engine-section > summary span { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; }
+.engine-section > .fields, .engine-section > .new-connection { margin:0; padding:14px; }
+.engine-section > .new-connection { border-top:1px solid var(--line); }
+.engine-section .fields { grid-template-columns:repeat(2,minmax(150px,1fr)); }
+.engine-section .connection-fields { grid-template-columns:repeat(2,minmax(150px,1fr)); padding:0; }
+.engine-section .measured-dataset { border-top:1px solid var(--line); }
+.engine-section .warmup-choice { display:flex; justify-content:flex-end; padding:10px 14px 0; }
+.engine-section .engine-warmup-fields.inactive { display:none; }
+.engine-metadata-preset-row { padding:14px 14px 0; }
+.engine-metadata-fields { margin-top:0; }
+.engine-metadata-fields .wide { grid-column:1/-1; }
+.execution-profile-card { margin-top:0; }
+.card-title.unnumbered { margin-bottom: 12px; }
+.execution-preset-manager { margin-top: 16px; border: 1px solid var(--line); border-radius: 7px; background: #fff; overflow: hidden; }
+.execution-preset-manager > summary { display:flex; justify-content:space-between; gap:16px; padding:13px 16px; cursor:pointer; background:#faf9fc; list-style:none; }
+.execution-preset-manager > summary::-webkit-details-marker { display:none; }
+.execution-preset-manager > summary::before { content:'▸'; color:var(--purple-700); }
+.execution-preset-manager[open] > summary::before { content:'▾'; }
+.execution-preset-manager > summary strong { margin-right:auto; }
+.execution-preset-manager > summary span { color:var(--muted); font-size:11px; }
+.execution-preset-manager .preset-strip { grid-template-columns:minmax(190px,.8fr) minmax(220px,1fr) minmax(260px,1.5fr) auto auto; margin:0; border:0; border-top:1px solid var(--line); border-radius:0; }
+.legacy-config { display:none !important; }
 .card-title { display: flex; gap: 14px; align-items: center; margin-bottom: 22px; }
 .card-title > span { display: grid; place-items: center; background: var(--purple-100); color: var(--purple-700); width: 36px; height: 36px; border-radius: 6px; font-weight: 800; }
 .card-title p { color: var(--muted); font-size: 12px; }
