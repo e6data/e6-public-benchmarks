@@ -6,6 +6,11 @@
   "prometheus_port": 9270,
   "prometheus_url": "http://localhost:9090",
   "grafana_url": "http://localhost:3000/d/jmeter-prom/jmeter-performance?orgId=1",
+  "e6_query_history_enabled": false,
+  "e6_machine_client_id": "",
+  "e6_machine_client_secret": "",
+  "e6_query_history_email": "",
+  "e6_query_history_wait_seconds": 5,
   "retention_days": 30,
   "max_local_report_gb": 100
 }

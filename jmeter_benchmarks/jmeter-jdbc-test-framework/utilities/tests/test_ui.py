@@ -23,6 +23,9 @@ class UiTests(unittest.TestCase):
                 "PROMETHEUS_DEFAULT_ENABLED", "PROMETHEUS_DEFAULT_PORT",
                 "PROMETHEUS_URL", "GRAFANA_URL", "SYSTEM_COPY_TO_S3",
                 "SYSTEM_S3_REPORT_PATH", "SYSTEM_GENERATE_DASHBOARD",
+                "E6_QUERY_HISTORY_ENABLED", "E6_MACHINE_CLIENT_ID",
+                "E6_MACHINE_CLIENT_SECRET", "E6_QUERY_HISTORY_EMAIL",
+                "E6_QUERY_HISTORY_WAIT_SECONDS",
                 "REPORT_RETENTION_DAYS", "MAX_LOCAL_REPORT_GB",
             )
         }
@@ -37,18 +40,44 @@ class UiTests(unittest.TestCase):
                     "copy_to_s3": True, "s3_report_path": "s3://bucket/results",
                     "generate_dashboard": False, "retention_days": 45,
                     "max_local_report_gb": 250,
+                    "e6_query_history_enabled": True,
+                    "e6_machine_client_id": "machine-client",
+                    "e6_machine_client_secret": "write-only-secret",
+                    "e6_query_history_email": "benchmark@example.com",
+                    "e6_query_history_wait_seconds": 9,
                 }
                 saved = server.update_system_settings(values)
-                self.assertEqual(saved, values)
+                self.assertNotIn("e6_machine_client_secret", saved)
                 self.assertEqual(json.loads(server.SETTINGS_PATH.read_text()), values)
+                self.assertEqual(stat.S_IMODE(server.SETTINGS_PATH.stat().st_mode), 0o600)
                 self.assertEqual(server.PROMETHEUS_DEFAULT_PORT, "9123")
                 self.assertTrue(server.SYSTEM_COPY_TO_S3)
                 self.assertFalse(server.SYSTEM_GENERATE_DASHBOARD)
+                self.assertTrue(server.E6_QUERY_HISTORY_ENABLED)
+                self.assertEqual(server.E6_MACHINE_CLIENT_SECRET, "write-only-secret")
+                preserved = server.update_system_settings({**values, "e6_machine_client_secret": ""})
+                self.assertNotIn("e6_machine_client_secret", preserved)
+                self.assertEqual(
+                    json.loads(server.SETTINGS_PATH.read_text())["e6_machine_client_secret"],
+                    "write-only-secret",
+                )
                 with self.assertRaisesRegex(ValueError, "must start with s3://"):
                     server.update_system_settings({**values, "s3_report_path": "https://bucket/results"})
         finally:
             for name, value in original.items():
                 setattr(server, name, value)
+
+    def test_query_history_settings_require_machine_credentials(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch.object(server, "ALLOW_SETTINGS_WRITE", True), \
+                mock.patch.object(server, "SETTINGS_PATH", Path(temp) / "settings.json"), \
+                mock.patch.object(server, "SAVED_SETTINGS", {}), \
+                mock.patch.object(server, "E6_MACHINE_CLIENT_SECRET", ""):
+            with self.assertRaisesRegex(ValueError, "requires a machine client ID and secret"):
+                server.update_system_settings({
+                    "e6_query_history_enabled": True,
+                    "e6_machine_client_id": "machine-client",
+                })
 
     def test_create_jdbc_connection_profile_uses_runner_format_and_private_permissions(self):
         name = "ui_unit_profile"

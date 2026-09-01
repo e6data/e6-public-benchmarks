@@ -448,9 +448,10 @@ a fresh clone. Administrator-owned defaults such as authentication, report
 storage, Prometheus/Grafana links, dashboard generation, and optional S3 upload
 are read from the UI server environment and shown in the **System settings**
 tab. They are read-only by default. An administrator can set
-`BENCHMARK_UI_ALLOW_SETTINGS_WRITE=true` to edit the non-secret defaults in the
-browser; changes persist to `ui/system_settings.json` (or
-`BENCHMARK_UI_SETTINGS_FILE`). Protect an enabled editor with
+`BENCHMARK_UI_ALLOW_SETTINGS_WRITE=true` to edit the defaults in the browser;
+changes persist to the gitignored `config/system_settings.json` (or
+`BENCHMARK_SYSTEM_SETTINGS_FILE`). The optional e6 Query History machine secret
+is a write-only field: the API reports only whether one is configured. Protect an enabled editor with
 `BENCHMARK_UI_TOKEN` and restricted network access. Database URLs, credentials,
 the authentication token, bind address, and AWS credentials remain service
 settings that require a restart and are never exposed by the browser.
@@ -516,8 +517,11 @@ from the selected e6 JDBC URL. It writes `e6_query_history.csv` and
 `e6_query_history_capture.json` into the run report directory before the normal
 S3 upload. Capture failure is reported but never changes the JMeter result.
 
-Configure the OAuth2 machine client as deployment secrets, not in a JDBC
-connection properties file:
+Configure the OAuth2 machine client as a runner setting, not in a JDBC
+connection properties file. It can be entered under **System settings** when
+administrator-write mode is enabled; that writes the shared, gitignored
+`config/system_settings.json` with owner-only permissions. Service deployments
+may instead inject the same values through environment variables:
 
 ```bash
 export E6_QUERY_HISTORY_ENABLED=true
@@ -528,8 +532,9 @@ export E6_QUERY_HISTORY_EMAIL='optional-query-user@example.com'
 ```
 
 `E6_QUERY_HISTORY_WAIT_SECONDS` defaults to `5` to allow history ingestion.
-The same environment variables work for CLI, interactive, suite, and local UI
-runs. For an EC2 runner, configure the credentials on the worker itself; they
+The shared settings file and the environment variables work for CLI,
+interactive, suite, and local UI runs. Explicit environment variables take
+precedence. For a remote EC2 runner, configure the credentials on the worker itself; they
 are deliberately excluded from the private S3 job payload. See
 `deploy/benchmark-ui.env.example` for the service-environment template.
 
@@ -878,8 +883,9 @@ historical runs reproducible.
 For analysis and comparison tools, see [utilities/README.md](utilities/README.md).
 
 The existing `run_test.sh` uploader is controlled by `COPY_TO_S3` and
-`S3_REPORT_PATH`; the UI does not implement a separate upload path. Non-secret
-deployment defaults can be shared by CLI, interactive, and UI execution in the
+`S3_REPORT_PATH`; the UI does not implement a separate upload path. Deployment
+defaults and the optional write-only Query History secret can be shared by CLI,
+interactive, suite, and UI execution in the
 gitignored `config/system_settings.json` file:
 
 ```bash

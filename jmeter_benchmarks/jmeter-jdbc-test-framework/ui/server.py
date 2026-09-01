@@ -74,6 +74,15 @@ SYSTEM_COPY_TO_S3 = SAVED_SETTINGS.get(
 )
 SYSTEM_S3_REPORT_PATH = str(SAVED_SETTINGS.get("s3_report_path", os.environ.get("S3_REPORT_PATH", "")))
 SYSTEM_GENERATE_DASHBOARD = SAVED_SETTINGS.get("generate_dashboard", os.environ.get("GENERATE_DASHBOARD", "true").lower() == "true")
+E6_QUERY_HISTORY_ENABLED = SAVED_SETTINGS.get(
+    "e6_query_history_enabled", os.environ.get("E6_QUERY_HISTORY_ENABLED", "false").lower() == "true",
+)
+E6_MACHINE_CLIENT_ID = str(SAVED_SETTINGS.get("e6_machine_client_id", os.environ.get("E6_MACHINE_CLIENT_ID", "")))
+E6_MACHINE_CLIENT_SECRET = str(SAVED_SETTINGS.get("e6_machine_client_secret", os.environ.get("E6_MACHINE_CLIENT_SECRET", "")))
+E6_QUERY_HISTORY_EMAIL = str(SAVED_SETTINGS.get("e6_query_history_email", os.environ.get("E6_QUERY_HISTORY_EMAIL", "")))
+E6_QUERY_HISTORY_WAIT_SECONDS = str(SAVED_SETTINGS.get(
+    "e6_query_history_wait_seconds", os.environ.get("E6_QUERY_HISTORY_WAIT_SECONDS", "5"),
+))
 REPORT_RETENTION_DAYS = int(SAVED_SETTINGS.get("retention_days", os.environ.get("BENCHMARK_UI_REPORT_RETENTION_DAYS", "30")))
 MAX_LOCAL_REPORT_GB = int(SAVED_SETTINGS.get("max_local_report_gb", os.environ.get("BENCHMARK_UI_MAX_LOCAL_REPORT_GB", "100")))
 DELETE_LOCAL_AFTER_S3 = os.environ.get("BENCHMARK_UI_DELETE_LOCAL_AFTER_S3", "false").lower() == "true"
@@ -387,28 +396,58 @@ def storage_snapshot() -> dict[str, Any]:
 def update_system_settings(values: dict[str, Any]) -> dict[str, Any]:
     global PROMETHEUS_DEFAULT_ENABLED, PROMETHEUS_DEFAULT_PORT, PROMETHEUS_URL, GRAFANA_URL
     global SYSTEM_COPY_TO_S3, SYSTEM_S3_REPORT_PATH, SYSTEM_GENERATE_DASHBOARD
+    global E6_QUERY_HISTORY_ENABLED, E6_MACHINE_CLIENT_ID, E6_MACHINE_CLIENT_SECRET
+    global E6_QUERY_HISTORY_EMAIL, E6_QUERY_HISTORY_WAIT_SECONDS
     global REPORT_RETENTION_DAYS, MAX_LOCAL_REPORT_GB
     if not ALLOW_SETTINGS_WRITE:
         raise ValueError("System setting writes are disabled; set BENCHMARK_UI_ALLOW_SETTINGS_WRITE=true")
-    booleans = {key: values.get(key) is True for key in ("prometheus_enabled", "copy_to_s3", "generate_dashboard")}
+    booleans = {key: values.get(key) is True for key in (
+        "prometheus_enabled", "copy_to_s3", "generate_dashboard", "e6_query_history_enabled",
+    )}
     numbers = {
         "prometheus_port": max(1, min(65535, int(values.get("prometheus_port", PROMETHEUS_DEFAULT_PORT)))),
         "retention_days": max(1, min(3650, int(values.get("retention_days", REPORT_RETENTION_DAYS)))),
         "max_local_report_gb": max(1, min(100000, int(values.get("max_local_report_gb", MAX_LOCAL_REPORT_GB)))),
+        "e6_query_history_wait_seconds": max(0, min(300, int(values.get(
+            "e6_query_history_wait_seconds", E6_QUERY_HISTORY_WAIT_SECONDS,
+        )))),
     }
-    strings = {key: _property_value(values.get(key), key) for key in ("prometheus_url", "grafana_url", "s3_report_path")}
+    strings = {key: _property_value(values.get(key), key) for key in (
+        "prometheus_url", "grafana_url", "s3_report_path",
+        "e6_machine_client_id", "e6_query_history_email",
+    )}
+    supplied_secret = str(values.get("e6_machine_client_secret") or "")
+    if supplied_secret:
+        if any(ord(char) < 32 for char in supplied_secret):
+            raise ValueError("Machine client secret contains an invalid control character")
+    effective_secret = supplied_secret or str(SAVED_SETTINGS.get("e6_machine_client_secret", "")) or E6_MACHINE_CLIENT_SECRET
+    if booleans["e6_query_history_enabled"] and (not strings["e6_machine_client_id"] or not effective_secret):
+        raise ValueError("e6 Query History capture requires a machine client ID and secret")
     if strings["s3_report_path"] and not strings["s3_report_path"].startswith("s3://"):
         raise ValueError("S3 report path must start with s3://")
     saved = {**booleans, **numbers, **strings}
+    persisted_secret = supplied_secret or str(SAVED_SETTINGS.get("e6_machine_client_secret", ""))
+    if persisted_secret:
+        saved["e6_machine_client_secret"] = persisted_secret
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PATH.touch(mode=0o600, exist_ok=True)
+    SETTINGS_PATH.chmod(0o600)
     SETTINGS_PATH.write_text(json.dumps(saved, indent=2) + "\n")
+    SETTINGS_PATH.chmod(0o600)
+    SAVED_SETTINGS.clear()
+    SAVED_SETTINGS.update(saved)
     PROMETHEUS_DEFAULT_ENABLED = booleans["prometheus_enabled"]
     SYSTEM_COPY_TO_S3 = booleans["copy_to_s3"]
     SYSTEM_GENERATE_DASHBOARD = booleans["generate_dashboard"]
     PROMETHEUS_DEFAULT_PORT = str(numbers["prometheus_port"])
     REPORT_RETENTION_DAYS, MAX_LOCAL_REPORT_GB = numbers["retention_days"], numbers["max_local_report_gb"]
     PROMETHEUS_URL, GRAFANA_URL, SYSTEM_S3_REPORT_PATH = strings["prometheus_url"], strings["grafana_url"], strings["s3_report_path"]
-    return saved
+    E6_QUERY_HISTORY_ENABLED = booleans["e6_query_history_enabled"]
+    E6_MACHINE_CLIENT_ID = strings["e6_machine_client_id"]
+    E6_MACHINE_CLIENT_SECRET = effective_secret
+    E6_QUERY_HISTORY_EMAIL = strings["e6_query_history_email"]
+    E6_QUERY_HISTORY_WAIT_SECONDS = str(numbers["e6_query_history_wait_seconds"])
+    return {key: value for key, value in saved.items() if key != "e6_machine_client_secret"}
 
 
 def write_manifest(run: "Run", env: dict[str, str]) -> None:
@@ -1237,6 +1276,16 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
         env["GRAFANA_URL"] = GRAFANA_URL
     if SYSTEM_S3_REPORT_PATH:
         env["S3_REPORT_PATH"] = SYSTEM_S3_REPORT_PATH
+    env.update({
+        "E6_QUERY_HISTORY_ENABLED": "true" if E6_QUERY_HISTORY_ENABLED else "false",
+        "E6_QUERY_HISTORY_WAIT_SECONDS": E6_QUERY_HISTORY_WAIT_SECONDS,
+    })
+    if E6_MACHINE_CLIENT_ID:
+        env["E6_MACHINE_CLIENT_ID"] = E6_MACHINE_CLIENT_ID
+    if E6_MACHINE_CLIENT_SECRET:
+        env["E6_MACHINE_CLIENT_SECRET"] = E6_MACHINE_CLIENT_SECRET
+    if E6_QUERY_HISTORY_EMAIL:
+        env["E6_QUERY_HISTORY_EMAIL"] = E6_QUERY_HISTORY_EMAIL
     if plan_key in {"jdbc_arrivals", "http_arrivals"}:
         env["LOAD_PROFILE"] = _inside(str(config.get("load_profile", "")), "test_properties", ".csv")
     elif plan_key == "jdbc_variable_concurrency":
@@ -1731,6 +1780,16 @@ def _execute_suite(execution: SuiteExecution) -> None:
     })
     if SYSTEM_S3_REPORT_PATH:
         env["S3_REPORT_PATH"] = SYSTEM_S3_REPORT_PATH
+    env.update({
+        "E6_QUERY_HISTORY_ENABLED": "true" if E6_QUERY_HISTORY_ENABLED else "false",
+        "E6_QUERY_HISTORY_WAIT_SECONDS": E6_QUERY_HISTORY_WAIT_SECONDS,
+    })
+    if E6_MACHINE_CLIENT_ID:
+        env["E6_MACHINE_CLIENT_ID"] = E6_MACHINE_CLIENT_ID
+    if E6_MACHINE_CLIENT_SECRET:
+        env["E6_MACHINE_CLIENT_SECRET"] = E6_MACHINE_CLIENT_SECRET
+    if E6_QUERY_HISTORY_EMAIL:
+        env["E6_QUERY_HISTORY_EMAIL"] = E6_QUERY_HISTORY_EMAIL
     command = [str(ROOT / "run_benchmark_suite.sh"), execution.suite_file]
     if execution.connection:
         command.append(execution.connection)
@@ -2322,7 +2381,7 @@ class Handler(SimpleHTTPRequestHandler):
                 connections = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "connection_properties").glob("*.properties"))
                 queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").rglob("*.csv"))
                 profiles = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "test_properties").glob("*.csv"))
-                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2], "test_properties": PLAN_TEST_PROPERTIES[k]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
+                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2], "test_properties": PLAN_TEST_PROPERTIES[k]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "query_history": {"enabled": E6_QUERY_HISTORY_ENABLED, "client_id": E6_MACHINE_CLIENT_ID, "secret_configured": bool(E6_MACHINE_CLIENT_SECRET), "email": E6_QUERY_HISTORY_EMAIL, "wait_seconds": int(E6_QUERY_HISTORY_WAIT_SECONDS)}, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
             elif parsed.path == "/api/runs":
                 with RUN_LOCK:
                     self._json([run.public() for run in RUNS.values()])

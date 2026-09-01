@@ -215,9 +215,10 @@ if [ -n "$1" ]; then
     [ -n "$_SAVE_MEASURED_ITERATIONS" ] && MEASURED_ITERATIONS="$_SAVE_MEASURED_ITERATIONS"
 fi
 
-# Load non-secret deployment defaults after the optional suite. This file is
+# Load shared deployment defaults after the optional suite. This file is
 # shared by CLI and Benchmark Studio; the UI is only an editor for the same
-# runner contract. Explicit environment variables and suite values always win.
+# runner contract. It is gitignored and may contain the optional Query History
+# machine secret. Explicit environment variables and suite values always win.
 SYSTEM_SETTINGS_FILE="${BENCHMARK_SYSTEM_SETTINGS_FILE:-${BENCHMARK_UI_SETTINGS_FILE:-$PROJECT_ROOT/config/system_settings.json}}"
 if [ -f "$SYSTEM_SETTINGS_FILE" ]; then
     if ! command -v jq >/dev/null 2>&1; then
@@ -237,6 +238,11 @@ if [ -f "$SYSTEM_SETTINGS_FILE" ]; then
         _system_default PROMETHEUS_PORT prometheus_port
         _system_default PROMETHEUS_URL prometheus_url
         _system_default GRAFANA_URL grafana_url
+        _system_default E6_QUERY_HISTORY_ENABLED e6_query_history_enabled
+        _system_default E6_MACHINE_CLIENT_ID e6_machine_client_id
+        _system_default E6_MACHINE_CLIENT_SECRET e6_machine_client_secret
+        _system_default E6_QUERY_HISTORY_EMAIL e6_query_history_email
+        _system_default E6_QUERY_HISTORY_WAIT_SECONDS e6_query_history_wait_seconds
         unset -f _system_default
     fi
 fi
