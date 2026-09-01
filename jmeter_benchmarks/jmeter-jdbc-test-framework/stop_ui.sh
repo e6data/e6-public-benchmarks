@@ -55,12 +55,31 @@ if [[ "$COMMAND" != *"-m ui.server"* ]]; then
     exit 1
 fi
 
+# start_ui.sh launches the checkout-local virtual-environment interpreter by
+# absolute path. This remains a reliable ownership signal on hardened Linux
+# hosts where /proc/<pid>/cwd cannot be read by lsof/readlink.
+COMMAND_BELONGS_TO_ROOT=false
+if [[ "$COMMAND" == *"$ROOT/.venv/bin/python"* ]]; then
+    COMMAND_BELONGS_TO_ROOT=true
+fi
+
 # Where supported, also verify the process was launched from this checkout.
 if command -v lsof >/dev/null 2>&1; then
     PROCESS_CWD=$(lsof -a -p "$PID" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)
+    # Some Amazon Linux/lsof combinations return the literal procfs link and
+    # an accompanying "readlink: Permission denied" marker instead of a real
+    # directory. Treat that as unavailable, not as another checkout.
+    if [[ "$PROCESS_CWD" == /proc/* ]] || [[ "$PROCESS_CWD" == *"Permission denied"* ]]; then
+        PROCESS_CWD=""
+    fi
     if [ -n "$PROCESS_CWD" ] && [ "$PROCESS_CWD" != "$ROOT" ]; then
         echo "Refusing to stop PID $PID: it belongs to another checkout."
         echo "Process directory: $PROCESS_CWD"
+        exit 1
+    fi
+    if [ -z "$PROCESS_CWD" ] && [ "$COMMAND_BELONGS_TO_ROOT" != true ]; then
+        echo "Refusing to stop PID $PID: its checkout could not be verified."
+        echo "Recorded command: $COMMAND"
         exit 1
     fi
 fi
