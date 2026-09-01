@@ -296,10 +296,8 @@ class RunnerIntegrationTests(unittest.TestCase):
         listener = tree.find(".//com.github.johrstrom.listener.PrometheusListener")
         self.assertIsNotNone(listener)
         names = {node.text for node in listener.findall(".//stringProp[@name='collector.metric_name']")}
-        self.assertEqual(names, {
-            "jmeter_response_time", "jmeter_success_success_total",
-            "jmeter_success_failure_total",
-        })
+        self.assertEqual(names, {"ResponseTime", "Ratio"})
+        self.assertFalse(listener.findall(".//stringProp[@name='listener.collector.listen_to']"))
 
     def test_databricks_transform_uses_pwd_without_embedding_secret(self):
         source = self.reports / "source.jmx"

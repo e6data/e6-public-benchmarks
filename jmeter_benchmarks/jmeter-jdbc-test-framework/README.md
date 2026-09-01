@@ -619,9 +619,10 @@ containers can be stopped without removing their retained data:
 docker compose --env-file .benchmark-ui.env -f deploy/docker-compose.observability.yml stop
 ```
 
-The listener exports `jmeter_response_time`, `jmeter_success_success_total`,
-`jmeter_success_failure_total`, and the plugin's standard JVM/thread metrics.
-These names work with the live panels in the existing `jmeter-prom` dashboard.
+The listener exports the upstream dashboard-compatible `ResponseTime` summary,
+`Ratio_success`, `Ratio_failure`, and `Ratio_total` counters, plus the plugin's
+standard JVM/thread metrics. These names work with the live panels in the
+existing `jmeter-prom` dashboard.
 Its finalized `jmeter_run_*` panels belong to
 the other framework's Pushgateway reporting contract and are not duplicated
 here; use this framework's JMeter dashboard and `run_summary.json` for final
