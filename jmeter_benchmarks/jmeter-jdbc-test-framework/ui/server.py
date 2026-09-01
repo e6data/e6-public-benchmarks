@@ -1626,11 +1626,17 @@ class SuiteExecution:
                 except (OSError, json.JSONDecodeError):
                     run_summary = None
             if run_summary:
+                latency = run_summary.get("latency_ms") or {}
                 item.update({
                     "samples": int(run_summary.get("samples") or 0),
                     "successful": int(run_summary.get("successful") or 0),
                     "failed_samples": int(run_summary.get("failed") or 0),
                     "error_pct": float(run_summary.get("error_pct") or 0),
+                    "elapsed_s": run_summary.get("wall_clock_s"),
+                    "throughput_per_s": run_summary.get("throughput_per_s"),
+                    "mean_ms": latency.get("mean"),
+                    "p90_ms": latency.get("p90"),
+                    "p95_ms": latency.get("p95"),
                 })
                 failures = run_summary.get("failure_messages") or []
                 if failures:
