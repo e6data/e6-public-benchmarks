@@ -51,7 +51,12 @@ def inside(value: str, directory: str, suffix: str, manifest_root: Path | None =
         root_candidate, local_candidate = (ROOT / candidate).resolve(), ((manifest_root or ROOT) / candidate).resolve()
         candidate = root_candidate if root_candidate.is_file() else local_candidate
     candidate, allowed = candidate.resolve(), (ROOT / directory).resolve()
-    if not candidate.is_file() or candidate.suffix.lower() != suffix or not candidate.is_relative_to(allowed):
+    try:
+        candidate.relative_to(allowed)
+        within_allowed_directory = True
+    except ValueError:
+        within_allowed_directory = False
+    if not candidate.is_file() or candidate.suffix.lower() != suffix or not within_allowed_directory:
         raise ValueError(f"Invalid {directory} file: {value}")
     return candidate
 
