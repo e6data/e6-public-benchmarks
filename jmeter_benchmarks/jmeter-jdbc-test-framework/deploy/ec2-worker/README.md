@@ -54,3 +54,17 @@ are still required because SSM is the remote execution channel.
 The UI principal needs `ec2:StartInstances`, SSM describe/send/get permissions,
 and access to the control prefix. Do not place credentials in SSM command text.
 The adapter uploads an encrypted private bundle and sends only its S3 URI.
+
+For optional e6 Query History capture, edit the root-owned worker environment
+created by the installer and keep its mode at `0600`:
+
+```bash
+sudoedit /etc/e6-benchmark-worker.env
+sudo chmod 600 /etc/e6-benchmark-worker.env
+```
+
+Set `E6_QUERY_HISTORY_ENABLED=true`, `E6_MACHINE_CLIENT_ID`, and
+`E6_MACHINE_CLIENT_SECRET` there. `E6_QUERY_HISTORY_EMAIL` is an optional
+additional filter. These credentials are intentionally removed from the UI's
+S3 job bundle; configuring them only on the UI host does not enable capture on
+the remote worker.

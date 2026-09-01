@@ -507,6 +507,32 @@ The stable run ID is shared by the UI card, PostgreSQL facts, `run_summary.json`
 and S3 prefix. This makes PostgreSQL the searchable catalog and S3 the durable
 artifact store; Athena is not required for normal operation.
 
+### Optional e6 Query History capture
+
+An e6 run can export the matching workspace Query History after JMeter
+finishes. The capture window is derived from the first sample start and last
+sample end in `JmeterResultFile.csv`; the workspace and cluster are derived
+from the selected e6 JDBC URL. It writes `e6_query_history.csv` and
+`e6_query_history_capture.json` into the run report directory before the normal
+S3 upload. Capture failure is reported but never changes the JMeter result.
+
+Configure the OAuth2 machine client as deployment secrets, not in a JDBC
+connection properties file:
+
+```bash
+export E6_QUERY_HISTORY_ENABLED=true
+export E6_MACHINE_CLIENT_ID='<machine-client-id>'
+export E6_MACHINE_CLIENT_SECRET='<machine-client-secret>'
+export E6_QUERY_HISTORY_EMAIL='optional-query-user@example.com'
+./run_test.sh test_configs/my_benchmark.env
+```
+
+`E6_QUERY_HISTORY_WAIT_SECONDS` defaults to `5` to allow history ingestion.
+The same environment variables work for CLI, interactive, suite, and local UI
+runs. For an EC2 runner, configure the credentials on the worker itself; they
+are deliberately excluded from the private S3 job payload. See
+`deploy/benchmark-ui.env.example` for the service-environment template.
+
 ### Optional Prometheus and Grafana observability
 
 Prometheus support is opt-in and does not change the normal CLI/UI execution

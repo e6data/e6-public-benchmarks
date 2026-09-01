@@ -93,6 +93,10 @@ class EC2Runner:
             job = Path(temp) / "job"
             job.mkdir()
             remote_env = dict(env)
+            # Service credentials belong to the worker's own environment or
+            # secret manager. Never serialize them into an S3 job payload.
+            for key in ("E6_MACHINE_CLIENT_ID", "E6_MACHINE_CLIENT_SECRET"):
+                remote_env.pop(key, None)
             for key in (
                 "CONNECTION_FILE", "TEST_PROPERTIES_FILE", "QUERY_FILE",
                 "LOAD_PROFILE", "WARMUP_QUERY_FILE",

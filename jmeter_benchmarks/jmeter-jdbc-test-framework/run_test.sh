@@ -44,6 +44,11 @@
 #   WARMUP_QUERY_FILE         - warm-up query CSV; local path or s3:// URI
 #   WARMUP_ITERATIONS         - number of separate warm-up passes (default: 1)
 #   MEASURED_ITERATIONS       - query-file passes included in a Run Once result (default: 1)
+#   E6_QUERY_HISTORY_ENABLED  - capture e6 Query History after the run (default: false)
+#   E6_MACHINE_CLIENT_ID      - OAuth2 machine-client ID (deployment secret env)
+#   E6_MACHINE_CLIENT_SECRET  - OAuth2 machine-client secret (deployment secret env)
+#   E6_QUERY_HISTORY_EMAIL    - optional Query History user/email filter
+#   E6_QUERY_HISTORY_WAIT_SECONDS - wait for history ingestion (default: 5)
 #
 # Exit codes:
 #   0  the run completed and the error rate was within MAX_ERROR_PCT
@@ -360,6 +365,8 @@ PROMETHEUS_ENABLED="${PROMETHEUS_ENABLED:-false}"
 PROMETHEUS_IP="${PROMETHEUS_IP:-127.0.0.1}"
 PROMETHEUS_PORT="${PROMETHEUS_PORT:-9270}"
 PROMETHEUS_DELAY="${PROMETHEUS_DELAY:-15}"
+E6_QUERY_HISTORY_ENABLED="${E6_QUERY_HISTORY_ENABLED:-false}"
+E6_QUERY_HISTORY_WAIT_SECONDS="${E6_QUERY_HISTORY_WAIT_SECONDS:-5}"
 WARMUP_ENABLED="${WARMUP_ENABLED:-false}"
 WARMUP_ITERATIONS="${WARMUP_ITERATIONS:-1}"
 MEASURED_ITERATIONS="${MEASURED_ITERATIONS:-1}"
@@ -397,6 +404,14 @@ if ! [[ "$PROMETHEUS_PORT" =~ ^[0-9]+$ ]] || [ "$PROMETHEUS_PORT" -lt 1 ] || [ "
 fi
 if ! [[ "$PROMETHEUS_DELAY" =~ ^[0-9]+$ ]]; then
     echo -e "${RED}Error: PROMETHEUS_DELAY must be a non-negative integer.${NC}"
+    exit 1
+fi
+if [ "$E6_QUERY_HISTORY_ENABLED" != "true" ] && [ "$E6_QUERY_HISTORY_ENABLED" != "false" ]; then
+    echo -e "${RED}Error: E6_QUERY_HISTORY_ENABLED must be true or false.${NC}"
+    exit 1
+fi
+if ! [[ "$E6_QUERY_HISTORY_WAIT_SECONDS" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: E6_QUERY_HISTORY_WAIT_SECONDS must be a non-negative integer.${NC}"
     exit 1
 fi
 
@@ -861,6 +876,36 @@ done
 # scripts look for it at the run root, so publish a copy there.
 [ -f "${REPORT_DIR}/dashboard/statistics.json" ] && \
     cp "${REPORT_DIR}/dashboard/statistics.json" "${REPORT_DIR}/statistics.json"
+
+# Optional e6-only enrichment. Machine-client credentials are deployment
+# secrets rather than JDBC properties and are never copied into artifacts.
+# Capture errors are non-fatal because they must not alter JMeter pass/fail.
+if [ "$E6_QUERY_HISTORY_ENABLED" = "true" ]; then
+    _e6_connection_string=$(grep -E '^CONNECTION_STRING=' "$CONNECTION_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+    if printf '%s' "$_e6_connection_string" | grep -q '^jdbc:e6data://'; then
+        _e6_host=$(printf '%s' "$_e6_connection_string" | sed -E 's#^jdbc:e6data://([^/:;]+).*#\1#')
+        _e6_cluster=$(printf '%s' "$_e6_connection_string" | sed -nE 's#.*[?&;]cluster-name=([^&;]+).*#\1#p')
+        E6_QH_ARGS=(
+            --base-url "https://${_e6_host}"
+            --jmeter-results "${REPORT_DIR}/JmeterResultFile.csv"
+            --output "${REPORT_DIR}/e6_query_history.csv"
+            --status-output "${REPORT_DIR}/e6_query_history_capture.json"
+            --wait-seconds "$E6_QUERY_HISTORY_WAIT_SECONDS"
+        )
+        [ -n "$_e6_cluster" ] && E6_QH_ARGS+=(--cluster "$_e6_cluster")
+        [ -n "${E6_QUERY_HISTORY_EMAIL:-}" ] && E6_QH_ARGS+=(--email "$E6_QUERY_HISTORY_EMAIL")
+        echo ""
+        echo "Capturing e6 Query History..."
+        set +e
+        python3 "${PROJECT_ROOT}/utilities/get_e6_query_history.py" "${E6_QH_ARGS[@]}"
+        E6_QH_RC=$?
+        set -e
+        [ "$E6_QH_RC" -ne 0 ] && echo -e "  ${YELLOW}Query History capture failed; JMeter results are unaffected.${NC}"
+        unset _e6_connection_string _e6_host _e6_cluster E6_QH_ARGS E6_QH_RC
+    else
+        echo -e "${YELLOW}Warning: E6_QUERY_HISTORY_ENABLED=true ignored for a non-e6 JDBC connection.${NC}"
+    fi
+fi
 
 echo ""
 if [ "${RUN_FAILED:-0}" -eq 1 ]; then

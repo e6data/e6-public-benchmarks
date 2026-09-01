@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Optional root-owned service environment. Query History machine credentials
+# are configured on the worker and never transported in the S3 job bundle.
+WORKER_ENV_FILE="${BENCHMARK_WORKER_ENV_FILE:-/etc/e6-benchmark-worker.env}"
+if [ -r "$WORKER_ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$WORKER_ENV_FILE"
+  set +a
+fi
+
 if [ "$#" -ne 3 ]; then
   echo "Usage: run_job.sh s3-input-zip s3-job-prefix run-id" >&2
   exit 2

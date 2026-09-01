@@ -15,6 +15,7 @@ The inventory below is grouped by purpose. Counts are intentionally omitted beca
 | `analyze_single_run_from_s3.py` | Fetch a single run from S3 and generate detailed markdown report |
 | `compare_consecutive_runs_from_s3.py` | Compare two consecutive runs for regression testing |
 | `compare_jmeter_runs_from_s3.py` | Compare any two JMeter runs from S3 (CSV + markdown output) |
+| `get_e6_query_history.py` | Export e6 Query History for the exact time window represented by a JMeter result CSV |
 | `compare_multi_concurrency_from_s3.py` | Find and compare all concurrency levels between two engines |
 | `compare_multiple_runs_from_s3.py` | Compare N runs with metadata columns, supports batch directory scanning |
 | `compare_engines_concurrency.sh` | Compare concurrency scaling between two engines (text/markdown/json output) |

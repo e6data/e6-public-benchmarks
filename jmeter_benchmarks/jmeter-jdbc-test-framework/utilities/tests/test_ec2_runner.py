@@ -78,6 +78,31 @@ class EC2RunnerTests(unittest.TestCase):
             "{JOB_DIR}/inputs/test_properties_file/test.properties",
         )
 
+    def test_stage_job_does_not_serialize_query_history_credentials(self):
+        captured = {}
+        def command(args, **kwargs):
+            if args[:3] == ["aws", "s3", "cp"]:
+                import zipfile
+                with zipfile.ZipFile(args[3]) as archive:
+                    captured["environment"] = json.loads(archive.read("environment.json"))
+            return subprocess.CompletedProcess(args, 0, "", "")
+        runner = EC2Runner(
+            EC2Config("i-123", "us-east-1", "s3://private/control", "/worker"),
+            command,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "connection.properties").write_text("PASSWORD=secret\n")
+            runner.stage_job("query-history", {
+                "CONNECTION_FILE": "connection.properties",
+                "E6_QUERY_HISTORY_ENABLED": "true",
+                "E6_MACHINE_CLIENT_ID": "client-id",
+                "E6_MACHINE_CLIENT_SECRET": "client-secret",
+            }, root)
+        self.assertEqual(captured["environment"]["E6_QUERY_HISTORY_ENABLED"], "true")
+        self.assertNotIn("E6_MACHINE_CLIENT_ID", captured["environment"])
+        self.assertNotIn("E6_MACHINE_CLIENT_SECRET", captured["environment"])
+
     def test_cancel_targets_configured_instance(self):
         calls = []
         def command(args, **kwargs):
