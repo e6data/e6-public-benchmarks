@@ -70,8 +70,7 @@ reports:
 ```
 
 Open <http://127.0.0.1:8765>. The CLI remains fully supported and has no UI
-dependency. Stop only the UI with `./stop_ui.sh`; `run_ui.sh` remains a
-backwards-compatible alias.
+dependency. Stop only the UI with `./stop_ui.sh`.
 
 To run an ordered collection of complete saved benchmark forms, use the
 **Performance suites** page or invoke the same CLI contract directly:
@@ -96,7 +95,6 @@ To run an ordered collection of complete saved benchmark forms, use the
 │   ├── setup_ui.sh          # UI-only setup + optional local PostgreSQL
 │   ├── start_ui.sh          # optional UI launcher
 │   ├── stop_ui.sh           # stop this checkout's UI process
-│   ├── run_ui.sh            # backwards-compatible start_ui.sh alias
 │   └── run_test.sh          # non-interactive runner
 ├── python_benchmarks/       # one Python runner per supported engine
 └── pov/                     # Docker Compose deployment wrapper

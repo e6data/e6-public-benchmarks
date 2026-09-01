@@ -3,7 +3,7 @@ const metadataKeys=['CLUSTER_SIZE','ESTIMATED_CORES','MEMORY_GB','EXECUTORS','CO
 const advancedKeys=['RAMP_UP_TIME','RAMP_UP_STEPS','QUERY_TIMEOUT','LIMIT_RESULTSET'];
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(path,options={}){let r;try{r=await fetch(path,{headers:{'Content-Type':'application/json'},...options})}catch(e){throw new Error('UI backend unavailable. Check that ./run_ui.sh is still running; see logs/ui.log.')}const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
+async function api(path,options={}){let r;try{r=await fetch(path,{headers:{'Content-Type':'application/json'},...options})}catch(e){throw new Error('UI backend unavailable. Check that ./start_ui.sh is still running; see logs/ui.log.')}const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
 function options(items,label=x=>x,value=x=>x){return items.map(x=>`<option value="${esc(value(x))}">${esc(label(x))}</option>`).join('')}
 const DATASET_LABEL_SEPARATOR=' ·· ';
 function datasetDisplay(path){

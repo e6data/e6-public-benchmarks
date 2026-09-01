@@ -327,8 +327,6 @@ is the Benchmark Studio process from this checkout. For a custom port use
 `./stop_ui.sh --port 8766`. For a systemd deployment, use
 `systemctl stop e6-benchmark-ui` instead.
 
-`run_ui.sh` remains as a backwards-compatible alias for `start_ui.sh`.
-
 Then open <http://127.0.0.1:8765>. The UI supports:
 
 - creating a private local JDBC or HTTP connection properties file, or selecting
