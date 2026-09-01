@@ -9,9 +9,9 @@
 # 4. Create necessary directories
 # 5. Configure JAVA_HOME
 # 6. Install the optional Benchmark Studio Python environment
-# 7. Optionally start its local PostgreSQL registry
+# 7. Optionally start local PostgreSQL, Prometheus, and Grafana services
 #
-# Usage: ./setup_jmeter.sh [--with-postgres | --without-ui]
+# Usage: ./setup_jmeter.sh [--with-postgres] [--with-observability] [--without-ui]
 #
 
 set -e  # Exit on error
@@ -22,15 +22,18 @@ JMETER_ARCHIVE="apache-jmeter-${JMETER_VERSION}.tgz"
 JMETER_URL="https://archive.apache.org/dist/jmeter/binaries/${JMETER_ARCHIVE}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WITH_POSTGRES=false
+WITH_OBSERVABILITY=false
 INSTALL_UI=true
 for arg in "$@"; do
     case "$arg" in
         --with-postgres) WITH_POSTGRES=true ;;
+        --with-observability) WITH_OBSERVABILITY=true ;;
         --without-ui) INSTALL_UI=false ;;
         -h|--help)
-            echo "Usage: ./setup_jmeter.sh [--with-postgres | --without-ui]"
+            echo "Usage: ./setup_jmeter.sh [--with-postgres] [--with-observability] [--without-ui]"
             echo "  Installs JMeter, plugins, JDBC drivers, and Benchmark Studio."
             echo "  --with-postgres also starts the supplied local PostgreSQL container."
+            echo "  --with-observability also starts supplied local Prometheus and Grafana containers."
             echo "  --without-ui installs only the CLI/remote-worker runtime."
             exit 0
             ;;
@@ -38,8 +41,8 @@ for arg in "$@"; do
     esac
 done
 
-if [ "$WITH_POSTGRES" = true ] && [ "$INSTALL_UI" = false ]; then
-    echo "ERROR: --with-postgres and --without-ui cannot be used together."
+if { [ "$WITH_POSTGRES" = true ] || [ "$WITH_OBSERVABILITY" = true ]; } && [ "$INSTALL_UI" = false ]; then
+    echo "ERROR: local service options and --without-ui cannot be used together."
     exit 2
 fi
 
@@ -687,11 +690,10 @@ if [ "$INSTALL_UI" = true ]; then
             exit 1
         }
     fi
-    if [ "$WITH_POSTGRES" = true ]; then
-        BENCHMARK_UI_PYTHON="$UI_PYTHON" "${SCRIPT_DIR}/setup_ui.sh" --with-postgres
-    else
-        BENCHMARK_UI_PYTHON="$UI_PYTHON" "${SCRIPT_DIR}/setup_ui.sh"
-    fi
+    UI_SETUP_ARGS=()
+    [ "$WITH_POSTGRES" = true ] && UI_SETUP_ARGS+=(--with-postgres)
+    [ "$WITH_OBSERVABILITY" = true ] && UI_SETUP_ARGS+=(--with-observability)
+    BENCHMARK_UI_PYTHON="$UI_PYTHON" "${SCRIPT_DIR}/setup_ui.sh" "${UI_SETUP_ARGS[@]}"
 else
     echo "Step 9: Skipping Benchmark Studio runtime (--without-ui)."
 fi

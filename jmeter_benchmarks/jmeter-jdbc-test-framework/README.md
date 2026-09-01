@@ -67,6 +67,16 @@ Docker. To provision the supplied local PostgreSQL registry as part of setup:
 ./setup_jmeter.sh --with-postgres
 ```
 
+To also start a local Prometheus and Grafana stack, use:
+
+```bash
+./setup_jmeter.sh --with-postgres --with-observability
+```
+
+The observability option provisions the upstream JMeter Prometheus plugin
+dashboard and stores its local Grafana password in the ignored,
+permission-protected `.benchmark-ui.env` file.
+
 Both setup modes are safe to rerun. PostgreSQL credentials are generated into
 the ignored, permission-protected `.benchmark-ui.env`; they are not committed.
 If the operating system's `python3` is older than 3.10, setup automatically
@@ -555,12 +565,38 @@ path. When enabled, the runner creates a run-local copy of the selected JMX,
 adds the bundled upstream Prometheus Listener, and exposes live metrics for
 Prometheus to scrape. Source JMX files are never modified.
 
+For a self-contained local or EC2 installation, Docker and Docker Compose are
+the only additional prerequisites:
+
+```bash
+./setup_ui.sh --with-observability
+# or install PostgreSQL at the same time
+./setup_ui.sh --with-postgres --with-observability
+```
+
+This starts `e6-benchmark-prometheus` on `127.0.0.1:9090` and
+`e6-benchmark-grafana` on `127.0.0.1:3000`. Grafana is provisioned with the
+plugin author's upstream `JMeter` dashboard and a Prometheus datasource. The
+Grafana administrator password is generated into `.benchmark-ui.env`; it is
+not committed. From a remote host, forward all three UI ports:
+
+```bash
+ssh -N \
+  -L 8765:127.0.0.1:8765 \
+  -L 9090:127.0.0.1:9090 \
+  -L 3000:127.0.0.1:3000 \
+  -i /path/to/key.pem ec2-user@runner-host
+```
+
+The JMeter listener exists only while an enabled test is running, so the
+Prometheus `jmeter` target is expected to show down between runs.
+
 ```bash
 PROMETHEUS_ENABLED=true \
 PROMETHEUS_IP=0.0.0.0 PROMETHEUS_PORT=9270 \
 PROMETHEUS_DELAY=15 \
 PROMETHEUS_URL=http://localhost:9090 \
-GRAFANA_URL='http://localhost:3000/d/jmeter-prom/jmeter-performance?orgId=1' \
+GRAFANA_URL='http://localhost:3000/d/jbtLA0-Wk5/jmeter?orgId=1' \
   ./run_test.sh test_configs/my_benchmark.env
 ```
 
@@ -571,6 +607,17 @@ scrape. For the supplied local Docker stack, the target is
 `host.docker.internal:9270`. A production Prometheus server needs network
 access to the load generator, so bind to its private interface (or `0.0.0.0`)
 and restrict the port to Prometheus at the firewall/security-group level.
+
+To switch from the local stack to company Prometheus and Grafana later, keep
+the same JMeter listener and update `PROMETHEUS_URL` and `GRAFANA_URL`. The
+company Prometheus must also be configured to scrape the runner's private
+address on port `9270`; changing the navigation URLs alone does not create that
+scrape target. After the company scrape target is verified, the local
+containers can be stopped without removing their retained data:
+
+```bash
+docker compose --env-file .benchmark-ui.env -f deploy/docker-compose.observability.yml stop
+```
 
 The listener exports `jmeter_response_time`, `jmeter_success_success_total`,
 `jmeter_success_failure_total`, and the plugin's standard JVM/thread metrics.

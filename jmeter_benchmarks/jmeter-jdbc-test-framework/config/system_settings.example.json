@@ -5,7 +5,7 @@
   "prometheus_enabled": false,
   "prometheus_port": 9270,
   "prometheus_url": "http://localhost:9090",
-  "grafana_url": "http://localhost:3000/d/jmeter-prom/jmeter-performance?orgId=1",
+  "grafana_url": "http://localhost:3000/d/jbtLA0-Wk5/jmeter?orgId=1",
   "e6_query_history_enabled": false,
   "e6_machine_client_id": "",
   "e6_machine_client_secret": "",

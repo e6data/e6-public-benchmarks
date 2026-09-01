@@ -1,0 +1,37 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: e6-benchmark-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${BENCHMARK_PROMETHEUS_RETENTION:-30d}
+    ports:
+      - "127.0.0.1:${BENCHMARK_PROMETHEUS_WEB_PORT:-9090}:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - e6-benchmark-prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    container_name: e6-benchmark-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${BENCHMARK_GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${BENCHMARK_GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:${BENCHMARK_GRAFANA_WEB_PORT:-3000}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../temp/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - e6-benchmark-grafana-data:/var/lib/grafana
+
+volumes:
+  e6-benchmark-prometheus-data:
+  e6-benchmark-grafana-data:

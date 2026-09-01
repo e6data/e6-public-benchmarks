@@ -28,6 +28,9 @@ cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
 `setup_jmeter.sh` installs JMeter, required plugins and JDBC drivers, plus the
 isolated Benchmark Studio Python environment. It uses SQLite by default. For a
 local PostgreSQL registry, use `./setup_jmeter.sh --with-postgres` instead.
+For a self-contained runner with PostgreSQL plus local Prometheus and Grafana,
+use `./setup_jmeter.sh --with-postgres --with-observability`. These services are
+optional; CLI execution remains available without them.
 
 Edit only `CONNECTION_FILE` and `QUERY_FILE` in `my_benchmark.env`, then choose a load model with command-line overrides:
 
