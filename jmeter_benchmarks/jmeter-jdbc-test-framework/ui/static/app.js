@@ -10,33 +10,14 @@ function datasetDisplay(path){
   const value=String(path||'');
   if(!value||value.includes(DATASET_LABEL_SEPARATOR))return value;
   const parts=value.split('/'),file=parts.pop()||value,parent=parts.pop()||'';
-  const roles={
-    'queries.csv':'measured queries',
-    'queries_fqn.csv':'measured queries · fully qualified',
-    'warmup.csv':'warm-up queries',
-    'warmup_fqn.csv':'warm-up queries · fully qualified',
-    'source.csv':'source/reference data',
-  };
-  const label=roles[file]||file;
-  return `${parent?`${parent} — `:''}${label}${DATASET_LABEL_SEPARATOR}${value}`;
+  return `${parent?`${parent} — `:''}${file}${DATASET_LABEL_SEPARATOR}${value}`;
 }
 function datasetPath(value){
   const text=String(value||'');
   const split=text.lastIndexOf(DATASET_LABEL_SEPARATOR);
   return split<0?text:text.slice(split+DATASET_LABEL_SEPARATOR.length);
 }
-function datasetRole(path){
-  const file=String(path||'').split('/').pop().toLowerCase();
-  if(file==='source.csv')return'source';
-  if(file.startsWith('warmup'))return'warmup';
-  return'measured';
-}
-function datasetOptions(items,kind='all'){
-  let visible=[...items];
-  if(kind==='measured')visible=visible.filter(path=>datasetRole(path)==='measured');
-  if(kind==='warmup')visible.sort((a,b)=>Number(datasetRole(b)==='warmup')-Number(datasetRole(a)==='warmup')||a.localeCompare(b));
-  return options(visible,datasetDisplay,datasetDisplay);
-}
+function datasetOptions(items){return options(items,datasetDisplay,datasetDisplay)}
 function connectionFields(transport){return transport==='http'?`<label>mainhost<input class="new-mainhost" placeholder="host.example.com"></label><label>scheme<select class="new-scheme"><option>https</option><option>http</option></select></label><label>cluster_name<input class="new-cluster" required></label><label>CATALOG<input class="new-catalog"></label><label>SCHEMA<input class="new-schema"></label>`:`<label>CONNECTION_STRING<input class="new-url" placeholder="jdbc:e6data://host:443/…" required></label><label>DRIVER_CLASS <small>auto-filled from ENGINE</small><input class="new-driver" placeholder="Only required for Custom"></label>`}
 function engineCard(i){const transport=state.config.plans.find(p=>p.id===$('plan').value)?.transport||'jdbc',stamp=new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14),paired=$('parallel').checked,datasets=options(state.config.queries,x=>x),warmupList=`engineWarmupFiles${i}`,queryList=`engineQueryFiles${i}`;return `<div class="card engine" data-transport="${transport}"><div class="card-title"><span>0${i+1}</span><div><h3>${i?'Comparison engine':'Primary engine'}</h3><p>Create the CLI properties file here, or select one already on this host</p></div></div><div class="fields"><label>Run label<input class="engine-label" value="${i?'Engine B':'Engine A'}"></label><label>ENGINE<select class="engine-kind"><option value="e6data">e6data</option><option value="databricks">Databricks</option><option value="snowflake">Snowflake</option><option value="trino">Trino</option><option value="custom">Custom</option></select></label><label>CONNECTION_FILE mode<select class="connection-mode"><option value="create">Create local profile</option><option value="existing">Use existing profile</option></select></label><label class="existing-connection hidden">CONNECTION_FILE<select class="connection"><option value="">Select a connection…</option>${options(state.config.connections,x=>x.split('/').pop())}</select></label></div><div class="new-connection"><div class="fields connection-fields"><label>Profile name<input class="new-name" value="ui_${stamp}_engine_${i+1}" required></label>${connectionFields(transport)}<label>USER<input class="new-user" autocomplete="username"></label><label>PASSWORD<input class="new-password" type="password" autocomplete="new-password"></label></div><p class="local-secret-note">Saved only under <code>connection_properties/</code> with owner-only permissions. The password is never returned to the browser after creation.</p></div>${paired?`<div class="engine-dataset-overrides"><h4>Query files <small>optional dialect override</small></h4><p>Type to search local files, or leave blank to use the shared Workload file below.</p><div class="fields"><label>Warm-up query file <small>excluded</small><input class="engine-warmup dataset-search" list="${warmupList}" placeholder="Use shared warm-up query file"><datalist id="${warmupList}">${datasets}</datalist><span class="source-actions"><input class="engine-warmup-upload" type="file" accept=".csv"><button type="button" class="engine-upload" data-kind="warmup">Local CSV</button><button type="button" class="engine-s3" data-kind="warmup">S3 URI</button></span></label><label>Query file <small>measured</small><input class="engine-query dataset-search" list="${queryList}" placeholder="Use shared query file"><datalist id="${queryList}">${datasets}</datalist><span class="source-actions"><input class="engine-query-upload" type="file" accept=".csv"><button type="button" class="engine-upload" data-kind="query">Local CSV</button><button type="button" class="engine-s3" data-kind="query">S3 URI</button></span></label></div></div>`:''}</div>`}
 function bindConnectionModes(){document.querySelectorAll('.connection-mode').forEach(mode=>mode.onchange=()=>{const card=mode.closest('.engine'),existing=mode.value==='existing';card.querySelector('.existing-connection').classList.toggle('hidden',!existing);card.querySelector('.new-connection').classList.toggle('hidden',existing);card.querySelector('.connection').required=existing;card.querySelectorAll('.new-connection [required]').forEach(input=>input.disabled=existing)})}
@@ -222,8 +203,7 @@ function engineMetadataFields(){
 function engineCard(i){
   const transport=state.config.plans.find(p=>p.id===$('plan').value)?.transport||'jdbc';
   const stamp=new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
-  const measuredDatasets=datasetOptions(state.config.queries,'measured');
-  const warmupDatasets=datasetOptions(state.config.queries,'warmup');
+  const datasets=datasetOptions(state.config.queries);
   const metadataPresets=options(state.config.metadata_presets||[],x=>x.name,x=>x.file);
   const warmupList=`engineWarmupFiles${i}`,queryList=`engineQueryFiles${i}`;
   return `<article class="card engine" data-transport="${transport}">
@@ -234,8 +214,8 @@ function engineCard(i){
     </section>
     <section class="engine-section dataset-section"><div class="engine-section-header"><b>What to run</b><small>Engine-specific SQL dialect files</small></div>
       <div class="warmup-choice"><label class="phase-toggle"><input class="engine-warmup-enabled" type="checkbox"><span>Enable excluded warm-up</span></label></div>
-      <div class="fields engine-warmup-fields inactive"><label>Warm-up query file <small>excluded from measured statistics · files on this runner</small><input class="engine-warmup dataset-search" list="${warmupList}" placeholder="Type a workload or warm-up filename…"><datalist id="${warmupList}">${warmupDatasets}</datalist><span class="source-actions"><input class="engine-warmup-upload" type="file" accept=".csv"><button type="button" class="engine-upload" data-kind="warmup">Local CSV</button><button type="button" class="engine-s3" data-kind="warmup">S3 URI</button></span></label><label>Warm-up iterations <small>sequential passes</small><input class="engine-warmup-iterations" type="number" value="1" min="1"></label></div>
-      <div class="fields measured-dataset"><label>Query file <small>measured dataset · files on this runner</small><input class="engine-query dataset-search" list="${queryList}" placeholder="Type a workload or query filename…" required><datalist id="${queryList}">${measuredDatasets}</datalist><span class="source-actions"><input class="engine-query-upload" type="file" accept=".csv"><button type="button" class="engine-upload" data-kind="query">Local CSV</button><button type="button" class="engine-s3" data-kind="query">S3 URI</button></span></label></div>
+      <div class="fields engine-warmup-fields inactive"><label>Warm-up query file <small>excluded from measured statistics · files on this runner</small><input class="engine-warmup dataset-search" list="${warmupList}" placeholder="Type a folder or filename…"><datalist id="${warmupList}">${datasets}</datalist><span class="source-actions"><input class="engine-warmup-upload" type="file" accept=".csv"><button type="button" class="engine-upload" data-kind="warmup">Local CSV</button><button type="button" class="engine-s3" data-kind="warmup">S3 URI</button></span></label><label>Warm-up iterations <small>sequential passes</small><input class="engine-warmup-iterations" type="number" value="1" min="1"></label></div>
+      <div class="fields measured-dataset"><label>Query file <small>measured dataset · files on this runner</small><input class="engine-query dataset-search" list="${queryList}" placeholder="Type a folder or filename…" required><datalist id="${queryList}">${datasets}</datalist><span class="source-actions"><input class="engine-query-upload" type="file" accept=".csv"><button type="button" class="engine-upload" data-kind="query">Local CSV</button><button type="button" class="engine-s3" data-kind="query">S3 URI</button></span></label></div>
     </section>
     <details class="engine-section context-section"><summary><span><b>More details about the run</b><small>Cluster, build, dataset and classification metadata</small></span></summary>
       <div class="engine-metadata-preset-row"><label>Metadata profile<select class="engine-metadata-preset"><option value="">Custom metadata</option>${metadataPresets}</select></label><div class="metadata-profile-actions"><button class="secondary import-engine-metadata" type="button">S3 profile</button><button class="secondary save-engine-metadata" type="button">Save current as new</button></div></div>
