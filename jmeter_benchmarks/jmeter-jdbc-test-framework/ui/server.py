@@ -1056,7 +1056,35 @@ def import_s3_input(kind: str, uri: str) -> str:
     parsed = urlparse(uri)
     filename = Path(parsed.path).name
     if parsed.scheme != "s3" or not parsed.netloc or not filename:
-        raise ValueError("Use a complete s3://bucket/path/file.csv URI")
+        raise ValueError("Use a complete s3://bucket/path/file URI")
+    if kind == "metadata":
+        suffix = Path(filename).suffix.lower()
+        stem = Path(filename).stem
+        if suffix not in {".txt", ".properties"} or not PROFILE_NAME.fullmatch(stem):
+            raise ValueError("Metadata profile must be a .txt or .properties file with a safe filename")
+        temp = ROOT / "metadata_files" / f".{stem}.{uuid.uuid4().hex}.s3-download"
+        try:
+            command = ["aws", "s3", "cp", uri, str(temp), "--only-show-errors"]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+            if result.returncode != 0:
+                result = subprocess.run(
+                    [*command, "--no-sign-request"], capture_output=True, text=True,
+                    timeout=120, check=False,
+                )
+            if result.returncode != 0:
+                raise ValueError((result.stderr or "S3 download failed; check AWS credentials and URI").strip()[:500])
+            if not temp.is_file() or not 0 < temp.stat().st_size <= 1024 * 1024:
+                raise ValueError("Downloaded metadata profile must be between 1 byte and 1 MB")
+            values = {key: value for key, value in read_preset(temp).items() if key in METADATA_FIELDS}
+            if not values:
+                raise ValueError("Metadata profile contains no supported metadata fields")
+            return create_preset("metadata", {"name": stem, "values": values}, overwrite=True)
+        except FileNotFoundError as exc:
+            raise ValueError("AWS CLI is not installed on the UI host") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError("S3 download timed out after 120 seconds") from exc
+        finally:
+            temp.unlink(missing_ok=True)
     target = input_destination(kind, filename, allow_existing=True)
     temp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.s3-download")
     try:
@@ -1454,7 +1482,114 @@ class SuiteExecution:
     finished_at: float | None = None
     return_code: int | None = None
     process: subprocess.Popen[str] | None = field(default=None, repr=False)
+    runner_pid: int | None = None
     logs: deque[str] = field(default_factory=lambda: deque(maxlen=300), repr=False)
+
+    def _active_workload(self, rows: list[dict[str, str]], suite: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Expose the in-progress suite item through the normal run-card contract."""
+        finished_sequences = {int(row["sequence"]) for row in rows if str(row.get("sequence", "")).isdigit()}
+        candidates = sorted(
+            (path for path in self.report_root.iterdir()
+             if path.is_dir() and re.match(r"^\d{2}-", path.name)),
+            key=lambda path: path.name,
+        ) if self.report_root.is_dir() else []
+        active_root = next(
+            (path for path in candidates
+             if int(path.name.split("-", 1)[0]) not in finished_sequences),
+            None,
+        )
+        if active_root is None:
+            return None
+        sequence = int(active_root.name.split("-", 1)[0])
+        measured_dirs = sorted(
+            (path for path in active_root.iterdir()
+             if path.is_dir() and path.name != "_warmup" and (path / "JmeterResultFile.csv").exists()),
+            key=lambda path: path.stat().st_mtime,
+        )
+        if not measured_dirs:
+            return {
+                "sequence": sequence, "workload_count": 0, "planned_samples": None,
+                "progress_pct": 0, "phase": "warm-up",
+            }
+        measured = measured_dirs[-1]
+        metrics = live_metrics(active_root)
+        summary_path = measured / "run_summary.json"
+        summary = None
+        if summary_path.is_file():
+            try:
+                summary = json.loads(summary_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                pass
+        generated = measured / "measured-queries-3x.csv"
+        if not generated.is_file():
+            generated = next(iter(sorted(measured.glob("measured-queries-*.csv"))), Path())
+        planned_samples = None
+        if generated.is_file():
+            try:
+                with generated.open(newline="", encoding="utf-8-sig", errors="replace") as handle:
+                    planned_samples = max(0, sum(1 for _ in csv.reader(handle)) - 1)
+            except (OSError, csv.Error):
+                pass
+
+        raw: dict[str, Any] = {}
+        if suite:
+            items = suite.get("benchmarks") if int(suite.get("schema_version", 1)) >= 3 else suite.get("workloads")
+            if isinstance(items, list) and sequence <= len(items):
+                selected = items[sequence - 1]
+                raw = dict(selected.get("run") or {}) if int(suite.get("schema_version", 1)) >= 3 else dict(selected)
+        plan = str(raw.get("plan") or "jdbc_sequential")
+        settings = raw.get("settings") if isinstance(raw.get("settings"), dict) else {}
+        iterations = int(raw.get("MEASURED_ITERATIONS", raw.get("measured_iterations", 1)) or 1)
+        query_file = str(raw.get("query_file") or "")
+        if not query_file and generated.is_file():
+            try:
+                query_file = generated.resolve().relative_to(ROOT).as_posix()
+            except ValueError:
+                query_file = generated.as_posix()
+        engine = str(raw.get("engine") or (suite or {}).get("engine") or "")
+        environment = {
+            "ENGINE": engine,
+            "TEST_PLAN": PLANS.get(plan, (plan, plan, "jdbc"))[1],
+            "QUERY_FILE": query_file,
+            "CONCURRENT_QUERY_COUNT": str(settings.get("CONCURRENT_QUERY_COUNT", raw.get("CONCURRENT_QUERY_COUNT", 1))),
+            "MEASURED_ITERATIONS": str(iterations),
+            "QUERY_TIMEOUT": str(settings.get("QUERY_TIMEOUT", raw.get("QUERY_TIMEOUT", 300))),
+        }
+        planned = {
+            "pattern": PLANS.get(plan, (plan, plan, "jdbc"))[0],
+            "kind": "concurrency", "unit": "queries in flight",
+            "values": [float(environment["CONCURRENT_QUERY_COUNT"])], "bucket_s": 1,
+            "duration_s": None, "peak": float(environment["CONCURRENT_QUERY_COUNT"]),
+            "expected_total": planned_samples, "source": "suite measured query file",
+            "is_run_once": plan in RUN_ONCE_PLANS,
+        }
+        samples = int((summary or {}).get("samples", metrics.get("samples", 0)) or 0)
+        report_id = measured.resolve().relative_to(REPORTS).as_posix() if summary else None
+        runner_log = self.report_root / "suite_runner.log"
+        log_lines: list[str] = []
+        if runner_log.is_file():
+            try:
+                log_lines = runner_log.read_text(errors="replace").splitlines()[-40:]
+            except OSError:
+                pass
+        return {
+            "sequence": sequence, "workload_count": samples,
+            "planned_samples": planned_samples,
+            "progress_pct": round(samples / planned_samples * 100, 1) if planned_samples else 0,
+            "phase": "measured",
+            "run": {
+                "id": f"{self.suite_run_id}-{sequence:02d}",
+                "label": str(raw.get("id") or raw.get("label") or active_root.name.split("-", 1)[1]),
+                "status": "running" if self.status == "running" and summary is None else ("completed" if summary else self.status),
+                "started_at": measured.stat().st_mtime,
+                "finished_at": None,
+                "return_code": None,
+                "config": {"plan": plan, "environment": environment, "planned_workload": planned},
+                "metrics": metrics, "summary": compact_summary(summary), "logs": log_lines,
+                "report_path": active_root.resolve().relative_to(ROOT).as_posix(), "report_id": report_id,
+                "artifact_storage": None, "cancellable": False, "finalization_warning": False,
+            },
+        }
 
     def public(self) -> dict[str, Any]:
         rows = []
@@ -1466,11 +1601,50 @@ class SuiteExecution:
             except (OSError, csv.Error):
                 rows = []
         manifest_count = 0
+        suite = None
         try:
-            manifest = json.loads((ROOT / self.suite_file).read_text())
-            manifest_count = len(manifest.get("benchmarks") or manifest.get("workloads") or [])
+            suite = next((item for item in suite_catalog() if item["file"] == self.suite_file), None)
+            manifest_count = int((suite or {}).get("workload_count", 0))
         except (OSError, json.JSONDecodeError):
             pass
+        active_workload = self._active_workload(rows, suite)
+        enriched_rows = []
+        for row in rows:
+            item = dict(row)
+            report_value = str(item.get("report") or "")
+            report_root = Path(report_value)
+            if not report_root.is_absolute():
+                report_root = ROOT / report_root
+            summaries = sorted(
+                report_root.glob("*/run_summary.json"),
+                key=lambda path: path.stat().st_mtime,
+            ) if report_root.is_dir() else []
+            run_summary = None
+            if summaries:
+                try:
+                    run_summary = json.loads(summaries[-1].read_text())
+                except (OSError, json.JSONDecodeError):
+                    run_summary = None
+            if run_summary:
+                item.update({
+                    "samples": int(run_summary.get("samples") or 0),
+                    "successful": int(run_summary.get("successful") or 0),
+                    "failed_samples": int(run_summary.get("failed") or 0),
+                    "error_pct": float(run_summary.get("error_pct") or 0),
+                })
+                failures = run_summary.get("failure_messages") or []
+                if failures:
+                    message = " ".join(str(failures[0].get("message") or "").split())
+                    item["failure_reason"] = message[:300]
+                    item["failure_reason_count"] = int(failures[0].get("count") or 1)
+                try:
+                    item["report_id"] = summaries[-1].parent.resolve().relative_to(REPORTS).as_posix()
+                except ValueError:
+                    pass
+                item["dashboard"] = (summaries[-1].parent / "dashboard" / "index.html").is_file()
+            elif str(item.get("status", "")).startswith("failed"):
+                item["failure_reason"] = "No final JMeter summary was generated. Open runner output for the setup or execution error."
+            enriched_rows.append(item)
         command = ["./run_benchmark_suite.sh", self.suite_file]
         if self.connection:
             command.append(self.connection)
@@ -1482,12 +1656,13 @@ class SuiteExecution:
             "continue_on_failure": self.continue_on_failure,
             "started_at": self.started_at, "finished_at": self.finished_at,
             "return_code": self.return_code, "workload_count": manifest_count,
+            "runner_pid": self.runner_pid,
             "completed": sum(row.get("status") == "completed" for row in rows),
             "failed": sum(str(row.get("status", "")).startswith("failed") for row in rows),
-            "results": rows, "logs": list(self.logs),
+            "results": enriched_rows, "active_workload": active_workload, "logs": list(self.logs),
             "report_path": self.report_root.relative_to(ROOT).as_posix(),
             "command": " ".join(shlex.quote(part) for part in command),
-            "cancellable": self.status == "running" and self.process is not None,
+            "cancellable": self.status == "running" and (self.process is not None or self.runner_pid is not None),
         }
 
 
@@ -1507,13 +1682,22 @@ def restore_suite_executions() -> None:
         try:
             item = json.loads(path.read_text())
             status = str(item.get("status", "interrupted"))
-            if status in {"queued", "running"}:
+            runner_pid = int(item["runner_pid"]) if item.get("runner_pid") else None
+            runner_alive = False
+            if runner_pid:
+                try:
+                    os.kill(runner_pid, 0)
+                    runner_alive = True
+                except (ProcessLookupError, PermissionError):
+                    pass
+            if status in {"queued", "running"} and not runner_alive:
                 status = "interrupted"
             execution = SuiteExecution(
                 str(item["id"]), str(item["suite_file"]), str(item.get("suite_name") or "Suite"),
                 str(item.get("connection") or ""), path.parent,
                 bool(item.get("continue_on_failure", False)), status,
                 item.get("started_at"), item.get("finished_at"), item.get("return_code"),
+                runner_pid=runner_pid if runner_alive else None,
                 logs=deque(item.get("logs", []), maxlen=300),
             )
             SUITE_EXECUTIONS[execution.suite_run_id] = execution
@@ -1534,6 +1718,10 @@ def _execute_suite(execution: SuiteExecution) -> None:
         "PROMETHEUS_IP": PROMETHEUS_DEFAULT_IP,
         "PROMETHEUS_PORT": PROMETHEUS_DEFAULT_PORT,
         "PROMETHEUS_DELAY": PROMETHEUS_DEFAULT_DELAY,
+        # Suite executions use the same live CSV telemetry contract as an
+        # ad-hoc UI run. Without autoflush, long workloads look stuck until
+        # JMeter happens to flush or the workload finishes.
+        "JMETER_RESULT_AUTOFLUSH": "true",
     })
     if SYSTEM_S3_REPORT_PATH:
         env["S3_REPORT_PATH"] = SYSTEM_S3_REPORT_PATH
@@ -1547,6 +1735,8 @@ def _execute_suite(execution: SuiteExecution) -> None:
             command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, start_new_session=True,
         )
+        execution.runner_pid = execution.process.pid
+        _persist_suite_execution(execution)
         assert execution.process.stdout
         with (execution.report_root / "suite_runner.log").open("a") as log:
             for line in execution.process.stdout:
@@ -1555,6 +1745,7 @@ def _execute_suite(execution: SuiteExecution) -> None:
                 log.write(line)
                 log.flush()
         execution.return_code = execution.process.wait()
+        execution.runner_pid = None
         if execution.status != "cancelled":
             execution.status = "completed" if execution.return_code == 0 else "failed"
     except Exception as exc:
@@ -1562,6 +1753,7 @@ def _execute_suite(execution: SuiteExecution) -> None:
         execution.return_code, execution.status = 1, "failed"
         LOGGER.exception("suite=%s runner failure", execution.suite_run_id)
     finally:
+        execution.runner_pid = None
         execution.finished_at = time.time()
         _persist_suite_execution(execution)
 
@@ -2263,9 +2455,10 @@ class Handler(SimpleHTTPRequestHandler):
                 suite_run_id = self.path.split("/")[3]
                 with SUITE_LOCK:
                     execution = SUITE_EXECUTIONS.get(suite_run_id)
-                if not execution or not execution.process or execution.status != "running":
+                runner_pid = execution.process.pid if execution and execution.process else (execution.runner_pid if execution else None)
+                if not execution or not runner_pid or execution.status != "running":
                     raise ValueError("Suite is not active")
-                os.killpg(execution.process.pid, signal.SIGTERM)
+                os.killpg(runner_pid, signal.SIGTERM)
                 execution.status = "cancelled"
                 _persist_suite_execution(execution)
                 self._json(execution.public())

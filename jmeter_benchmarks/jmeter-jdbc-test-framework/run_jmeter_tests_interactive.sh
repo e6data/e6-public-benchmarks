@@ -53,17 +53,38 @@ match_choice() {
         return 0
     fi
 
-    local want
+    # Prefer an exact path match. Nested workload directories commonly contain
+    # repeated names such as queries.csv and queries_fqn.csv, so silently
+    # choosing the first matching basename would run the wrong workload.
+    local normalized="${answer#./}"
+    for f in "${files[@]}"; do
+        if [ "${f#./}" = "$normalized" ] || [ "${f#"$PROJECT_ROOT"/}" = "$normalized" ]; then
+            MATCHED_FILE="$f"
+            return 0
+        fi
+    done
+
+    local want matches=0 matched=""
     want=$(basename "$answer")
     for f in "${files[@]}"; do
         local b
         b=$(basename "$f")
         if [ "$b" = "$want" ] || [ "${b%.*}" = "$want" ]; then
-            MATCHED_FILE="$f"
-            return 0
+            matches=$((matches + 1))
+            matched="$f"
         fi
     done
+    if [ "$matches" -eq 1 ]; then
+        MATCHED_FILE="$matched"
+        return 0
+    fi
+    [ "$matches" -gt 1 ] && return 2
     return 1
+}
+
+display_path() {
+    local path="$1"
+    echo "${path#"$PROJECT_ROOT"/}"
 }
 
 # Display a numbered list and get user selection
@@ -82,7 +103,7 @@ select_file() {
     echo -e "${BOLD}${prompt}${NC}"
     echo ""
     for i in "${!files[@]}"; do
-        echo "  $((i + 1))) $(basename "${files[$i]}")"
+        echo "  $((i + 1))) $(display_path "${files[$i]}")"
     done
     echo ""
 
@@ -91,6 +112,12 @@ select_file() {
         if match_choice "$choice" "${files[@]}"; then
             SELECTED_FILE="$MATCHED_FILE"
             return 0
+        else
+            match_status=$?
+        fi
+        if [ "$match_status" -eq 2 ]; then
+            echo -e "${RED}That filename exists in more than one directory. Enter its displayed relative path.${NC}"
+            continue
         fi
         echo -e "${RED}Invalid choice. Enter a number between 1 and ${count}, or a filename from the list.${NC}"
     done
@@ -274,7 +301,10 @@ echo ""
 echo -e "${BLUE}--- Step 4: Query Data File (CSV) ---${NC}"
 echo ""
 
-DATA_FILES=($(ls -1 "$DATA_DIR"/*.csv 2>/dev/null | sort))
+DATA_FILES=()
+while IFS= read -r file; do
+    DATA_FILES+=("$file")
+done < <(find "$DATA_DIR" -type f -name '*.csv' -print 2>/dev/null | LC_ALL=C sort)
 
 if [ ${#DATA_FILES[@]} -eq 0 ]; then
     echo -e "${RED}No CSV data files found in ${DATA_DIR}/${NC}"
@@ -284,7 +314,7 @@ fi
 select_file "Select query data file:" "${DATA_FILES[@]}"
 QUERY_FILE="$SELECTED_FILE"
 echo ""
-echo -e "  ${GREEN}Selected: $(basename "$QUERY_FILE")${NC}"
+echo -e "  ${GREEN}Selected: $(display_path "$QUERY_FILE")${NC}"
 echo ""
 
 # ============================================================================
@@ -339,7 +369,7 @@ echo ""
 echo "  Connection:      $(basename "$CONNECTION_FILE")"
 echo "  Test Plan:       $(basename "$TEST_PLAN")"
 echo "  Test Properties: $(basename "$TEST_PROPERTIES")"
-echo "  Query File:      $(basename "$QUERY_FILE")"
+echo "  Query File:      $(display_path "$QUERY_FILE")"
 if [ -n "$METADATA_FILE" ]; then
     echo "  Metadata:        $(basename "$METADATA_FILE")"
 fi

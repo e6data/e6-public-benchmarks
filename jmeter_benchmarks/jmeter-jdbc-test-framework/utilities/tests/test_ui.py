@@ -291,6 +291,29 @@ class UiTests(unittest.TestCase):
         self.assertEqual(values["ESTIMATED_CORES"], "60")
         self.assertEqual(values["SERVERLESS"], "N")
 
+    def test_s3_metadata_import_keeps_only_supported_non_secret_fields(self):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(server, "ROOT", Path(temp)):
+            (Path(temp) / "metadata_files").mkdir()
+
+            def download(command, **_kwargs):
+                Path(command[4]).write_text(
+                    'CLUSTER_SIZE="S-2x2"\n'
+                    'ENGINE_BUILD="release-123"\n'
+                    'PASSWORD="must-not-be-imported"\n'
+                    'UNKNOWN_FIELD="ignored"\n'
+                )
+                return SimpleNamespace(returncode=0, stderr="")
+
+            with mock.patch.object(server.subprocess, "run", side_effect=download):
+                saved = server.import_s3_input("metadata", "s3://example/profiles/release.txt")
+
+            values = server.read_preset(Path(temp) / saved)
+            self.assertEqual(saved, "metadata_files/ui_release.txt")
+            self.assertEqual(values["CLUSTER_SIZE"], "S-2x2")
+            self.assertEqual(values["ENGINE_BUILD"], "release-123")
+            self.assertNotIn("PASSWORD", values)
+            self.assertNotIn("UNKNOWN_FIELD", values)
+
     def test_only_ui_presets_can_be_overwritten_and_deleted(self):
         with tempfile.TemporaryDirectory() as temp, mock.patch.object(server, "ROOT", Path(temp)):
             (Path(temp) / "test_properties").mkdir()
