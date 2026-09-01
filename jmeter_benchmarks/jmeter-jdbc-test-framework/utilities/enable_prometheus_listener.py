@@ -53,7 +53,12 @@ def enable(source: Path, destination: Path) -> None:
     metric(definitions, "jmeter_success_failure_total", "Failed JMeter samples",
            "COUNTER", "FailureTotal", ("label",))
     ET.SubElement(plan_tree, "hashTree")
-    ET.indent(tree, space="  ")
+    # ElementTree.indent was added in Python 3.9. Formatting is cosmetic, so
+    # retain compatibility with older runner hosts (for example Amazon Linux 2
+    # with Python 3.7) instead of preventing the measured benchmark from
+    # starting when Prometheus is enabled.
+    if hasattr(ET, "indent"):
+        ET.indent(tree, space="  ")
     tree.write(destination, encoding="UTF-8", xml_declaration=True)
 
 
