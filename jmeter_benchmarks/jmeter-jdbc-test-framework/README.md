@@ -359,8 +359,8 @@ Then open <http://127.0.0.1:8765>. The UI supports:
   promotion history, and never replaces a reference automatically;
 - previewing the backend-resolved planned workload before launch and comparing
   it with actual arrivals/in-flight behavior read from JMeter's result CSV;
-- applying tracked or locally-created execution-profile and metadata presets through the
-  **Presets** tab. Presets populate visible Launch fields and never
+- applying tracked or locally-created execution and metadata profiles through the
+  **Profiles** tab. Profiles populate visible Launch fields and never
   bypass the resolved-configuration preview;
 - creating, selecting, launching, monitoring, and cancelling engine-specific
   Performance Suites through the **Performance suites** tab. The UI invokes the same
@@ -398,9 +398,15 @@ load profile without starting JMeter. The **Performance suites** page produces
 the same command, displays ordered progress and
 keeps the suite summary under `reports/suite-ui-<suite-run-id>/`. UI-created
 definitions use repository-relative `data_files/...csv` paths and are stored as
-ignored `suite_manifests/ui_*.json` files. They contain no credentials; the
+ignored `suite_manifests/ui_*.json` files. They contain no credential values; the
 connection profile is resolved independently on the runner host. Schema-v1
 query collections and schema-v2 workload suites remain compatible.
+
+Each suite workload is also a normal benchmark run: it produces the same live
+card, JMeter CSV/dashboard, per-query statistics, registry record, and optional
+S3/Query History artifacts as an ad-hoc launch. The suite page reuses those run
+cards while active and adds an ordered summary table as workloads finish;
+completed suite executions remain discoverable in Run history.
 
 For a shared catalog, place a schema-v2 `suite.json` and its non-secret CSV or
 custom properties files under one S3 prefix, for example
@@ -483,7 +489,7 @@ python3 utilities/migrate_ui_registry.py \
 ```
 
 Keep raw JMeter artifacts out of PostgreSQL. Enable the existing runner upload
-path with `BENCHMARK_UI_COPY_TO_S3=true` and `S3_REPORT_PATH=s3://...`; the
+path with `COPY_TO_S3=true` and `S3_REPORT_PATH=s3://...`; the
 registry stores run state while CSV/JSON/dashboard artifacts remain local and
 optionally in S3. Successful uploads create `s3_upload.json` locally and in S3.
 The browser never receives the database password or AWS credentials.
@@ -535,6 +541,12 @@ interactive, suite, and local UI runs. Explicit environment variables take
 precedence. For a remote EC2 runner, configure the credentials on the worker itself; they
 are deliberately excluded from the private S3 job payload. See
 `deploy/benchmark-ui.env.example` for the service-environment template.
+
+For a UI-managed runner, enable administrator-write mode, open **System
+settings**, and save these values there. The client secret is write-only and is
+never returned to the browser. Settings apply to subsequent runs; changing the
+database backend, authentication token, bind address, or AWS credentials still
+requires changing the service environment and restarting the UI.
 
 ### Optional Prometheus and Grafana observability
 
@@ -759,6 +771,10 @@ export CONCURRENT_QUERY_COUNT=8
 | `PROMETHEUS_IP`, `PROMETHEUS_PORT` | Listener bind address and port; defaults `127.0.0.1:9270` | All plans |
 | `PROMETHEUS_DELAY` | Seconds to retain the endpoint after completion; default `15` | All plans |
 | `PROMETHEUS_URL`, `GRAFANA_URL` | Optional UI/report navigation links | All plans |
+| `E6_QUERY_HISTORY_ENABLED` | Export matching e6 Query History after a measured run; default `false` | e6 JDBC runs |
+| `E6_MACHINE_CLIENT_ID`, `E6_MACHINE_CLIENT_SECRET` | OAuth2 machine-client credentials used only for Query History export | e6 JDBC runs when capture is enabled |
+| `E6_QUERY_HISTORY_EMAIL` | Optional query-user filter for Query History export | e6 JDBC runs when capture is enabled |
+| `E6_QUERY_HISTORY_WAIT_SECONDS` | Delay before export to allow Query History ingestion; default `5` | e6 JDBC runs when capture is enabled |
 
 ### Load profile CSV
 
@@ -801,6 +817,7 @@ See `CLAUDE.md` for the full reference.
 | `create_connection.sh` | Create a connection properties file (interactive) |
 | `create_test_config.sh` | Create a full test config file (interactive) |
 | `run_test.sh` | Run a test (config file or env vars) |
+| `run_benchmark_suite.sh` | Run an ordered Performance Suite through `run_test.sh` |
 | `run_jmeter_tests_interactive.sh` | Run a test (interactive prompts) |
 
 ### Sample configs
@@ -825,7 +842,11 @@ cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 ├── create_connection.sh             # Create connection properties (interactive)
 ├── create_test_config.sh            # Create test config (interactive)
 ├── run_test.sh                      # Run test (config file or env vars)
+├── run_benchmark_suite.sh           # Ordered multi-benchmark runner
 ├── run_jmeter_tests_interactive.sh  # Run test (interactive)
+├── config/
+│   └── system_settings.example.json # Shared CLI/UI runner settings template
+├── suite_manifests/                 # Tracked examples + ignored local suites
 ├── connection_properties/           # JDBC connection files
 │   └── connection.properties.template
 ├── test_properties/                 # Test parameter files
@@ -861,6 +882,9 @@ Each run gets its own directory, `reports/<run_id>/`, containing:
 - **`run_summary.json`** — the same metrics in machine-readable form
 - **`statistics.json`** and **`dashboard/`** — JMeter's authoritative per-label
   aggregate statistics and HTML dashboard; the UI displays these fields directly
+- **`e6_query_history.csv`** and **`e6_query_history_capture.json`** — optional
+  e6 workspace Query History export and capture metadata
+- **`s3_upload.json`** — verified immutable S3 destination when upload succeeds
 
 Set `GENERATE_DASHBOARD=false` to skip the HTML dashboard (~3.5 MB per run).
 
@@ -908,6 +932,28 @@ Set `S3_REPORT_PATH` to the versioned results root, such as
 profiles may independently be read from `s3://.../benchmark-workloads/...`;
 connection profiles and credentials must remain on the runner host. Existing
 metadata that defines `S3_BASE_PATH` is supported as a deprecated alias.
+
+### End-to-end suite validation
+
+Before a shared rollout, validate the complete path with a small two- or
+three-workload suite:
+
+1. Configure the runner once in `config/system_settings.json` (or **System
+   settings**) with dashboard generation, the S3 results root, and optional e6
+   Query History capture.
+2. In Launch, create or select the host-local connection profile, query files,
+   execution profile, and metadata; save each complete form as a benchmark.
+3. In **Performance suites**, create an ordered suite from those saved
+   benchmarks and review its resolved CLI command.
+4. Run it first with `--dry-run`, then launch the bounded suite from the UI or
+   with `./run_benchmark_suite.sh suite_manifests/<suite>.json`.
+5. Confirm each child run has a JMeter result CSV, `run_summary.json`, dashboard,
+   per-query statistics, registry/history row, and—when enabled—Query History
+   and `s3_upload.json`. Confirm the suite summary reports the same pass/fail
+   counts as its child runs.
+
+This exercises the same execution contract used by ad-hoc CLI, interactive,
+UI, and suite runs; the UI does not implement a separate benchmark engine.
 
 ## Developer checks
 

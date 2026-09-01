@@ -53,17 +53,19 @@ TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.j
 
 See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) for run-once, QPM, HTTP, custom profiles, reports, S3/Athena analysis, and metric definitions.
 
-To apply the same non-secret S3/observability defaults to CLI, interactive, and
-UI launches, copy `config/system_settings.example.json` to the gitignored
-`config/system_settings.json`. The existing runner uploader uses
-`COPY_TO_S3` and `S3_REPORT_PATH`; environment and suite-file overrides still
-take precedence.
+To apply the same S3, observability, retention, and optional e6 Query History
+defaults to CLI, interactive, suite, and UI launches, copy
+`config/system_settings.example.json` to the gitignored
+`config/system_settings.json`. Keep this owner-readable only: it may contain an
+OAuth machine-client secret. Explicit environment and suite overrides take
+precedence. The existing runner uploader continues to use `COPY_TO_S3` and
+`S3_REPORT_PATH`.
 
-An optional local UI can create the local connection properties file, configure
-the exact environment variables accepted by the unchanged CLI runner, annotate
-runs with cluster/build sizing metadata, show live runs, start the same workload
-on two engines sequentially or in parallel, and filter or compare completed
-reports:
+An optional Benchmark Studio UI can create private local connection profiles,
+configure the exact inputs accepted by the CLI runner, annotate runs with
+cluster/build metadata, show live telemetry and history, manage reusable
+execution/metadata profiles, run ordered Performance Suites, and compare or
+promote completed results:
 
 ```bash
 ./start_ui.sh
@@ -73,7 +75,9 @@ Open <http://127.0.0.1:8765>. The CLI remains fully supported and has no UI
 dependency. Stop only the UI with `./stop_ui.sh`.
 
 To run an ordered collection of complete saved benchmark forms, use the
-**Performance suites** page or invoke the same CLI contract directly:
+**Performance suites** page or invoke the same CLI contract directly. Each
+suite entry retains its connection-profile reference, measured/warm-up files,
+JMeter plan and settings, iterations, and run metadata:
 
 ```bash
 ./run_benchmark_suite.sh suite_manifests/example_saved_benchmarks.json
@@ -87,8 +91,8 @@ To run an ordered collection of complete saved benchmark forms, use the
 │   ├── Test-Plans/          # JDBC and HTTP JMeter plans
 │   ├── test_properties/     # runtime and load-profile examples
 │   ├── test_configs/        # runner configuration examples
-│   ├── config/              # shared non-secret runner settings example
-│   ├── utilities/           # local, S3, and Athena analysis tools
+│   ├── config/              # shared runner settings example (local file ignored)
+│   ├── utilities/           # validation, reporting, Query History, and analysis tools
 │   ├── ui/                  # optional local control and visualization layer
 │   ├── suite_manifests/     # tracked examples + ignored local suite definitions
 │   ├── run_benchmark_suite.sh # ordered multi-workload CLI runner
