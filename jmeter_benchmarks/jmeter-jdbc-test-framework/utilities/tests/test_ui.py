@@ -379,10 +379,10 @@ class UiTests(unittest.TestCase):
             run = Path(temp) / "child"
             run.mkdir()
             (run / "JmeterResultFile.csv").write_text(
-                "timeStamp,elapsed,label,success,allThreads\n"
-                "1000,0,Setup-Loader,true,1\n"
-                "1100,100,q1,true,2\n"
-                "1200,300,q2,false,2\n"
+                "timeStamp,elapsed,label,success,allThreads,Latency\n"
+                "1000,0,Setup-Loader,true,1,0\n"
+                "1100,100,q1,true,2,40\n"
+                "1200,300,q2,false,2,50\n"
             )
             metrics = server.live_metrics(Path(temp))
         self.assertEqual(metrics["samples"], 2)
@@ -393,7 +393,9 @@ class UiTests(unittest.TestCase):
         self.assertEqual(metrics["series"]["successful"], [1])
         self.assertEqual(metrics["series"]["failed"], [1])
         self.assertEqual(metrics["series"]["in_flight"], [1])
-        self.assertEqual(metrics["series"]["latency_ms"], [100])
+        self.assertEqual(metrics["series"]["latency_ms"], [40])
+        self.assertEqual(metrics["p50"], 40)
+        self.assertEqual(metrics["latency_source"], "jmeter_latency")
         self.assertEqual(metrics["duration_s"], 0.4)
         self.assertEqual(metrics["arrival_rate"], 20.0)
         self.assertEqual(metrics["completion_throughput"], 5.0)

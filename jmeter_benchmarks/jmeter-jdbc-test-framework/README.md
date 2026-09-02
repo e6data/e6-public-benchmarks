@@ -45,7 +45,7 @@ It is suitable for measuring:
 - queue build-up, saturation, drain time, and error behavior;
 - repeatable comparisons across engines or builds.
 
-JMeter measures the workload from the client. Its `elapsed` value includes driver/network/fetch time as well as engine work. For engine-only analysis, correlate each sample's query ID with engine execution, planning, queue, scan, spill, and cache metrics. Keep result fetching and row limits identical across engines, and separate cold-cache, warm-cache, and sustained-load runs.
+JMeter measures the workload from the client. The benchmark UI uses JMeter `Latency` (request start through the first response exposed by JDBC) as its primary query-latency metric. It continues to use `elapsed` for sample completion, run duration, throughput, concurrency, and JMeter's standard HTML report. `elapsed` includes the remaining network/result fetch, JDBC decoding, and client processing. For engine-only analysis, correlate each sample's query ID with engine execution, planning, queue, scan, spill, and cache metrics. Keep result fetching and row limits identical across engines, and separate cold-cache, warm-cache, and sustained-load runs.
 
 ## Steps to Run
 

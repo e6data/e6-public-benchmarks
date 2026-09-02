@@ -1318,10 +1318,15 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         pass
     if not rows:
         return {"samples": 0, "successful": 0, "failed": 0, "throughput": 0, "p50": None, "p95": None, "active": 0, "duration_s": 0, "series": {"arrivals": [], "successful": [], "failed": [], "in_flight": [], "latency_ms": []}}
-    elapsed = sorted(int(row["elapsed"]) for row in rows if row["success"] == "true")
+    successful_rows = [row for row in rows if row["success"] == "true"]
+    has_jmeter_latency = bool(successful_rows) and all(
+        (row.get("Latency") or "").isdigit() for row in successful_rows
+    )
+    latency_field = "Latency" if has_jmeter_latency else "elapsed"
+    latencies = sorted(int(row[latency_field]) for row in successful_rows)
     started = [int(row["timeStamp"]) for row in rows]
     arrival_window = max(0.001, (max(started) - min(started)) / 1000)
-    percentile = lambda pct: elapsed[min(len(elapsed) - 1, max(0, (len(elapsed) * pct + 99) // 100 - 1))] if elapsed else None
+    percentile = lambda pct: latencies[min(len(latencies) - 1, max(0, (len(latencies) * pct + 99) // 100 - 1))] if latencies else None
     origin = min(started)
     last_second = max(max(0, (int(row["timeStamp"]) + int(row.get("elapsed") or 0) - origin) // 1000) for row in rows)
     arrivals = [0] * (last_second + 1)
@@ -1345,7 +1350,7 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         in_flight_events.setdefault(end_ms, [0, 0])[0] += 1
         if row["success"] == "true":
             successful[end] += 1
-            latency_sum[end] += duration
+            latency_sum[end] += int(row[latency_field])
             latency_count[end] += 1
         else:
             failed[end] += 1
@@ -1394,7 +1399,15 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         }
     completion_window = max(0.001, (max(int(row["timeStamp"]) + int(row.get("elapsed") or 0) for row in rows) - origin) / 1000)
     return {
-        "samples": len(rows), "successful": len(elapsed), "failed": len(rows) - len(elapsed),
+        "samples": len(rows), "successful": len(latencies), "failed": len(rows) - len(latencies),
+        "latency_source": "jmeter_latency" if has_jmeter_latency else "jmeter_elapsed_legacy_fallback",
+        "latency_ms": {
+            "min": latencies[0] if latencies else None,
+            "p50": percentile(50), "p90": percentile(90),
+            "p95": percentile(95), "p99": percentile(99),
+            "max": latencies[-1] if latencies else None,
+            "mean": round(sum(latencies) / len(latencies)) if latencies else None,
+        },
         # Keep throughput completion-based so live/cancelled cards mean the
         # same thing as final run_summary.json. Arrival rate is separate.
         "throughput": round(len(rows) / completion_window, 2),
@@ -1682,6 +1695,7 @@ class SuiteExecution:
                     "failed_samples": int(run_summary.get("failed") or 0),
                     "error_pct": float(run_summary.get("error_pct") or 0),
                     "elapsed_s": run_summary.get("wall_clock_s"),
+                    "latency_source": run_summary.get("latency_source", "jmeter_elapsed_legacy_fallback"),
                     "throughput_per_s": run_summary.get("throughput_per_s"),
                     "mean_ms": latency.get("mean"),
                     "p90_ms": latency.get("p90"),
