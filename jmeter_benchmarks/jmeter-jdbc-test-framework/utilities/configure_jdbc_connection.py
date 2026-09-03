@@ -18,7 +18,12 @@ def configure(source: Path, destination: Path, connection_properties: str) -> No
         if prop is None:
             prop = ET.SubElement(data_source, "stringProp", {"name": "connectionProperties"})
         prop.text = connection_properties
-    ET.indent(tree, space="  ")
+    # ElementTree.indent was added in Python 3.9. run_test.sh intentionally
+    # uses the runner host's system Python, which may still be Python 3.7/3.8
+    # on Amazon Linux. Indentation is cosmetic; the generated JMX is valid
+    # without it.
+    if hasattr(ET, "indent"):
+        ET.indent(tree, space="  ")
     tree.write(destination, encoding="UTF-8", xml_declaration=True)
 
 
