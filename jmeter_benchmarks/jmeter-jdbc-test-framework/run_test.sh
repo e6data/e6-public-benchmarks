@@ -519,6 +519,22 @@ fi
 # CSV recycling. Preserving aliases lets JMeter aggregate the N observations of
 # each query into its standard per-label count/average/median/percentiles.
 ORIGINAL_QUERY_FILE="$QUERY_FILE"
+
+# Preserve the exact non-secret workload inputs beside the measured results.
+# REPORT_DIR is uploaded recursively, so these immutable copies make a run
+# reproducible and let users download its query/load CSVs from S3 later. Never
+# copy CONNECTION_FILE or TEST_PROPERTIES_FILE because they may contain secrets.
+mkdir -p "${REPORT_DIR}/inputs"
+cp "$ORIGINAL_QUERY_FILE" "${REPORT_DIR}/inputs/query.csv"
+if [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] \
+   && grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+    cp "$LOAD_PROFILE" "${REPORT_DIR}/inputs/load-profile.csv"
+fi
+if [ "$WARMUP_ENABLED" = "true" ] && [ -n "${WARMUP_QUERY_FILE:-}" ] \
+   && [ -f "$WARMUP_QUERY_FILE" ]; then
+    cp "$WARMUP_QUERY_FILE" "${REPORT_DIR}/inputs/warmup-query.csv"
+fi
+
 if [ "$MEASURED_ITERATIONS" -gt 1 ]; then
     REPEATED_QUERY_FILE="${REPORT_DIR}/measured-queries-${MEASURED_ITERATIONS}x.csv"
     python3 "${PROJECT_ROOT}/utilities/repeat_query_file.py" \

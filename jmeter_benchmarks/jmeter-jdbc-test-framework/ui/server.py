@@ -1502,6 +1502,16 @@ class Run:
                 "status": "failed",
                 "message": "S3 artifact upload failed; see runner output",
             }
+        input_artifacts: dict[str, str] = {}
+        if summary_paths:
+            inputs = summary_paths[-1].parent / "inputs"
+            for key, filename in (
+                ("query", "query.csv"),
+                ("load_profile", "load-profile.csv"),
+                ("warmup_query", "warmup-query.csv"),
+            ):
+                if (inputs / filename).is_file():
+                    input_artifacts[key] = filename
         public_config = self.config
         planned = self.config.get("planned_workload")
         # Older persisted run-once records predate planned query totals. Fill
@@ -1520,6 +1530,7 @@ class Run:
             "metrics": live_metrics(self.report_root), "summary": compact_summary(summary),
             "logs": list(self.logs), "report_path": str(self.report_root.relative_to(ROOT)), "report_id": report_id,
             "artifact_storage": artifact_storage,
+            "input_artifacts": input_artifacts,
             "cancellable": self.status == "running" and (
                 RUNNER_BACKEND == "local" or bool(self.remote_command_id)
             ),
@@ -2358,18 +2369,20 @@ class Handler(SimpleHTTPRequestHandler):
             raise ValueError("Request too large")
         return json.loads(self.rfile.read(length) or b"{}")
 
-    def _dashboard_asset(self, request_path: str) -> None:
+    def _artifact(self, request_path: str, query: str = "") -> None:
         remainder = request_path.removeprefix("/artifacts/")
-        encoded_id, separator, asset = remainder.partition("/dashboard/")
+        encoded_id, separator, asset = remainder.partition("/")
         if not separator:
-            raise ValueError("Unknown dashboard artifact")
-        directory = (REPORTS / unquote(encoded_id) / "dashboard").resolve()
+            raise ValueError("Unknown artifact")
+        directory = (REPORTS / unquote(encoded_id)).resolve()
         path = (directory / asset).resolve()
         if REPORTS.resolve() not in directory.parents or directory not in path.parents or not path.is_file():
-            raise ValueError("Unknown dashboard artifact")
+            raise ValueError("Unknown artifact")
         content = path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+        if parse_qs(query).get("download", [""])[0] == "1":
+            self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
@@ -2420,7 +2433,7 @@ class Handler(SimpleHTTPRequestHandler):
                 report_id = parse_qs(parsed.query).get("id", [""])[0]
                 self._json(report_details(report_id))
             elif parsed.path.startswith("/artifacts/"):
-                self._dashboard_asset(parsed.path)
+                self._artifact(parsed.path, parsed.query)
             else:
                 super().do_GET()
         except (ValueError, json.JSONDecodeError) as exc:

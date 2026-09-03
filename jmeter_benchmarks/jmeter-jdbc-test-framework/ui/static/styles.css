@@ -377,8 +377,7 @@ select:focus, input:focus { outline: 2px solid rgba(116, 28, 245, .16); border-c
 .observability-disabled { color:var(--muted); font-style:italic; }
 .runner-output summary { padding: 11px 18px; color: var(--purple-700); border-top: 1px solid var(--line); cursor: pointer; font-size: 11px; font-weight: 700; }
 .logs { background: #21163a; color: #ded7ec; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; height: 130px; overflow: auto; padding: 12px 16px; white-space: pre-wrap; }
-.run-actions { padding: 12px 18px; text-align: right; }
-.run-actions button + button { margin-left: 8px; }
+.run-actions { padding: 12px 18px; text-align: right; display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
 .detail-results { border-top: 1px solid var(--line); padding: 16px 18px; }
 .table-scroll { overflow-x: auto; }
 .detail-results .compare-table { box-shadow: none; font-size: 11px; }

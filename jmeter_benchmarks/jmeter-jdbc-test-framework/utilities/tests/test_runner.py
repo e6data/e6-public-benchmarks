@@ -86,6 +86,10 @@ class RunnerIntegrationTests(unittest.TestCase):
         self.assertEqual(summary["ignored_control_samples"], 0)
         self.assertEqual(summary["meta"]["requested_concurrency"], "4")
         self.assertEqual(len(summary["meta"]["query_sha256"]), 64)
+        self.assertEqual(
+            (run_dir / "inputs" / "query.csv").read_text(),
+            self.queries.read_text(),
+        )
 
     def test_shared_system_settings_supply_cli_defaults_and_env_wins(self):
         settings = Path(self.temp.name) / "system_settings.json"
