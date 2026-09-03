@@ -312,69 +312,12 @@ and the workload values relevant to the selected plan. The plan automatically se
 its canonical file under `test_properties/`; interactive answers override those defaults
 for that run and the script delegates execution to `run_test.sh`.
 
-## Optional local web UI
+## Optional local UI
 
-The CLI remains the primary execution interface. The optional UI calls the same
-`run_test.sh` runner and reads the same `JmeterResultFile.csv` and
-`run_summary.json` artifacts; it does not replace or modify any JMX plan.
-
-Start it from the framework directory:
-
-```bash
-./start_ui.sh
-```
-
-Stop a UI started by `start_ui.sh` without affecting JMeter runs:
-
-```bash
-./stop_ui.sh
-```
-
-The scripts use `logs/ui.pid` by default. Set `BENCHMARK_UI_PID_FILE` on both
-commands to use a different PID-file location. If that file is missing,
-`stop_ui.sh` safely checks the listener on port 8765 and stops it only when it
-is the Benchmark Studio process from this checkout. For a custom port use
-`./stop_ui.sh --port 8766`. For a systemd deployment, use
-`systemctl stop e6-benchmark-ui` instead.
-
-Then open <http://127.0.0.1:8765>. The UI supports:
-
-- creating a private local JDBC or HTTP connection properties file, or selecting
-  an existing one;
-- selecting the same `TEST_PLAN`, `QUERY_FILE`, `LOAD_PROFILE`, concurrency,
-  rate, duration, and safety variables accepted by `run_test.sh`;
-- choosing an already-local CSV, uploading a CSV from the browser, or importing
-  one from S3 using the UI host's configured AWS CLI credentials;
-- configuring each engine through four explicit concerns: where to run
-  (connection target), what to run (warm-up and measured SQL files), how to run
-  (the shared JMeter execution profile), and descriptive run context;
-- starting one engine or the same logical benchmark on two engines, with
-  independent measured/warm-up SQL files and metadata for dialect and sizing
-  differences while keeping the execution profile shared;
-- running two engines sequentially for cleaner measurements (the default) or
-  in parallel for a live side-by-side demonstration;
-- live samples, throughput, errors, active threads, latency, and runner logs;
-- opening JMeter's standard HTML dashboard after a run when
-  `GENERATE_DASHBOARD` is enabled;
-- cancelling only the selected UI-started process;
-- comparing completed `run_summary.json` reports with query-file/test-plan
-  candidate matching, run identity cards, quality warnings, rich workload/date filters,
-  visual deltas, cross-engine per-query JMeter statistics, and JSON/CSV/print
-  export. Candidate compatibility restriction is opt-in; failed or cancelled
-  runs stay hidden unless explicitly included;
-- classifying runs by internal/external scope, purpose, and validity for trend
-  analysis, then filtering those classifications in Compare;
-- explicitly promoting a completed zero-failure run as the active reference for
-  its engine and exact workload. Promotion requires a reason, preserves prior
-  promotion history, and never replaces a reference automatically;
-- previewing the backend-resolved planned workload before launch and comparing
-  it with actual arrivals/in-flight behavior read from JMeter's result CSV;
-- applying tracked or locally-created execution and metadata profiles through the
-  **Profiles** tab. Profiles populate visible Launch fields and never
-  bypass the resolved-configuration preview;
-- creating, selecting, launching, monitoring, and cancelling engine-specific
-  Performance Suites through the **Performance suites** tab. The UI invokes the same
-  `run_benchmark_suite.sh` command available to CLI users.
+The CLI is the supported public interface. An optional local Benchmark Studio
+wrapper invokes the same `run_test.sh` and reads the same artifacts; it does not
+replace the CLI or modify JMX plans. Internal deployment names, DNS, credentials,
+and network topology intentionally are not documented in this public repository.
 
 ### Performance Suites
 
@@ -514,7 +457,7 @@ inserted into PostgreSQL.
 New S3 uploads are immutable and date partitioned:
 
 ```text
-engine=<engine>/cluster_size=<size>/benchmark=<name>/run_type=<type>/
+engine=<engine>/benchmark=<name>/data_size=<size>/cluster_size=<size>/run_type=<type>/
 run_date=YYYY-MM-DD/run_id=<timestamp>-<stable-run-id>/
 ```
 
@@ -546,6 +489,11 @@ export E6_QUERY_HISTORY_EMAIL='optional-query-user@example.com'
 ```
 
 `E6_QUERY_HISTORY_WAIT_SECONDS` defaults to `5` to allow history ingestion.
+Deployments whose Query History is eventually consistent should increase it;
+`300` seconds is a practical value for e6data, Databricks, or Snowflake history
+systems that may take several minutes to publish completed queries. During
+this interval JMeter measurement is already finished, but the UI run remains
+`running`/`finalizing` until capture and the subsequent S3 upload complete.
 The shared settings file and the environment variables work for CLI,
 interactive, suite, and local UI runs. Explicit environment variables take
 precedence. For a remote EC2 runner, configure the credentials on the worker itself; they
@@ -659,9 +607,9 @@ the browser or stored in run metadata. Existing-profile selection is available
 through `CONNECTION_FILE mode`. Inputs are restricted to known test plans and
 files in `connection_properties/`, `data_files/`, and `test_properties/`. Local
 browser uploads and S3 imports are copied into those git-ignored input
-directories before the unchanged runner starts. Result upload to S3 remains
-disabled for UI runs. The UI produces normal reports under
-`reports/ui-<run-id>/`.
+directories before the unchanged runner starts. UI runs use the shared
+`COPY_TO_S3` and `S3_REPORT_PATH` settings exactly like CLI and suite runs. The
+UI produces normal reports under `reports/ui-<run-id>/`.
 
 The live workload chart is calculated from the actively growing
 `JmeterResultFile.csv`; JMeter does not produce its standard HTML graphs while a
@@ -670,14 +618,15 @@ JMeter dashboard** for the standard report. Dashboard generation is enabled by
 default in the UI and can be disabled with `GENERATE_DASHBOARD` for lower disk
 usage.
 
-The server binds to localhost by default. On EC2, prefer SSH port forwarding:
+The server binds to localhost by default. On EC2, SSH port forwarding requires
+no remote listener or security-group ingress:
 
 ```bash
 ssh -L 8765:127.0.0.1:8765 user@your-ec2-host
 ```
 
-Then open `http://127.0.0.1:8765` locally. Binding to a public interface has no
-built-in authentication and should only be done behind authenticated HTTPS.
+Then open `http://127.0.0.1:8765` locally. Internal deployment configuration is
+outside the scope of this public guide.
 
 UI diagnostics are written to `logs/ui.log`. Each UI-started benchmark also
 writes its complete runner output to `reports/ui-<run-id>/ui_runner.log`, while
@@ -933,6 +882,11 @@ Each run gets its own directory, `reports/<run_id>/`, containing:
 - **`e6_query_history.csv`** and **`e6_query_history_capture.json`** — optional
   e6 workspace Query History export and capture metadata
 - **`s3_upload.json`** — verified immutable S3 destination when upload succeeds
+- **`inputs/query.csv`**, **`inputs/warmup-query.csv`**, and
+  **`inputs/load-profile.csv`** — exact non-secret workload inputs used by the
+  measured run (only applicable files are present); these are included in S3
+  uploads and exposed as UI downloads. Connection and test-property files are
+  deliberately excluded because they may contain credentials.
 
 Set `GENERATE_DASHBOARD=false` to skip the HTML dashboard (~3.5 MB per run).
 
@@ -980,6 +934,15 @@ Set `S3_REPORT_PATH` to the versioned results root, such as
 profiles may independently be read from `s3://.../benchmark-workloads/...`;
 connection profiles and credentials must remain on the runner host. Existing
 metadata that defines `S3_BASE_PATH` is supported as a deprecated alias.
+
+When Query History enrichment is enabled, compare like-for-like fields:
+JMeter `Latency` normally aligns with Query History client/total time, while
+Query History execution duration excludes planning, queuing, transport, and
+driver response overhead. `LIMIT_RESULTSET` can also make a query appear
+successful to JMeter but `CANCELLED` in engine history: JDBC exposed a valid
+response and JMeter deliberately closed the result set after reaching the row
+limit. Treat that as a result-consumption status difference, not automatically
+as an engine execution failure, and retain both artifacts for audit.
 
 ### End-to-end suite validation
 

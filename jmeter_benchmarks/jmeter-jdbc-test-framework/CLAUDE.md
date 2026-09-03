@@ -116,6 +116,20 @@ container during setup, use `./setup_jmeter.sh --with-postgres`. Start and stop
 the optional UI with `./start_ui.sh` and `./stop_ui.sh`; the CLI runner remains
 independent of the UI.
 
+Benchmark Studio reports JMeter `Latency` as the primary query-engine metric
+(request start to first JDBC response). Do not replace it with `elapsed` in UI
+cards: elapsed additionally includes result iteration/materialization and
+client processing. Duration, throughput, and in-flight reconstruction still
+use elapsed completion timestamps. The standard JMeter HTML report remains
+unchanged and uses its normal elapsed/sample-time statistics.
+
+Completed measured runs snapshot non-secret reproducibility inputs under
+`inputs/` before recursive S3 upload. Never add connection properties or test
+property files to that snapshot because they may contain credentials. e6 Query
+History capture occurs before S3 upload and may intentionally wait several
+minutes for ingestion; sequential comparison legs wait for this full
+finalization, while parallel legs share load-generator resources.
+
 **Critical**: Java 17 is required. The interactive script validates this before running.
 
 ### Create Connection Properties (First Time Setup)

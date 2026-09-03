@@ -64,18 +64,9 @@ OAuth machine-client secret. Explicit environment and suite overrides take
 precedence. The existing runner uploader continues to use `COPY_TO_S3` and
 `S3_REPORT_PATH`.
 
-An optional Benchmark Studio UI can create private local connection profiles,
-configure the exact inputs accepted by the CLI runner, annotate runs with
-cluster/build metadata, show live telemetry and history, manage reusable
-execution/metadata profiles, run ordered Performance Suites, and compare or
-promote completed results:
-
-```bash
-./start_ui.sh
-```
-
-Open <http://127.0.0.1:8765>. The CLI remains fully supported and has no UI
-dependency. Stop only the UI with `./stop_ui.sh`.
+An optional local Benchmark Studio wrapper is included for internal evaluation.
+It invokes the same `run_test.sh` contract and does not replace the documented
+CLI workflow.
 
 To run an ordered collection of complete saved benchmark forms, use the
 **Performance suites** page or invoke the same CLI contract directly. Each

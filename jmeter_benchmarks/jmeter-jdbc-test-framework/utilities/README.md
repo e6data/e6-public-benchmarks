@@ -203,27 +203,36 @@ The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. T
 
 ## S3 Path Structure
 
-Results are stored in a 5-level partitioned hierarchy:
+Current runner results are stored in an immutable partitioned hierarchy:
 
 ```
 s3://bucket/jmeter-results/
   engine=<e6data|dbr>/
-    cluster_size=<XS-1x1|S-2x2|M-4x4|S-4x4|etc>/
-      benchmark=<tpcds_29_1tb|etc>/
-        run_type=<concurrency_X|sequential>/
-          run_id=<YYYYMMDD-HHMMSS>/
-            statistics.json
-            JmeterResultFile.csv
-            AggregateReport.csv
-            test_result.json
-          latest.json
+    benchmark=<tpcds_29_1tb|etc>/
+      data_size=<1tb|etc>/
+        cluster_size=<XS-1x1|S-2x2|M-4x4|S-4x4|etc>/
+          run_type=<concurrency_X|sequential>/
+            run_date=<YYYY-MM-DD>/
+              run_id=<timestamp>-<stable-run-id>/
+                statistics.json
+                JmeterResultFile.csv
+                AggregateReport.csv
+                run_summary.json
+                e6_query_history.csv          # optional
+                inputs/query.csv
+                inputs/warmup-query.csv       # when warm-up is enabled
+                inputs/load-profile.csv       # profile-driven plans
 ```
+
+The `inputs/` files are immutable non-secret snapshots for reproduction and UI
+download. JDBC connection/test-property files are not uploaded. Older utility
+scripts may also recognize the legacy engine/cluster/benchmark/run-type layout.
 
 **Discover available paths:**
 ```bash
 aws s3 ls s3://your-s3-bucket/jmeter-results/                              # engines
-aws s3 ls s3://your-s3-bucket/jmeter-results/engine=e6data/                # cluster sizes
-aws s3 ls s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/  # benchmarks
+aws s3 ls s3://your-s3-bucket/jmeter-results/engine=e6data/                # benchmarks
+aws s3 ls s3://your-s3-bucket/jmeter-results/engine=e6data/benchmark=tpcds_29_1tb/  # data sizes
 ```
 
 ## Quick Start
