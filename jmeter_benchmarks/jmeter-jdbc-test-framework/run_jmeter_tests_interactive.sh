@@ -53,17 +53,38 @@ match_choice() {
         return 0
     fi
 
-    local want
+    # Prefer an exact path match. Nested workload directories commonly contain
+    # repeated names such as queries.csv and queries_fqn.csv, so silently
+    # choosing the first matching basename would run the wrong workload.
+    local normalized="${answer#./}"
+    for f in "${files[@]}"; do
+        if [ "${f#./}" = "$normalized" ] || [ "${f#"$PROJECT_ROOT"/}" = "$normalized" ]; then
+            MATCHED_FILE="$f"
+            return 0
+        fi
+    done
+
+    local want matches=0 matched=""
     want=$(basename "$answer")
     for f in "${files[@]}"; do
         local b
         b=$(basename "$f")
         if [ "$b" = "$want" ] || [ "${b%.*}" = "$want" ]; then
-            MATCHED_FILE="$f"
-            return 0
+            matches=$((matches + 1))
+            matched="$f"
         fi
     done
+    if [ "$matches" -eq 1 ]; then
+        MATCHED_FILE="$matched"
+        return 0
+    fi
+    [ "$matches" -gt 1 ] && return 2
     return 1
+}
+
+display_path() {
+    local path="$1"
+    echo "${path#"$PROJECT_ROOT"/}"
 }
 
 # Display a numbered list and get user selection
@@ -82,7 +103,7 @@ select_file() {
     echo -e "${BOLD}${prompt}${NC}"
     echo ""
     for i in "${!files[@]}"; do
-        echo "  $((i + 1))) $(basename "${files[$i]}")"
+        echo "  $((i + 1))) $(display_path "${files[$i]}")"
     done
     echo ""
 
@@ -91,6 +112,12 @@ select_file() {
         if match_choice "$choice" "${files[@]}"; then
             SELECTED_FILE="$MATCHED_FILE"
             return 0
+        else
+            match_status=$?
+        fi
+        if [ "$match_status" -eq 2 ]; then
+            echo -e "${RED}That filename exists in more than one directory. Enter its displayed relative path.${NC}"
+            continue
         fi
         echo -e "${RED}Invalid choice. Enter a number between 1 and ${count}, or a filename from the list.${NC}"
     done
@@ -202,199 +229,66 @@ echo -e "  ${DIM}Type: ${PLAN_TYPE}${NC}"
 echo ""
 
 # ============================================================================
-# Step 3: Test Properties (select existing or create new)
+# Step 3: Canonical Test Properties and Workload Values
 # ============================================================================
 
-echo -e "${BLUE}--- Step 3: Test Properties ---${NC}"
+echo -e "${BLUE}--- Step 3: Workload Configuration ---${NC}"
 echo ""
 
-# List existing test properties files (exclude templates and CSVs)
-TEST_PROPS_FILES=($(ls -1 "$TEST_PROPS_DIR"/*.properties 2>/dev/null | grep -v '\.template$' | sort))
+case "$PLAN_TYPE" in
+    concurrency)          TEST_PROPERTIES="$TEST_PROPS_DIR/fixed_concurrency.properties" ;;
+    run_once)             TEST_PROPERTIES="$TEST_PROPS_DIR/run_once.properties" ;;
+    qps)                  TEST_PROPERTIES="$TEST_PROPS_DIR/constant_qps.properties" ;;
+    qpm)                  TEST_PROPERTIES="$TEST_PROPS_DIR/constant_qpm.properties" ;;
+    qps_loadprofile)      TEST_PROPERTIES="$TEST_PROPS_DIR/variable_arrivals.properties" ;;
+    variable_concurrency) TEST_PROPERTIES="$TEST_PROPS_DIR/variable_concurrency.properties" ;;
+esac
 
-echo -e "${BOLD}Select test properties:${NC}"
-echo ""
-echo "  N) Create new test properties"
-
-if [ ${#TEST_PROPS_FILES[@]} -gt 0 ]; then
-    echo ""
-    echo -e "  ${DIM}--- Or select existing ---${NC}"
-    for i in "${!TEST_PROPS_FILES[@]}"; do
-        echo "  $((i + 1))) $(basename "${TEST_PROPS_FILES[$i]}")"
-    done
+if [ ! -f "$TEST_PROPERTIES" ]; then
+    echo -e "${RED}Canonical properties file is missing: ${TEST_PROPERTIES}${NC}"
+    exit 1
 fi
+
+property_default() {
+    local key="$1" fallback="$2" value
+    value=$(awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$TEST_PROPERTIES")
+    echo "${value:-$fallback}"
+}
+
+echo -e "  Canonical properties: ${GREEN}$(basename "$TEST_PROPERTIES")${NC}"
+echo -e "  ${DIM}Only values relevant to the selected plan are requested; they override this file for this run.${NC}"
 echo ""
 
-while true; do
-    read -p "Enter choice [N or 1-${#TEST_PROPS_FILES[@]}] or filename: " props_choice
-    if [[ "$props_choice" =~ ^[Nn]$ ]]; then
-        break
-    fi
-    if [ ${#TEST_PROPS_FILES[@]} -gt 0 ] && match_choice "$props_choice" "${TEST_PROPS_FILES[@]}"; then
-        TEST_PROPERTIES="$MATCHED_FILE"
-        break
-    fi
-    echo -e "${RED}Invalid choice. Enter N for new, a number, or a filename from the list.${NC}"
-done
-
-# Create new test properties if selected
-if [[ "$props_choice" =~ ^[Nn]$ ]]; then
-    echo ""
-    echo -e "${BLUE}--- Create Test Properties ---${NC}"
-    echo ""
-
-    # Common parameters
-    REPORT_PATH="reports"
-    COPY_TO_S3=$(prompt_with_default "Copy results to S3? (true/false)" "false")
-    S3_REPORT_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
-    RANDOM_ORDER=$(prompt_with_default "Random query order? (true/false)" "false")
-    RECYCLE_ON_EOF=$(prompt_with_default "Recycle queries at EOF? (true/false)" "false")
-    QUERY_TIMEOUT=$(prompt_with_default "Query timeout (seconds)" "300")
-    LIMIT_RESULTSET=$(prompt_with_default "Result set limit" "1000")
-
-    # Plan-specific parameters
-    case "$PLAN_TYPE" in
-        concurrency)
-            CONCURRENT_QUERY_COUNT=$(prompt_with_default "Concurrent query count" "4")
-            RAMP_UP_TIME=$(prompt_with_default "Ramp up time (seconds)" "1")
-            RAMP_UP_STEPS=$(prompt_with_default "Ramp up steps" "1")
-            HOLD_PERIOD=$(prompt_with_default "Hold period (seconds)" "300")
-            FILENAME_PREFIX="concurrency_${CONCURRENT_QUERY_COUNT}"
-            ;;
-        run_once)
-            CONCURRENT_QUERY_COUNT=$(prompt_with_default "Number of threads" "1")
-            RAMP_UP_TIME="0"
-            RAMP_UP_STEPS="1"
-            HOLD_PERIOD=$(prompt_with_default "Hold period - set long enough for all queries (seconds)" "300")
-            RECYCLE_ON_EOF="false"
-            STOP_THREAD_ON_EOF="true"
-            FILENAME_PREFIX="run_once_${CONCURRENT_QUERY_COUNT}threads"
-            ;;
-        qps)
-            QPS=$(prompt_with_default "Queries per second (QPS)" "1")
-            HOLD_PERIOD=$(prompt_with_default "Hold period (seconds)" "300")
-            CONCURRENT_QUERY_COUNT="1"
-            RAMP_UP_TIME="0"
-            RAMP_UP_STEPS="1"
-            FILENAME_PREFIX="qps_${QPS}"
-            ;;
-        qpm)
-            QPM=$(prompt_with_default "Queries per minute (QPM)" "10")
-            HOLD_PERIOD=$(prompt_with_default "Hold period (seconds)" "300")
-            CONCURRENT_QUERY_COUNT="1"
-            RAMP_UP_TIME="0"
-            RAMP_UP_STEPS="1"
-            FILENAME_PREFIX="qpm_${QPM}"
-            ;;
-        qps_loadprofile)
-            echo ""
-            echo -e "${DIM}Available load profiles in ${TEST_PROPS_DIR}/:${NC}"
-            LOAD_PROFILES=($(ls -1 "$TEST_PROPS_DIR"/*.csv 2>/dev/null | sort))
-            if [ ${#LOAD_PROFILES[@]} -gt 0 ]; then
-                for i in "${!LOAD_PROFILES[@]}"; do
-                    echo "  $((i + 1))) $(basename "${LOAD_PROFILES[$i]}")"
-                done
-                echo ""
-                read -p "Select load profile [1-${#LOAD_PROFILES[@]}]: " lp_choice
-                LOAD_PROFILE="${LOAD_PROFILES[$((lp_choice - 1))]}"
-            else
-                read -p "Load profile CSV path: " LOAD_PROFILE
-            fi
-            HOLD_PERIOD=$(prompt_with_default "Hold period (seconds)" "600")
-            CONCURRENT_QUERY_COUNT="1"
-            RAMP_UP_TIME="0"
-            RAMP_UP_STEPS="1"
-            RECYCLE_ON_EOF="true"
-            FILENAME_PREFIX="qps_loadprofile"
-            ;;
-        variable_concurrency)
-            echo ""
-            echo -e "${DIM}Available concurrency profiles in ${TEST_PROPS_DIR}/${NC}"
-            echo -e "${DIM}  (5 columns: Threads,StartTime,StartupTime,HoldTime,ShutdownTime)${NC}"
-            # Only 5-column CSVs suit this plan; a 3-column arrivals profile would
-            # be rejected by the injector, so do not offer it here.
-            LOAD_PROFILES=()
-            for c in $(ls -1 "$TEST_PROPS_DIR"/*.csv 2>/dev/null | sort); do
-                cols=$(grep -vE '^\s*$' "$c" | head -1 | awk -F, '{print NF}')
-                [ "${cols:-0}" -ge 5 ] && LOAD_PROFILES+=("$c")
-            done
-            if [ ${#LOAD_PROFILES[@]} -gt 0 ]; then
-                for i in "${!LOAD_PROFILES[@]}"; do
-                    echo "  $((i + 1))) $(basename "${LOAD_PROFILES[$i]}")"
-                done
-                echo ""
-                read -p "Select concurrency profile [1-${#LOAD_PROFILES[@]}]: " lp_choice
-                LOAD_PROFILE="${LOAD_PROFILES[$((lp_choice - 1))]}"
-            else
-                read -p "Concurrency profile CSV path: " LOAD_PROFILE
-            fi
-            CONCURRENT_QUERY_COUNT="1"
-            RAMP_UP_TIME="0"
-            RAMP_UP_STEPS="1"
-            RECYCLE_ON_EOF="true"
-            FILENAME_PREFIX="variable_concurrency"
-            ;;
-    esac
-
-    # Generate filename
-    PROPS_FILENAME="${FILENAME_PREFIX}_test.properties"
-    TEST_PROPERTIES="${TEST_PROPS_DIR}/${PROPS_FILENAME}"
-
-    # Check if file exists
-    if [ -f "$TEST_PROPERTIES" ]; then
-        echo ""
-        echo -e "${YELLOW}File already exists: ${PROPS_FILENAME}${NC}"
-        read -p "Overwrite? (y/n) [y]: " overwrite
-        overwrite=${overwrite:-y}
-        if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
-            echo "Enter a different name (without .properties extension):"
-            read -p "Filename: " custom_name
-            PROPS_FILENAME="${custom_name}.properties"
-            TEST_PROPERTIES="${TEST_PROPS_DIR}/${PROPS_FILENAME}"
+case "$PLAN_TYPE" in
+    concurrency)
+        CONCURRENT_QUERY_COUNT=$(prompt_with_default "Concurrent query count" "$(property_default CONCURRENT_QUERY_COUNT 4)")
+        RAMP_UP_TIME=$(prompt_with_default "Ramp up time (seconds; 0 starts immediately)" "$(property_default RAMP_UP_TIME 0)")
+        RAMP_UP_STEPS=$(prompt_with_default "Ramp up steps" "$(property_default RAMP_UP_STEPS 1)")
+        HOLD_PERIOD=$(prompt_with_default "Hold period (seconds)" "$(property_default HOLD_PERIOD 300)")
+        ;;
+    run_once)
+        CONCURRENT_QUERY_COUNT=$(prompt_with_default "Concurrent query count (1 is sequential)" "1")
+        MEASURED_ITERATIONS=$(prompt_with_default "Measured iterations" "1")
+        RAMP_UP_TIME=0
+        RAMP_UP_STEPS=1
+        RECYCLE_ON_EOF=false
+        ;;
+    qps)
+        QPS=$(prompt_with_default "Queries per second (QPS)" "$(property_default QPS 1)")
+        HOLD_PERIOD=$(prompt_with_default "Duration (seconds)" "$(property_default HOLD_PERIOD 300)")
+        ;;
+    qpm)
+        QPM=$(prompt_with_default "Queries per minute (QPM)" "$(property_default QPM 10)")
+        HOLD_PERIOD=$(prompt_with_default "Duration (seconds)" "$(property_default HOLD_PERIOD 300)")
+        ;;
+    qps_loadprofile|variable_concurrency)
+        read -p "Load profile CSV path (local or s3://): " LOAD_PROFILE
+        if [ -z "$LOAD_PROFILE" ]; then
+            echo -e "${RED}A load profile is required for this plan.${NC}"
+            exit 1
         fi
-    fi
-
-    # Write test properties file
-    {
-        echo "# JMeter Test Properties"
-        echo "# Plan type: ${PLAN_TYPE}"
-        echo "# Created: $(date +%Y-%m-%d)"
-        echo ""
-        echo "JMETER_HOME="
-        echo ""
-        echo "REPORT_PATH=${REPORT_PATH}"
-        echo "COPY_TO_S3=${COPY_TO_S3}"
-        echo "S3_REPORT_PATH=${S3_REPORT_PATH}"
-        echo ""
-        echo "CONCURRENT_QUERY_COUNT=${CONCURRENT_QUERY_COUNT}"
-        echo "RAMP_UP_TIME=${RAMP_UP_TIME}"
-        echo "RAMP_UP_STEPS=${RAMP_UP_STEPS}"
-        echo "HOLD_PERIOD=${HOLD_PERIOD}"
-
-        if [ -n "${QPM:-}" ]; then
-            echo "QPM=${QPM}"
-        fi
-        if [ -n "${QPS:-}" ]; then
-            echo "QPS=${QPS}"
-        fi
-        if [ -n "${LOAD_PROFILE:-}" ]; then
-            echo "LOAD_PROFILE=${LOAD_PROFILE}"
-        fi
-        if [ -n "${STOP_THREAD_ON_EOF:-}" ]; then
-            echo "STOP_THREAD_ON_EOF=${STOP_THREAD_ON_EOF}"
-        fi
-
-        echo ""
-        echo "RANDOM_ORDER=${RANDOM_ORDER}"
-        echo "RECYCLE_ON_EOF=${RECYCLE_ON_EOF}"
-        echo ""
-        echo "QUERY_TIMEOUT=${QUERY_TIMEOUT}"
-        echo "LIMIT_RESULTSET=${LIMIT_RESULTSET}"
-        echo "MAX_CONCURRANCY=900"
-    } > "$TEST_PROPERTIES"
-
-    echo ""
-    echo -e "  ${GREEN}Created: ${PROPS_FILENAME}${NC}"
-fi
+        ;;
+esac
 
 echo ""
 echo -e "  ${GREEN}Using: $(basename "$TEST_PROPERTIES")${NC}"
@@ -407,7 +301,10 @@ echo ""
 echo -e "${BLUE}--- Step 4: Query Data File (CSV) ---${NC}"
 echo ""
 
-DATA_FILES=($(ls -1 "$DATA_DIR"/*.csv 2>/dev/null | sort))
+DATA_FILES=()
+while IFS= read -r file; do
+    DATA_FILES+=("$file")
+done < <(find "$DATA_DIR" -type f -name '*.csv' -print 2>/dev/null | LC_ALL=C sort)
 
 if [ ${#DATA_FILES[@]} -eq 0 ]; then
     echo -e "${RED}No CSV data files found in ${DATA_DIR}/${NC}"
@@ -417,7 +314,7 @@ fi
 select_file "Select query data file:" "${DATA_FILES[@]}"
 QUERY_FILE="$SELECTED_FILE"
 echo ""
-echo -e "  ${GREEN}Selected: $(basename "$QUERY_FILE")${NC}"
+echo -e "  ${GREEN}Selected: $(display_path "$QUERY_FILE")${NC}"
 echo ""
 
 # ============================================================================
@@ -472,7 +369,7 @@ echo ""
 echo "  Connection:      $(basename "$CONNECTION_FILE")"
 echo "  Test Plan:       $(basename "$TEST_PLAN")"
 echo "  Test Properties: $(basename "$TEST_PROPERTIES")"
-echo "  Query File:      $(basename "$QUERY_FILE")"
+echo "  Query File:      $(display_path "$QUERY_FILE")"
 if [ -n "$METADATA_FILE" ]; then
     echo "  Metadata:        $(basename "$METADATA_FILE")"
 fi
@@ -507,6 +404,10 @@ echo -e "${DIM}Key parameters from test properties:${NC}"
 grep -E "^(CONCURRENT_QUERY_COUNT|QPS|QPM|HOLD_PERIOD|COPY_TO_S3|RECYCLE_ON_EOF)=" "$TEST_PROPERTIES" 2>/dev/null | while read -r line; do
     echo "  $line"
 done
+echo -e "${DIM}Interactive overrides for this run:${NC}"
+for key in CONCURRENT_QUERY_COUNT MEASURED_ITERATIONS QPS QPM HOLD_PERIOD RAMP_UP_TIME RAMP_UP_STEPS LOAD_PROFILE; do
+    [ -n "${!key:-}" ] && echo "  ${key}=${!key}"
+done
 echo ""
 
 # Source metadata if present (to get COPY_TO_S3 override, ENGINE, etc.)
@@ -526,8 +427,27 @@ fi
 
 echo ""
 
+# Interactive mode is a configuration collector only. The canonical runner
+# owns property precedence, S3 materialization, JMeter invocation, reporting,
+# and uploads for CLI, UI, and interactive runs alike. Existing exported
+# variables remain in the environment and therefore override the selected
+# test-properties file inside run_test.sh.
+echo -e "${BLUE}Delegating to the canonical runner...${NC}"
+for key in CONCURRENT_QUERY_COUNT MEASURED_ITERATIONS QPS QPM HOLD_PERIOD RAMP_UP_TIME RAMP_UP_STEPS LOAD_PROFILE RECYCLE_ON_EOF; do
+    [ -n "${!key:-}" ] && export "$key"
+done
+
+exec env \
+    CONNECTION_FILE="$CONNECTION_FILE" \
+    TEST_PLAN="$TEST_PLAN" \
+    TEST_PROPERTIES_FILE="$TEST_PROPERTIES" \
+    QUERY_FILE="$QUERY_FILE" \
+    METADATA_FILE="${METADATA_FILE:-}" \
+    "${PROJECT_ROOT}/run_test.sh"
+
 # ============================================================================
-# Build and run JMeter command
+# Legacy implementation retained below temporarily for history; exec above
+# makes it unreachable. It will be removed after rollout validation.
 # ============================================================================
 
 # Values set in the environment win over both the metadata file and the
@@ -727,6 +647,10 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     fi
     CAPTURE_ARGS+=(--meta "engine=${ENGINE:-unknown}" --meta "cluster_size=${CLUSTER_SIZE:-unknown}")
     CAPTURE_ARGS+=(--meta "benchmark=${BENCHMARK_TYPE:-unknown}" --meta "run_type=${RUN_TYPE}")
+    for _meta_var in RUN_SCOPE RUN_PURPOSE RUN_VALIDITY; do
+        _meta_value="${!_meta_var:-}"
+        [ -n "$_meta_value" ] && CAPTURE_ARGS+=(--meta "${_meta_var}=${_meta_value}")
+    done
     CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
     [ -n "${GENERATED_PLAN:-}" ] && CAPTURE_ARGS+=(--meta "generated_plan=$(basename "$GENERATED_PLAN")")
     QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field sha256)

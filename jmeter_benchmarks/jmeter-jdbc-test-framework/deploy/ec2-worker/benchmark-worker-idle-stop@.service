@@ -1,0 +1,8 @@
+[Unit]
+Description=Stop benchmark EC2 worker after %i idle minutes
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/e6-benchmark-worker.env
+ExecStart=/usr/local/libexec/e6-benchmark-worker-idle-stop %i

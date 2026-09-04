@@ -19,7 +19,8 @@ Metric definitions (stated so numbers are reproducible):
   arrival     sample timeStamp            (JMeter records query START)
   completion  timeStamp + elapsed
   in-flight   arrivals - completions so far, at 1-second resolution
-  percentiles nearest-rank over successful samples
+  latency     JMeter Latency (request start through first response)
+  percentiles nearest-rank over successful sample latency
 """
 
 import argparse
@@ -92,7 +93,13 @@ def peak_inflight_per_second(starts, ends, t0, buckets):
 def analyse(rows, profile_steps=None, profile_kind="arrivals"):
     ok = [r for r in rows if r["success"] == "true"]
     failed_rows = [r for r in rows if r["success"] != "true"]
-    lat = sorted(int(r["elapsed"]) for r in ok)
+    # Latency is the closest engine-neutral JMeter measurement to query-engine
+    # response time: it stops when JDBC exposes the first response. Keep
+    # elapsed for completion, wall-clock, throughput and in-flight accounting.
+    # The fallback permits analysis of legacy JTL files that predate Latency.
+    has_jmeter_latency = bool(ok) and all((r.get("Latency") or "").isdigit() for r in ok)
+    latency_field = "Latency" if has_jmeter_latency else "elapsed"
+    lat = sorted(int(r[latency_field]) for r in ok)
     starts = [int(r["timeStamp"]) for r in rows]
     ends = [int(r["timeStamp"]) + int(r["elapsed"]) for r in rows]
     t0, tend = min(starts), max(ends)
@@ -110,6 +117,17 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
         end = int(row["timeStamp"]) + int(row["elapsed"])
         successful_comp[(end - t0) // 1000] += 1
     inflight = peak_inflight_per_second(starts, ends, t0, n)
+    # A sampler's millisecond timestamp and elapsed value can differ by one
+    # millisecond at a same-thread hand-off. The raw interval sweep would then
+    # report more simultaneous queries than JMeter had worker threads. JDBC
+    # samplers are synchronous, so JMeter's recorded thread count is a hard
+    # upper bound for query concurrency.
+    thread_cap = max(
+        (int(row.get("allThreads") or row.get("grpThreads") or 0) for row in rows),
+        default=0,
+    )
+    if thread_cap:
+        inflight = [min(value, thread_cap) for value in inflight]
 
     active_completion_buckets = [value for value in comp if value > 0]
 
@@ -129,6 +147,8 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
         return lat[math.ceil(q * len(lat)) - 1] if lat else None
 
     out = {
+        "metrics_version": 2,
+        "latency_source": "jmeter_latency" if has_jmeter_latency else "jmeter_elapsed_legacy_fallback",
         "samples": len(rows),
         "successful": len(ok),
         "failed": len(rows) - len(ok),
@@ -239,7 +259,11 @@ def markdown(run_id, s, meta):
               "_No successful samples — every query failed, so there are no latencies to report._",
               ""]
     else:
-        L += ["## Latency (ms)", "",
+        source = ("JMeter `Latency` (request start through first response)"
+                  if s.get("latency_source") == "jmeter_latency"
+                  else "JMeter `elapsed` (legacy fallback; full response time)")
+        L += ["## Query latency (ms)", "",
+              f"_Source: {source}._", "",
               "| min | p50 | p90 | p95 | p99 | max | mean |", "|---|---|---|---|---|---|---|",
               f"| {lt['min']} | {lt['p50']} | {lt['p90']} | {lt['p95']} | {lt['p99']} | {lt['max']} | {lt['mean']} |",
               "", "_Percentiles are nearest-rank over successful samples._", ""]

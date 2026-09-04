@@ -1,0 +1,16 @@
+{
+  "copy_to_s3": false,
+  "s3_report_path": "s3://your-bucket/benchmark-results/v1",
+  "generate_dashboard": true,
+  "prometheus_enabled": false,
+  "prometheus_port": 9270,
+  "prometheus_url": "http://localhost:9090",
+  "grafana_url": "http://localhost:3000/d/jbtLA0-Wk5/jmeter?orgId=1",
+  "e6_query_history_enabled": false,
+  "e6_machine_client_id": "",
+  "e6_machine_client_secret": "",
+  "e6_query_history_email": "",
+  "e6_query_history_wait_seconds": 5,
+  "retention_days": 30,
+  "max_local_report_gb": 100
+}

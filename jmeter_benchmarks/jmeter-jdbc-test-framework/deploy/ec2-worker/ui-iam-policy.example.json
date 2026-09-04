@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StartOnlyConfiguredWorker",
+      "Effect": "Allow",
+      "Action": ["ec2:StartInstances", "ec2:DescribeInstances"],
+      "Resource": "arn:aws:ec2:REGION:ACCOUNT_ID:instance/INSTANCE_ID"
+    },
+    {
+      "Sid": "ObserveWorker",
+      "Effect": "Allow",
+      "Action": ["ssm:DescribeInstanceInformation", "ssm:GetCommandInvocation", "ssm:SendCommand", "ssm:CancelCommand"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PrivateJobExchange",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::YOUR_PRIVATE_BUCKET",
+        "arn:aws:s3:::YOUR_PRIVATE_BUCKET/benchmark-control/*"
+      ]
+    }
+  ]
+}

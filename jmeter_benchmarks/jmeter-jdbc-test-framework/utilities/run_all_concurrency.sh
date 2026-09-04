@@ -277,31 +277,20 @@ for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
     QUERY_FILE_PATH="$QUERY_FILE"
     [ -f "$QUERY_FILE_PATH" ] || QUERY_FILE_PATH="data_files/$QUERY_FILE"
 
-    # run_test.sh takes env vars, not a properties file, so load the template's
-    # properties file here and export its settings. Without this the sweep would
-    # silently fall back to run_test.sh defaults - MAX_CONCURRANCY 900 instead of
-    # the file's value, for example - while still printing the file name above as
-    # though it were in effect.
+    # Pass the canonical plan properties file to the common runner. The sweep's
+    # concurrency is an explicit environment override and therefore becomes a
+    # -JCONCURRENT_QUERY_COUNT argument after both -q files are loaded.
     TEST_PROPS_PATH="$TEST_PROPS"
     [ -f "$TEST_PROPS_PATH" ] || TEST_PROPS_PATH="test_properties/$TEST_PROPS"
-    if [ -f "$TEST_PROPS_PATH" ]; then
-        while IFS='=' read -r _k _v; do
-            [[ "$_k" =~ ^[[:space:]]*# ]] && continue
-            _k=$(echo "$_k" | xargs)
-            # only settings run_test.sh acts on; skip log_level.* and JMETER_HOME
-            case "$_k" in
-                HOLD_PERIOD|RAMP_UP_TIME|RAMP_UP_STEPS|QPS|QPM|RANDOM_ORDER|RECYCLE_ON_EOF|\
-                QUERY_TIMEOUT|LIMIT_RESULTSET|MAX_CONCURRANCY|LOAD_PROFILE|COPY_TO_S3|S3_REPORT_PATH)
-                    export "$_k=$(echo "$_v" | xargs)" ;;
-            esac
-        done < "$TEST_PROPS_PATH"
-    else
-        echo -e "${YELLOW}  Warning: properties file not found: $TEST_PROPS_PATH — using run_test.sh defaults${NC}"
+    if [ ! -f "$TEST_PROPS_PATH" ]; then
+        echo -e "${YELLOW}  Error: properties file not found: $TEST_PROPS_PATH${NC}"
+        exit 1
     fi
 
     # Concurrency comes from the sweep, overriding whatever the properties file says.
     if CONNECTION_FILE="connection_properties/$CONNECTION_FILE" \
        TEST_PLAN="$TEST_PLAN_PATH" \
+       TEST_PROPERTIES_FILE="$TEST_PROPS_PATH" \
        QUERY_FILE="$QUERY_FILE_PATH" \
        METADATA_FILE="$METADATA_FULL_PATH" \
        CONCURRENT_QUERY_COUNT="$concurrency" \

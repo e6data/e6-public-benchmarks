@@ -9,9 +9,9 @@
 # 4. Create necessary directories
 # 5. Configure JAVA_HOME
 # 6. Install the optional Benchmark Studio Python environment
-# 7. Optionally start its local PostgreSQL registry
+# 7. Optionally start local PostgreSQL, Prometheus, and Grafana services
 #
-# Usage: ./setup_jmeter.sh [--with-postgres]
+# Usage: ./setup_jmeter.sh [--with-postgres] [--with-observability] [--without-ui]
 #
 
 set -e  # Exit on error
@@ -22,18 +22,29 @@ JMETER_ARCHIVE="apache-jmeter-${JMETER_VERSION}.tgz"
 JMETER_URL="https://archive.apache.org/dist/jmeter/binaries/${JMETER_ARCHIVE}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WITH_POSTGRES=false
+WITH_OBSERVABILITY=false
+INSTALL_UI=true
 for arg in "$@"; do
     case "$arg" in
         --with-postgres) WITH_POSTGRES=true ;;
+        --with-observability) WITH_OBSERVABILITY=true ;;
+        --without-ui) INSTALL_UI=false ;;
         -h|--help)
-            echo "Usage: ./setup_jmeter.sh [--with-postgres]"
+            echo "Usage: ./setup_jmeter.sh [--with-postgres] [--with-observability] [--without-ui]"
             echo "  Installs JMeter, plugins, JDBC drivers, and Benchmark Studio."
             echo "  --with-postgres also starts the supplied local PostgreSQL container."
+            echo "  --with-observability also starts supplied local Prometheus and Grafana containers."
+            echo "  --without-ui installs only the CLI/remote-worker runtime."
             exit 0
             ;;
         *) echo "Unknown option: $arg"; exit 2 ;;
     esac
 done
+
+if { [ "$WITH_POSTGRES" = true ] || [ "$WITH_OBSERVABILITY" = true ]; } && [ "$INSTALL_UI" = false ]; then
+    echo "ERROR: local service options and --without-ui cannot be used together."
+    exit 2
+fi
 
 echo "=================================================="
 echo "JMeter JDBC Test Framework Setup"
@@ -196,6 +207,82 @@ install_git() {
     esac
 
     echo ""
+}
+
+find_ui_python() {
+    for candidate in python3 python3.13 python3.12 python3.11 python3.10; do
+        if command_exists "$candidate" && \
+            "$candidate" -c 'import ssl, sys, venv; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+            command -v "$candidate"
+            return 0
+        fi
+    done
+    if [ -x "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11" ] && \
+        "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11" \
+            -c 'import ssl, sys, venv; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+        echo "$HOME/.local/e6-benchmark-python-3.11/bin/python3.11"
+        return 0
+    fi
+    return 1
+}
+
+install_ui_python() {
+    echo "Installing a private Python 3.11 runtime for Benchmark Studio..."
+    case $OS in
+        amzn|amazonlinux)
+            if command_exists dnf; then
+                sudo dnf install -y python3.11 python3.11-pip
+            else
+                # Amazon Linux 2 has no supported Python 3.10+ package in its
+                # base repositories. Build a pinned CPython under the invoking
+                # user's ~/.local without replacing /usr/bin/python3.
+                sudo yum groupinstall -y "Development Tools"
+                sudo yum install -y openssl11-devel bzip2-devel libffi-devel \
+                    zlib-devel xz-devel readline-devel sqlite-devel tar gzip pkgconfig
+                PYTHON_SOURCE_VERSION="3.11.16"
+                PYTHON_SOURCE_SHA256="6c0bd76ab0ec7d94ed400b1497f01ac6c7751c8822615ee0855a3eb2d893ea76"
+                PYTHON_PREFIX="$HOME/.local/e6-benchmark-python-3.11"
+                PYTHON_BUILD_DIR="$(mktemp -d /tmp/e6-python-build.XXXXXX)"
+                PYTHON_ARCHIVE="$PYTHON_BUILD_DIR/Python-${PYTHON_SOURCE_VERSION}.tgz"
+                if command_exists curl; then
+                    curl -fL "https://www.python.org/ftp/python/${PYTHON_SOURCE_VERSION}/Python-${PYTHON_SOURCE_VERSION}.tgz" -o "$PYTHON_ARCHIVE"
+                else
+                    wget -O "$PYTHON_ARCHIVE" "https://www.python.org/ftp/python/${PYTHON_SOURCE_VERSION}/Python-${PYTHON_SOURCE_VERSION}.tgz"
+                fi
+                echo "${PYTHON_SOURCE_SHA256}  ${PYTHON_ARCHIVE}" | sha256sum -c -
+                tar -xzf "$PYTHON_ARCHIVE" -C "$PYTHON_BUILD_DIR"
+                OPENSSL_CFLAGS="$(pkg-config --cflags openssl11 2>/dev/null || true)"
+                OPENSSL_LDFLAGS="$(pkg-config --libs-only-L openssl11 2>/dev/null || true)"
+                (
+                    cd "$PYTHON_BUILD_DIR/Python-${PYTHON_SOURCE_VERSION}"
+                    CPPFLAGS="$OPENSSL_CFLAGS" LDFLAGS="$OPENSSL_LDFLAGS" \
+                        ./configure --prefix="$PYTHON_PREFIX" \
+                        --with-openssl=/usr --with-openssl-rpath=auto \
+                        --with-ensurepip=install
+                    make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+                    make install
+                )
+                "$PYTHON_PREFIX/bin/python3.11" -c \
+                    'import ssl, venv; print("Python SSL:", ssl.OPENSSL_VERSION)'
+                rm -rf "$PYTHON_BUILD_DIR"
+            fi
+            ;;
+        ubuntu|debian)
+            sudo apt update
+            sudo apt install -y python3 python3-venv python3-pip
+            ;;
+        centos|rhel|fedora)
+            if command_exists dnf; then
+                sudo dnf install -y python3.11 python3.11-pip
+            else
+                sudo yum install -y python3.11 python3.11-pip
+            fi
+            ;;
+        *)
+            echo "ERROR: Automatic Python installation is not supported on $OS."
+            return 1
+            ;;
+    esac
 }
 
 # Check and install Java 17
@@ -406,19 +493,26 @@ echo ""
 echo "Step 6: Installing custom JDBC drivers..."
 
 # Download Databricks JDBC driver from Maven Central
-DBR_JDBC_VERSION="3.3.3"
+DBR_JDBC_VERSION="3.4.2"
 DBR_JDBC_URL="https://repo1.maven.org/maven2/com/databricks/databricks-jdbc/${DBR_JDBC_VERSION}/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
 DBR_JDBC_JAR="${JMETER_DIR}/lib/ext/databricks-jdbc-${DBR_JDBC_VERSION}.jar"
+
+for old_jar in "${JMETER_DIR}"/lib/ext/databricks-jdbc-*.jar; do
+    [ -e "${old_jar}" ] || continue
+    [ "${old_jar}" = "${DBR_JDBC_JAR}" ] || rm -f "${old_jar}"
+done
 
 if [ ! -f "${DBR_JDBC_JAR}" ]; then
     echo "  Downloading DBR JDBC driver ${DBR_JDBC_VERSION}..."
     if command_exists wget; then
         wget -O "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
             echo "  WARNING: Failed to download DBR JDBC driver"
+            rm -f "${DBR_JDBC_JAR}"
         }
     elif command_exists curl; then
         curl -L -o "${DBR_JDBC_JAR}" "${DBR_JDBC_URL}" || {
             echo "  WARNING: Failed to download DBR JDBC driver"
+            rm -f "${DBR_JDBC_JAR}"
         }
     fi
 
@@ -428,6 +522,75 @@ if [ ! -f "${DBR_JDBC_JAR}" ]; then
 else
     echo "  ✓ DBR JDBC driver already installed"
 fi
+
+# Download the Snowflake self-contained JDBC driver from Maven Central. The
+# binary is installed at setup time rather than committed to this repository.
+SNOWFLAKE_JDBC_VERSION="4.3.3"
+SNOWFLAKE_JDBC_URL="https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/${SNOWFLAKE_JDBC_VERSION}/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar"
+SNOWFLAKE_JDBC_JAR="${JMETER_DIR}/lib/ext/snowflake-jdbc-${SNOWFLAKE_JDBC_VERSION}.jar"
+
+for old_jar in "${JMETER_DIR}"/lib/ext/snowflake-jdbc-*.jar; do
+    [ -e "${old_jar}" ] || continue
+    [ "${old_jar}" = "${SNOWFLAKE_JDBC_JAR}" ] || rm -f "${old_jar}"
+done
+
+if [ ! -f "${SNOWFLAKE_JDBC_JAR}" ]; then
+    echo "  Downloading Snowflake JDBC driver ${SNOWFLAKE_JDBC_VERSION}..."
+    if command_exists wget; then
+        wget -O "${SNOWFLAKE_JDBC_JAR}" "${SNOWFLAKE_JDBC_URL}" || {
+            echo "  WARNING: Failed to download Snowflake JDBC driver"
+            rm -f "${SNOWFLAKE_JDBC_JAR}"
+        }
+    elif command_exists curl; then
+        curl -fL -o "${SNOWFLAKE_JDBC_JAR}" "${SNOWFLAKE_JDBC_URL}" || {
+            echo "  WARNING: Failed to download Snowflake JDBC driver"
+            rm -f "${SNOWFLAKE_JDBC_JAR}"
+        }
+    fi
+
+    if [ -f "${SNOWFLAKE_JDBC_JAR}" ]; then
+        echo "  ✓ Snowflake JDBC driver installed"
+    fi
+else
+    echo "  ✓ Snowflake JDBC driver already installed"
+fi
+
+# Trino recommends using a JDBC driver identical to or newer than the server.
+TRINO_JDBC_VERSION="483"
+TRINO_JDBC_URL="https://repo1.maven.org/maven2/io/trino/trino-jdbc/${TRINO_JDBC_VERSION}/trino-jdbc-${TRINO_JDBC_VERSION}.jar"
+TRINO_JDBC_JAR="${JMETER_DIR}/lib/ext/trino-jdbc-${TRINO_JDBC_VERSION}.jar"
+for old_jar in "${JMETER_DIR}"/lib/ext/trino-jdbc-*.jar; do
+    [ -e "${old_jar}" ] || continue
+    [ "${old_jar}" = "${TRINO_JDBC_JAR}" ] || rm -f "${old_jar}"
+done
+if [ ! -f "${TRINO_JDBC_JAR}" ]; then
+    echo "  Downloading Trino JDBC driver ${TRINO_JDBC_VERSION}..."
+    if command_exists wget; then
+        wget -O "${TRINO_JDBC_JAR}" "${TRINO_JDBC_URL}" || rm -f "${TRINO_JDBC_JAR}"
+    elif command_exists curl; then
+        curl -fL -o "${TRINO_JDBC_JAR}" "${TRINO_JDBC_URL}" || rm -f "${TRINO_JDBC_JAR}"
+    fi
+fi
+[ -f "${TRINO_JDBC_JAR}" ] && echo "  ✓ Trino JDBC driver ${TRINO_JDBC_VERSION} installed"
+
+# Presto remains available for existing custom profiles even though it is not
+# one of Benchmark Studio's named engine presets.
+PRESTO_JDBC_VERSION="0.298.1"
+PRESTO_JDBC_URL="https://repo1.maven.org/maven2/com/facebook/presto/presto-jdbc/${PRESTO_JDBC_VERSION}/presto-jdbc-${PRESTO_JDBC_VERSION}.jar"
+PRESTO_JDBC_JAR="${JMETER_DIR}/lib/ext/presto-jdbc-${PRESTO_JDBC_VERSION}.jar"
+for old_jar in "${JMETER_DIR}"/lib/ext/presto-jdbc-*.jar; do
+    [ -e "${old_jar}" ] || continue
+    [ "${old_jar}" = "${PRESTO_JDBC_JAR}" ] || rm -f "${old_jar}"
+done
+if [ ! -f "${PRESTO_JDBC_JAR}" ]; then
+    echo "  Downloading Presto JDBC driver ${PRESTO_JDBC_VERSION}..."
+    if command_exists wget; then
+        wget -O "${PRESTO_JDBC_JAR}" "${PRESTO_JDBC_URL}" || rm -f "${PRESTO_JDBC_JAR}"
+    elif command_exists curl; then
+        curl -fL -o "${PRESTO_JDBC_JAR}" "${PRESTO_JDBC_URL}" || rm -f "${PRESTO_JDBC_JAR}"
+    fi
+fi
+[ -f "${PRESTO_JDBC_JAR}" ] && echo "  ✓ Presto JDBC driver ${PRESTO_JDBC_VERSION} installed"
 
 # Copy custom JDBC drivers from jdbc_drivers/ directory
 JDBC_DRIVERS_DIR="${SCRIPT_DIR}/jdbc_drivers"
@@ -447,6 +610,7 @@ if [ -d "${JDBC_DRIVERS_DIR}" ]; then
         [ -e "$jar" ] || continue
         case "$(basename "$jar")" in
             e6-jdbc-driver-*.jar) continue ;;
+            trino-jdbc-*.jar|presto-jdbc-*.jar) continue ;;
         esac
         cp -v "$jar" "${JMETER_DIR}/lib/ext/"
     done
@@ -515,11 +679,23 @@ echo "Step 8: Creating reports directory..."
 mkdir -p "${SCRIPT_DIR}/reports"
 
 echo ""
-echo "Step 9: Installing Benchmark Studio runtime..."
-if [ "$WITH_POSTGRES" = true ]; then
-    "${SCRIPT_DIR}/setup_ui.sh" --with-postgres
+if [ "$INSTALL_UI" = true ]; then
+    echo "Step 9: Installing Benchmark Studio runtime..."
+    if UI_PYTHON="$(find_ui_python)"; then
+        echo "  Using Python: $UI_PYTHON"
+    else
+        install_ui_python
+        UI_PYTHON="$(find_ui_python)" || {
+            echo "ERROR: Python 3.10+ was not found after installation."
+            exit 1
+        }
+    fi
+    UI_SETUP_ARGS=()
+    [ "$WITH_POSTGRES" = true ] && UI_SETUP_ARGS+=(--with-postgres)
+    [ "$WITH_OBSERVABILITY" = true ] && UI_SETUP_ARGS+=(--with-observability)
+    BENCHMARK_UI_PYTHON="$UI_PYTHON" "${SCRIPT_DIR}/setup_ui.sh" "${UI_SETUP_ARGS[@]}"
 else
-    "${SCRIPT_DIR}/setup_ui.sh"
+    echo "Step 9: Skipping Benchmark Studio runtime (--without-ui)."
 fi
 
 echo ""
@@ -544,9 +720,13 @@ fi
 echo "Next steps:"
 echo "  1. Copy your JDBC drivers to jdbc_drivers/ (if not already there)"
 echo "  2. Create connection: ./create_connection.sh (or create it in the UI)"
-echo "  3. Start the UI: ./start_ui.sh"
-echo "  4. Open http://127.0.0.1:8765 and launch a test"
-echo "  5. CLI alternative: ./run_test.sh test_configs/<your_config>.env"
+if [ "$INSTALL_UI" = true ]; then
+    echo "  3. Start the UI: ./start_ui.sh"
+    echo "  4. Open http://127.0.0.1:8765 and launch a test"
+    echo "  5. CLI alternative: ./run_test.sh test_configs/<your_config>.env"
+else
+    echo "  3. Run from CLI: ./run_test.sh test_configs/<your_config>.env"
+fi
 echo ""
 echo "To verify installation:"
 echo "  ./${JMETER_DIR}/bin/jmeter --version"

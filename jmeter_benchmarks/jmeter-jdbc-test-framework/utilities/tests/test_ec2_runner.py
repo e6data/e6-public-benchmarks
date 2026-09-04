@@ -1,0 +1,152 @@
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from ui.ec2_runner import EC2Config, EC2Runner, EC2RunnerError
+
+
+class EC2RunnerTests(unittest.TestCase):
+    def test_config_requires_instance_and_s3_prefix(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(EC2RunnerError, "instance_id, control_s3_uri"):
+                EC2Config.from_env()
+
+    def test_config_accepts_on_demand_worker(self):
+        with mock.patch.dict(os.environ, {
+            "BENCHMARK_EC2_INSTANCE_ID": "i-123",
+            "BENCHMARK_EC2_CONTROL_S3_URI": "s3://private/control",
+            "BENCHMARK_EC2_IDLE_STOP_MINUTES": "15",
+        }, clear=True):
+            config = EC2Config.from_env()
+        self.assertEqual(config.instance_id, "i-123")
+        self.assertEqual(config.idle_stop_minutes, 15)
+
+    def test_stage_job_copies_inputs_and_never_places_secret_in_command_arguments(self):
+        calls = []
+        def command(args, **kwargs):
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        config = EC2Config("i-123", "us-east-1", "s3://private/control", "/worker")
+        runner = EC2Runner(config, command)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "connection.properties").write_text("PASSWORD=top-secret\n")
+            prefix = runner.stage_job("abc", {"CONNECTION_FILE": "connection.properties"}, root)
+        self.assertEqual(prefix, "s3://private/control/jobs/abc")
+        flattened = json.dumps(calls)
+        self.assertNotIn("top-secret", flattened)
+        self.assertIn("--sse", calls[-1])
+
+    def test_stage_job_includes_warmup_input_for_remote_worker(self):
+        captured = {}
+        def command(args, **kwargs):
+            if args[:3] == ["aws", "s3", "cp"]:
+                import zipfile
+                with zipfile.ZipFile(args[3]) as archive:
+                    captured["environment"] = json.loads(archive.read("environment.json"))
+                    captured["warmup"] = archive.read(
+                        "inputs/warmup_query_file/warmup.csv"
+                    ).decode()
+            return subprocess.CompletedProcess(args, 0, "", "")
+        runner = EC2Runner(
+            EC2Config("i-123", "us-east-1", "s3://private/control", "/worker"),
+            command,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "connection.properties").write_text("PASSWORD=secret\n")
+            (root / "test.properties").write_text("CONCURRENT_QUERY_COUNT=2\n")
+            (root / "queries.csv").write_text("query_alias,query_string\nq1,select 1\n")
+            (root / "warmup.csv").write_text("query_alias,query_string\nw1,select 1\n")
+            runner.stage_job("warm", {
+                "CONNECTION_FILE": "connection.properties",
+                "TEST_PROPERTIES_FILE": "test.properties",
+                "QUERY_FILE": "queries.csv",
+                "WARMUP_QUERY_FILE": "warmup.csv",
+            }, root)
+        self.assertEqual(captured["warmup"].splitlines()[-1], "w1,select 1")
+        self.assertEqual(
+            captured["environment"]["WARMUP_QUERY_FILE"],
+            "{JOB_DIR}/inputs/warmup_query_file/warmup.csv",
+        )
+        self.assertEqual(
+            captured["environment"]["TEST_PROPERTIES_FILE"],
+            "{JOB_DIR}/inputs/test_properties_file/test.properties",
+        )
+
+    def test_stage_job_does_not_serialize_query_history_credentials(self):
+        captured = {}
+        def command(args, **kwargs):
+            if args[:3] == ["aws", "s3", "cp"]:
+                import zipfile
+                with zipfile.ZipFile(args[3]) as archive:
+                    captured["environment"] = json.loads(archive.read("environment.json"))
+            return subprocess.CompletedProcess(args, 0, "", "")
+        runner = EC2Runner(
+            EC2Config("i-123", "us-east-1", "s3://private/control", "/worker"),
+            command,
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "connection.properties").write_text("PASSWORD=secret\n")
+            runner.stage_job("query-history", {
+                "CONNECTION_FILE": "connection.properties",
+                "E6_QUERY_HISTORY_ENABLED": "true",
+                "E6_MACHINE_CLIENT_ID": "client-id",
+                "E6_MACHINE_CLIENT_SECRET": "client-secret",
+            }, root)
+        self.assertEqual(captured["environment"]["E6_QUERY_HISTORY_ENABLED"], "true")
+        self.assertNotIn("E6_MACHINE_CLIENT_ID", captured["environment"])
+        self.assertNotIn("E6_MACHINE_CLIENT_SECRET", captured["environment"])
+
+    def test_cancel_targets_configured_instance(self):
+        calls = []
+        def command(args, **kwargs):
+            calls.append(args)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        runner = EC2Runner(EC2Config("i-123", "us-east-1", "s3://private/control", "/worker"), command)
+        runner.cancel("cmd-1")
+        self.assertIn("cancel-command", calls[0])
+        self.assertIn("i-123", calls[0])
+
+    def test_browser_visible_errors_redact_aws_identifiers(self):
+        runner = EC2Runner(EC2Config(
+            "i-0123456789abcdef0", "us-east-1", "s3://private-bucket/control", "/worker"
+        ))
+        message = runner.redact(
+            "instance i-0123456789abcdef0 in account 123456789012 failed; "
+            "input s3://private-bucket/control/jobs/abc"
+        )
+        self.assertNotIn("i-0123456789abcdef0", message)
+        self.assertNotIn("123456789012", message)
+        self.assertNotIn("private-bucket", message)
+
+    def test_externally_managed_worker_is_not_started_or_stopped(self):
+        calls = []
+        def command(args, **kwargs):
+            calls.append(args)
+            if "describe-instances" in args:
+                return subprocess.CompletedProcess(args, 0, "running\n", "")
+            if "describe-instance-information" in args:
+                return subprocess.CompletedProcess(args, 0, "Online\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+        config = EC2Config(
+            "i-123", "us-east-1", "s3://private/control", "/worker",
+            poll_seconds=2, manage_power=False,
+        )
+        runner = EC2Runner(config, command)
+        runner.ensure_worker_ready(lambda _: None)
+        messages = []
+        runner.schedule_stop(messages.append)
+        flattened = json.dumps(calls)
+        self.assertNotIn("start-instances", flattened)
+        self.assertNotIn("stop-instances", flattened)
+        self.assertIn("automatic stop is disabled", messages[0])
+
+
+if __name__ == "__main__":
+    unittest.main()

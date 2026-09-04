@@ -1,6 +1,7 @@
 #!/bin/bash
-# Generator script to create metadata files and test input files for concurrency testing
-# Generates files for e6data and DBR across cluster sizes S, M, and L with concurrency 2,4,8,12,16
+# Generator script to create metadata and test input files for concurrency testing.
+# All levels share fixed_concurrency.properties; the launcher supplies the
+# selected concurrency as an explicit run override.
 
 set -e
 
@@ -12,7 +13,6 @@ ENGINES=("e6data" "dbr")
 # Directories
 METADATA_DIR="metadata_files"
 TEST_INPUT_DIR="test_configs"
-TEST_PROPS_DIR="test_properties"
 
 # Base paths (relative to project root)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,65 +27,6 @@ echo "  Cluster Sizes: ${CLUSTER_SIZES[*]}"
 echo "  Concurrency Levels: ${CONCURRENCY_LEVELS[*]}"
 echo "  Engines: ${ENGINES[*]}"
 echo ""
-
-# Function to create test properties file if it doesn't exist
-create_test_properties_file() {
-    local concurrency=$1
-    local props_file="$TEST_PROPS_DIR/concurrency_${concurrency}_test.properties"
-
-    if [[ -f "$props_file" ]]; then
-        echo "  ✓ Properties file exists: $props_file"
-        return
-    fi
-
-    echo "  Creating properties file: $props_file"
-    cat > "$props_file" << EOF
-# JMeter Test Properties - Concurrency ${concurrency}
-
-JMETER_HOME=
-
-#Change below for Report directory path. Reports will be written in this directory
-REPORT_PATH=reports
-
-#Change below to copy the reports to s3. The copy script will use the aws configure credentials, so you should run aws creds in env set.
-COPY_TO_S3=true
-S3_REPORT_PATH=${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}
-
-#Change below for concurrency based test plan which will maintain this concurrency. This applicable only for concurrency based plan
-CONCURRENT_QUERY_COUNT=${concurrency}
-
-#Change below if u want to add RAMP_TIME(min) and RAMP_UP_STEPS (counts) to reach target concurrency
-RAMP_UP_TIME=1
-RAMP_UP_STEPS=1
-
-#Total time to run the test in minutes i.e hold the load. This is after ramp up time
-HOLD_PERIOD=300
-
-#Change below for QPM based Test Plan which will fire below number of queries per minute. This is applicable only for static QPM based test Plan
-QPM=30
-
-#Change below for QPS based Test Plan which will fire below number of queries per sec. This is applicable only for static QPS based test Plan
-QPS=1
-
-#Change below for load_profile based Test Plan. This will be applicable only if u select the load profile based test plan i.e QPS/QPM on arrivals.
-LOAD_PROFILE=test_properties/load_profile.csv
-
-#To select queries from the CSV in Random Order set below to true
-RANDOM_ORDER=false
-
-#Set below variable to true if you want to Repeat the queries in the CSV, this essentially means queries will repeat till the test duration
-RECYCLE_ON_EOF=false
-
-#Change below to the absolute path of your query file. This will be the query file used unless overwritten.
-QUERY_PATH=data_files/Jmeter_15-queries-sub-2-sec_v3.csv
-
-# These values are only to control the jmeter tests running out of resources, Change if required carefully as per machine resources
-QUERY_TIMEOUT=300
-LIMIT_RESULTSET=1000
-MAX_CONCURRANCY=900
-MAX_POOL=300
-EOF
-}
 
 # Function to create DBR metadata file
 create_dbr_metadata() {
@@ -171,7 +112,7 @@ CONNECTION_POOLING="enabled"
 # Cost & Billing (optional)
 COST_CENTER="unknown"
 PROJECT="unknown"
-OWNER="jagannath@e6x.io"
+OWNER="${BENCHMARK_OWNER:-unknown}"
 
 # Comparison Baseline
 BASELINE_ENGINE="e6data"
@@ -184,7 +125,7 @@ S3_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
 
 # Default file references
 DEFAULT_TEST_PLAN="Test-Plan-Maintain-static-concurrency.jmx"
-DEFAULT_TEST_PROPERTIES="concurrency_${concurrency}_test.properties"
+DEFAULT_TEST_PROPERTIES="fixed_concurrency.properties"
 DEFAULT_CONNECTION_PROPERTIES="${engine}_default_connection.properties"
 DEFAULT_QUERIES="E6Data_TPCDS_queries_29_1TB.csv"
 DEFAULT_METADATA="${engine}_${cluster_size,,}_metadata.txt"
@@ -287,7 +228,7 @@ CONNECTION_POOLING="enabled"
 # Cost & Billing (optional)
 COST_CENTER="unknown"
 PROJECT="unknown"
-OWNER="jagannath@e6x.io"
+OWNER="${BENCHMARK_OWNER:-unknown}"
 
 # Comparison Baseline
 BASELINE_ENGINE="dbr"
@@ -300,7 +241,7 @@ S3_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
 
 # Default file references
 DEFAULT_TEST_PLAN="Test-Plan-Maintain-static-concurrency.jmx"
-DEFAULT_TEST_PROPERTIES="concurrency_${concurrency}_test.properties"
+DEFAULT_TEST_PROPERTIES="fixed_concurrency.properties"
 DEFAULT_CONNECTION_PROPERTIES="demo-graviton_connection.properties"
 DEFAULT_QUERIES="E6Data_TPCDS_queries_29_1TB.csv"
 DEFAULT_METADATA="e6data_demo-graviton_${cluster_size,,}_concurrency${concurrency}_metadata.txt"
@@ -328,7 +269,7 @@ create_test_input() {
         cat > "$input_file" << EOF
 ${engine}_${cluster_size,,}_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
-concurrency_${concurrency}_test.properties
+fixed_concurrency.properties
 ${engine}_default_connection.properties
 E6Data_TPCDS_queries_29_1TB.csv
 EOF
@@ -336,7 +277,7 @@ EOF
         cat > "$input_file" << EOF
 e6data_demo-graviton_${cluster_size,,}_concurrency${concurrency}_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
-concurrency_${concurrency}_test.properties
+fixed_concurrency.properties
 demo-graviton_connection.properties
 E6Data_TPCDS_queries_29_1TB.csv
 EOF
@@ -344,12 +285,6 @@ EOF
 }
 
 # Main generation loop
-echo "Creating test properties files..."
-for concurrency in "${CONCURRENCY_LEVELS[@]}"; do
-    create_test_properties_file "$concurrency"
-done
-
-echo ""
 echo "Creating metadata and test input files..."
 file_count=0
 

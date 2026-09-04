@@ -10,6 +10,8 @@
 #   CONNECTION_FILE   - path to connection properties file
 #   TEST_PLAN         - path to test plan .jmx file
 #   QUERY_FILE        - path to query CSV data file
+#   TEST_PROPERTIES_FILE - optional local or s3:// JMeter properties file;
+#                          inferred from TEST_PLAN when omitted
 #
 # Optional (with defaults):
 #   METADATA_FILE             - metadata file for S3 upload (default: none)
@@ -17,7 +19,7 @@
 #   QPS                       - queries per second (default: 1)
 #   QPM                       - queries per minute (default: 10)
 #   HOLD_PERIOD               - test duration in seconds (default: 300)
-#   RAMP_UP_TIME              - ramp up time in seconds (default: 1)
+#   RAMP_UP_TIME              - ramp up time in seconds; 0 starts immediately (default: 0)
 #   RAMP_UP_STEPS             - ramp up steps (default: 1)
 #   LOAD_PROFILE              - load profile CSV path (default: test_properties/load_profile.csv)
 #   RANDOM_ORDER              - random query order true/false (default: false)
@@ -38,6 +40,15 @@
 #   PROMETHEUS_DELAY          - seconds to keep endpoint after the test (default: 15)
 #   PROMETHEUS_URL            - informational Prometheus UI URL (default: empty)
 #   GRAFANA_URL               - informational dashboard URL (default: empty)
+#   WARMUP_ENABLED            - run an excluded sequential warm-up first (default: false)
+#   WARMUP_QUERY_FILE         - warm-up query CSV; local path or s3:// URI
+#   WARMUP_ITERATIONS         - number of separate warm-up passes (default: 1)
+#   MEASURED_ITERATIONS       - query-file passes included in a Run Once result (default: 1)
+#   E6_QUERY_HISTORY_ENABLED  - capture e6 Query History after the run (default: false)
+#   E6_MACHINE_CLIENT_ID      - OAuth2 machine-client ID (deployment secret env)
+#   E6_MACHINE_CLIENT_SECRET  - OAuth2 machine-client secret (deployment secret env)
+#   E6_QUERY_HISTORY_EMAIL    - optional Query History user/email filter
+#   E6_QUERY_HISTORY_WAIT_SECONDS - wait for history ingestion (default: 5)
 #
 # Exit codes:
 #   0  the run completed and the error rate was within MAX_ERROR_PCT
@@ -77,6 +88,46 @@ NC='\033[0m'
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
+S3_INPUT_DIR=""
+cleanup_s3_inputs() {
+    if [ -n "$S3_INPUT_DIR" ] && [ -d "$S3_INPUT_DIR" ]; then
+        rm -rf -- "$S3_INPUT_DIR"
+    fi
+}
+trap cleanup_s3_inputs EXIT
+
+materialize_s3_input() {
+    local variable="$1" kind="$2" uri="${!1:-}" filename destination
+    case "$uri" in
+        s3://*) ;;
+        *) return 0 ;;
+    esac
+    if ! command -v aws >/dev/null 2>&1; then
+        echo -e "${RED}Error: AWS CLI is required for ${variable}=${uri}${NC}"
+        exit 1
+    fi
+    if [ -z "$S3_INPUT_DIR" ]; then
+        umask 077
+        S3_INPUT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/e6-jmeter-s3-inputs.XXXXXX")
+    fi
+    filename="${uri%%\?*}"
+    filename="$(basename "$filename")"
+    filename="$(printf '%s' "$filename" | tr -cs 'A-Za-z0-9._-' '_')"
+    [ -n "$filename" ] || filename="input.csv"
+    destination="$S3_INPUT_DIR/${kind}-${filename}"
+    echo "Downloading ${variable} from ${uri}"
+    if ! aws s3 cp "$uri" "$destination" --only-show-errors; then
+        echo -e "${RED}Error: failed to download ${variable} from ${uri}${NC}"
+        exit 1
+    fi
+    if [ ! -s "$destination" ]; then
+        echo -e "${RED}Error: downloaded ${variable} is empty: ${uri}${NC}"
+        exit 1
+    fi
+    printf -v "${variable}_SOURCE" '%s' "$uri"
+    printf -v "$variable" '%s' "$destination"
+}
+
 # ============================================================================
 # Source suite file if provided (env vars override suite file values)
 # ============================================================================
@@ -92,6 +143,7 @@ if [ -n "$1" ]; then
     # Save any pre-set env vars so they take priority over config file
     _SAVE_CONNECTION_FILE="${CONNECTION_FILE:-}"
     _SAVE_TEST_PLAN="${TEST_PLAN:-}"
+    _SAVE_TEST_PROPERTIES_FILE="${TEST_PROPERTIES_FILE:-}"
     _SAVE_QUERY_FILE="${QUERY_FILE:-}"
     _SAVE_METADATA_FILE="${METADATA_FILE:-}"
     _SAVE_CONCURRENT_QUERY_COUNT="${CONCURRENT_QUERY_COUNT:-}"
@@ -119,12 +171,17 @@ if [ -n "$1" ]; then
     _SAVE_PROMETHEUS_DELAY="${PROMETHEUS_DELAY:-}"
     _SAVE_PROMETHEUS_URL="${PROMETHEUS_URL:-}"
     _SAVE_GRAFANA_URL="${GRAFANA_URL:-}"
+    _SAVE_WARMUP_ENABLED="${WARMUP_ENABLED:-}"
+    _SAVE_WARMUP_QUERY_FILE="${WARMUP_QUERY_FILE:-}"
+    _SAVE_WARMUP_ITERATIONS="${WARMUP_ITERATIONS:-}"
+    _SAVE_MEASURED_ITERATIONS="${MEASURED_ITERATIONS:-}"
 
     source "$SUITE_FILE"
 
     # Restore env vars that were set before sourcing (env overrides config)
     [ -n "$_SAVE_CONNECTION_FILE" ] && CONNECTION_FILE="$_SAVE_CONNECTION_FILE"
     [ -n "$_SAVE_TEST_PLAN" ] && TEST_PLAN="$_SAVE_TEST_PLAN"
+    [ -n "$_SAVE_TEST_PROPERTIES_FILE" ] && TEST_PROPERTIES_FILE="$_SAVE_TEST_PROPERTIES_FILE"
     [ -n "$_SAVE_QUERY_FILE" ] && QUERY_FILE="$_SAVE_QUERY_FILE"
     [ -n "$_SAVE_METADATA_FILE" ] && METADATA_FILE="$_SAVE_METADATA_FILE"
     [ -n "$_SAVE_CONCURRENT_QUERY_COUNT" ] && CONCURRENT_QUERY_COUNT="$_SAVE_CONCURRENT_QUERY_COUNT"
@@ -152,6 +209,42 @@ if [ -n "$1" ]; then
     [ -n "$_SAVE_PROMETHEUS_DELAY" ] && PROMETHEUS_DELAY="$_SAVE_PROMETHEUS_DELAY"
     [ -n "$_SAVE_PROMETHEUS_URL" ] && PROMETHEUS_URL="$_SAVE_PROMETHEUS_URL"
     [ -n "$_SAVE_GRAFANA_URL" ] && GRAFANA_URL="$_SAVE_GRAFANA_URL"
+    [ -n "$_SAVE_WARMUP_ENABLED" ] && WARMUP_ENABLED="$_SAVE_WARMUP_ENABLED"
+    [ -n "$_SAVE_WARMUP_QUERY_FILE" ] && WARMUP_QUERY_FILE="$_SAVE_WARMUP_QUERY_FILE"
+    [ -n "$_SAVE_WARMUP_ITERATIONS" ] && WARMUP_ITERATIONS="$_SAVE_WARMUP_ITERATIONS"
+    [ -n "$_SAVE_MEASURED_ITERATIONS" ] && MEASURED_ITERATIONS="$_SAVE_MEASURED_ITERATIONS"
+fi
+
+# Load shared deployment defaults after the optional suite. This file is
+# shared by CLI and Benchmark Studio; the UI is only an editor for the same
+# runner contract. It is gitignored and may contain the optional Query History
+# machine secret. Explicit environment variables and suite values always win.
+SYSTEM_SETTINGS_FILE="${BENCHMARK_SYSTEM_SETTINGS_FILE:-${BENCHMARK_UI_SETTINGS_FILE:-$PROJECT_ROOT/config/system_settings.json}}"
+if [ -f "$SYSTEM_SETTINGS_FILE" ]; then
+    if ! command -v jq >/dev/null 2>&1; then
+        echo -e "${YELLOW}Warning: jq is unavailable; ignoring ${SYSTEM_SETTINGS_FILE}.${NC}"
+    else
+        _system_default() {
+            local shell_name="$1" json_name="$2" value
+            [ -n "${!shell_name:-}" ] && return 0
+            value="$(jq -r --arg key "$json_name" 'if has($key) then .[$key] | if type == "boolean" then tostring else . end else empty end' "$SYSTEM_SETTINGS_FILE")"
+            [ -n "$value" ] && printf -v "$shell_name" '%s' "$value"
+            return 0
+        }
+        _system_default COPY_TO_S3 copy_to_s3
+        _system_default S3_REPORT_PATH s3_report_path
+        _system_default GENERATE_DASHBOARD generate_dashboard
+        _system_default PROMETHEUS_ENABLED prometheus_enabled
+        _system_default PROMETHEUS_PORT prometheus_port
+        _system_default PROMETHEUS_URL prometheus_url
+        _system_default GRAFANA_URL grafana_url
+        _system_default E6_QUERY_HISTORY_ENABLED e6_query_history_enabled
+        _system_default E6_MACHINE_CLIENT_ID e6_machine_client_id
+        _system_default E6_MACHINE_CLIENT_SECRET e6_machine_client_secret
+        _system_default E6_QUERY_HISTORY_EMAIL e6_query_history_email
+        _system_default E6_QUERY_HISTORY_WAIT_SECONDS e6_query_history_wait_seconds
+        unset -f _system_default
+    fi
 fi
 
 # ============================================================================
@@ -189,8 +282,42 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     exit 1
 fi
 
+# JMeter requires filesystem paths. Resolve a fresh copy for every CLI run so
+# an updated S3 object is never hidden behind a stale local cache.
+materialize_s3_input QUERY_FILE query
+
+# Every supported plan has one canonical JMeter properties file. A caller may
+# select another local/S3 file; already-resolved suite or environment values
+# remain higher precedence and are emitted as explicit -J overrides below.
+if [ -z "${TEST_PROPERTIES_FILE:-}" ]; then
+    case "$(basename "$TEST_PLAN")" in
+        *Run-Once*) TEST_PROPERTIES_FILE="test_properties/run_once.properties" ;;
+        *Maintain-static-concurrency*) TEST_PROPERTIES_FILE="test_properties/fixed_concurrency.properties" ;;
+        *Constant-QPS*) TEST_PROPERTIES_FILE="test_properties/constant_qps.properties" ;;
+        *Constant-QPM*) TEST_PROPERTIES_FILE="test_properties/constant_qpm.properties" ;;
+        *Fire-QPS-with-load-profile*) TEST_PROPERTIES_FILE="test_properties/variable_arrivals.properties" ;;
+        *Maintain-variable-concurrency*) TEST_PROPERTIES_FILE="test_properties/variable_concurrency.properties" ;;
+        *) TEST_PROPERTIES_FILE="test_properties/default.properties" ;;
+    esac
+fi
+materialize_s3_input TEST_PROPERTIES_FILE test-properties
+
+# Read only runner-supported keys from the properties file, without sourcing
+# it as shell code. Arbitrary JMeter/plugin keys are still loaded by JMeter via
+# the second -q argument. Existing env/suite values win.
+TEST_PROPERTY_KEYS="CONCURRENT_QUERY_COUNT QPS QPM HOLD_PERIOD RAMP_UP_TIME RAMP_UP_STEPS LOAD_PROFILE RANDOM_ORDER RECYCLE_ON_EOF QUERY_TIMEOUT LIMIT_RESULTSET MAX_CONCURRANCY MAX_ERROR_PCT MEASURED_ITERATIONS GENERATE_DASHBOARD"
+if [ -f "$TEST_PROPERTIES_FILE" ]; then
+    while IFS='=' read -r raw_key raw_value; do
+        key="$(printf '%s' "$raw_key" | xargs)"
+        case " $TEST_PROPERTY_KEYS " in *" $key "*) ;; *) continue ;; esac
+        value="${raw_value%%[[:space:]]#*}"
+        value="$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [ -n "${!key:-}" ] || printf -v "$key" '%s' "$value"
+    done < "$TEST_PROPERTIES_FILE"
+fi
+
 # Validate files exist
-for var in CONNECTION_FILE TEST_PLAN QUERY_FILE; do
+for var in CONNECTION_FILE TEST_PLAN TEST_PROPERTIES_FILE QUERY_FILE; do
     val="${!var}"
     if [ ! -f "$val" ]; then
         echo -e "${RED}Error: ${var} file not found: ${val}${NC}"
@@ -221,7 +348,7 @@ CONCURRENT_QUERY_COUNT="${CONCURRENT_QUERY_COUNT:-2}"
 QPS="${QPS:-1}"
 QPM="${QPM:-10}"
 HOLD_PERIOD="${HOLD_PERIOD:-300}"
-RAMP_UP_TIME="${RAMP_UP_TIME:-1}"
+RAMP_UP_TIME="${RAMP_UP_TIME:-0}"
 RAMP_UP_STEPS="${RAMP_UP_STEPS:-1}"
 # The two load-profile plan families take different CSV formats, so the default
 # follows the plan: 5-column concurrency waves for UltimateThreadGroup,
@@ -234,7 +361,7 @@ fi
 RANDOM_ORDER="${RANDOM_ORDER:-false}"
 RECYCLE_ON_EOF="${RECYCLE_ON_EOF:-false}"
 COPY_TO_S3="${COPY_TO_S3:-false}"
-S3_REPORT_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/jmeter-results}"
+S3_REPORT_PATH="${S3_REPORT_PATH:-s3://your-s3-bucket/benchmark-results/v1}"
 REPORT_PATH="${REPORT_PATH:-reports}"
 QUERY_TIMEOUT="${QUERY_TIMEOUT:-300}"
 LIMIT_RESULTSET="${LIMIT_RESULTSET:-1000}"
@@ -244,6 +371,34 @@ PROMETHEUS_ENABLED="${PROMETHEUS_ENABLED:-false}"
 PROMETHEUS_IP="${PROMETHEUS_IP:-127.0.0.1}"
 PROMETHEUS_PORT="${PROMETHEUS_PORT:-9270}"
 PROMETHEUS_DELAY="${PROMETHEUS_DELAY:-15}"
+E6_QUERY_HISTORY_ENABLED="${E6_QUERY_HISTORY_ENABLED:-false}"
+E6_QUERY_HISTORY_WAIT_SECONDS="${E6_QUERY_HISTORY_WAIT_SECONDS:-5}"
+WARMUP_ENABLED="${WARMUP_ENABLED:-false}"
+WARMUP_ITERATIONS="${WARMUP_ITERATIONS:-1}"
+MEASURED_ITERATIONS="${MEASURED_ITERATIONS:-1}"
+
+if [ "$WARMUP_ENABLED" != "true" ] && [ "$WARMUP_ENABLED" != "false" ]; then
+    echo -e "${RED}Error: WARMUP_ENABLED must be true or false.${NC}"
+    exit 1
+fi
+if ! [[ "$WARMUP_ITERATIONS" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "${RED}Error: WARMUP_ITERATIONS must be a positive integer.${NC}"
+    exit 1
+fi
+if ! [[ "$MEASURED_ITERATIONS" =~ ^[1-9][0-9]*$ ]]; then
+    echo -e "${RED}Error: MEASURED_ITERATIONS must be a positive integer.${NC}"
+    exit 1
+fi
+if [ "$MEASURED_ITERATIONS" -gt 1 ] && ! basename "$TEST_PLAN" | grep -qi "run-once"; then
+    echo -e "${RED}Error: MEASURED_ITERATIONS greater than 1 is supported only by Run Once plans.${NC}"
+    exit 1
+fi
+if [ "$WARMUP_ENABLED" = "true" ] && [ -z "${WARMUP_QUERY_FILE:-}" ]; then
+    echo -e "${RED}Error: WARMUP_QUERY_FILE is required when WARMUP_ENABLED=true.${NC}"
+    exit 1
+fi
+
+materialize_s3_input LOAD_PROFILE profile
 
 if [ "$PROMETHEUS_ENABLED" != "true" ] && [ "$PROMETHEUS_ENABLED" != "false" ]; then
     echo -e "${RED}Error: PROMETHEUS_ENABLED must be true or false.${NC}"
@@ -255,6 +410,14 @@ if ! [[ "$PROMETHEUS_PORT" =~ ^[0-9]+$ ]] || [ "$PROMETHEUS_PORT" -lt 1 ] || [ "
 fi
 if ! [[ "$PROMETHEUS_DELAY" =~ ^[0-9]+$ ]]; then
     echo -e "${RED}Error: PROMETHEUS_DELAY must be a non-negative integer.${NC}"
+    exit 1
+fi
+if [ "$E6_QUERY_HISTORY_ENABLED" != "true" ] && [ "$E6_QUERY_HISTORY_ENABLED" != "false" ]; then
+    echo -e "${RED}Error: E6_QUERY_HISTORY_ENABLED must be true or false.${NC}"
+    exit 1
+fi
+if ! [[ "$E6_QUERY_HISTORY_WAIT_SECONDS" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: E6_QUERY_HISTORY_WAIT_SECONDS must be a non-negative integer.${NC}"
     exit 1
 fi
 
@@ -294,6 +457,49 @@ if [ -z "${JMETER_HOME:-}" ] || [ ! -f "$JMETER_HOME/bin/jmeter" ]; then
     exit 1
 fi
 
+# Run warm-up in one or more separate JMeter processes. Each pass uses the
+# run-once plan at concurrency 1 and writes below REPORT_PATH/_warmup/. The
+# measured invocation therefore never sees warm-up samples in its result CSV,
+# dashboard, summary, percentiles, throughput, or comparison registry entry.
+if [ "$WARMUP_ENABLED" = "true" ]; then
+    echo ""
+    echo -e "${BLUE}=========================================="
+    echo " Benchmark warm-up (excluded)"
+    echo -e "==========================================${NC}"
+    echo "  Queries:    ${WARMUP_QUERY_FILE}"
+    echo "  Iterations: ${WARMUP_ITERATIONS}"
+    echo "  Results:    ${REPORT_PATH}/_warmup/"
+    echo ""
+    _warmup_iteration=1
+    while [ "$_warmup_iteration" -le "$WARMUP_ITERATIONS" ]; do
+        echo -e "${BLUE}Warm-up pass ${_warmup_iteration}/${WARMUP_ITERATIONS}${NC}"
+        if ! env \
+            WARMUP_ENABLED=false \
+            MEASURED_ITERATIONS=1 \
+            QUERY_FILE="$WARMUP_QUERY_FILE" \
+            TEST_PLAN="${PROJECT_ROOT}/Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx" \
+            TEST_PROPERTIES_FILE="${PROJECT_ROOT}/test_properties/run_once.properties" \
+            CONCURRENT_QUERY_COUNT=1 \
+            RANDOM_ORDER=false \
+            RECYCLE_ON_EOF=false \
+            REPORT_PATH="${REPORT_PATH}/_warmup" \
+            RUN_ID="${RUN_ID:-warmup}-warmup-${_warmup_iteration}" \
+            RUN_TYPE=warmup \
+            RUN_PURPOSE=warmup \
+            RUN_VALIDITY=invalid \
+            COPY_TO_S3=false \
+            GENERATE_DASHBOARD=false \
+            PROMETHEUS_ENABLED=false \
+            MAX_ERROR_PCT=0 \
+            "${PROJECT_ROOT}/run_test.sh"; then
+            echo -e "${RED}Error: warm-up pass ${_warmup_iteration} failed; measured run was not started.${NC}"
+            exit 1
+        fi
+        _warmup_iteration=$((_warmup_iteration + 1))
+    done
+    echo -e "${GREEN}Warm-up complete; starting measured run with a fresh JMeter process.${NC}"
+fi
+
 # ============================================================================
 # Display configuration
 # ============================================================================
@@ -308,8 +514,37 @@ if ! mkdir "$REPORT_DIR"; then
     exit 1
 fi
 
+# Run Once consumes a shared CSV until EOF. Repeating its validated data rows
+# creates exact measured passes without modifying the JMX or enabling endless
+# CSV recycling. Preserving aliases lets JMeter aggregate the N observations of
+# each query into its standard per-label count/average/median/percentiles.
+ORIGINAL_QUERY_FILE="$QUERY_FILE"
+
+# Preserve the exact non-secret workload inputs beside the measured results.
+# REPORT_DIR is uploaded recursively, so these immutable copies make a run
+# reproducible and let users download its query/load CSVs from S3 later. Never
+# copy CONNECTION_FILE or TEST_PROPERTIES_FILE because they may contain secrets.
+mkdir -p "${REPORT_DIR}/inputs"
+cp "$ORIGINAL_QUERY_FILE" "${REPORT_DIR}/inputs/query.csv"
+if [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] \
+   && grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
+    cp "$LOAD_PROFILE" "${REPORT_DIR}/inputs/load-profile.csv"
+fi
+if [ "$WARMUP_ENABLED" = "true" ] && [ -n "${WARMUP_QUERY_FILE:-}" ] \
+   && [ -f "$WARMUP_QUERY_FILE" ]; then
+    cp "$WARMUP_QUERY_FILE" "${REPORT_DIR}/inputs/warmup-query.csv"
+fi
+
+if [ "$MEASURED_ITERATIONS" -gt 1 ]; then
+    REPEATED_QUERY_FILE="${REPORT_DIR}/measured-queries-${MEASURED_ITERATIONS}x.csv"
+    python3 "${PROJECT_ROOT}/utilities/repeat_query_file.py" \
+        "$ORIGINAL_QUERY_FILE" "$REPEATED_QUERY_FILE" "$MEASURED_ITERATIONS" >/dev/null
+    QUERY_FILE="$REPEATED_QUERY_FILE"
+fi
+
 # Count logical query rows, excluding a recognized CSV header.
 QUERY_COUNT=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field rows)
+UNIQUE_QUERY_COUNT=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$ORIGINAL_QUERY_FILE" --field rows)
 
 # Infer test type from test plan filename for display
 PLAN_BASENAME=$(basename "$TEST_PLAN" .jmx | tr '[:upper:]' '[:lower:]')
@@ -367,9 +602,13 @@ echo "    File:       $(basename "$CONNECTION_FILE")"
 echo ""
 echo -e "  ${BOLD}Test${NC}"
 echo "    Plan:       $(basename "$TEST_PLAN")"
+echo "    Properties: $(basename "$TEST_PROPERTIES_FILE")"
+[ -n "${TEST_PROPERTIES_FILE_SOURCE:-}" ] && echo "    Properties source: ${TEST_PROPERTIES_FILE_SOURCE}"
 echo "    Type:       ${TEST_TYPE}"
 echo "    Run type:   ${RUN_TYPE}"
-echo "    Queries:    $(basename "$QUERY_FILE") (${QUERY_COUNT} queries)"
+echo "    Queries:    $(basename "$ORIGINAL_QUERY_FILE") (${UNIQUE_QUERY_COUNT} unique queries)"
+[ "$MEASURED_ITERATIONS" -gt 1 ] && echo "    Measured passes: ${MEASURED_ITERATIONS} (${QUERY_COUNT} total samples planned; same labels aggregated by JMeter)"
+[ -n "${QUERY_FILE_SOURCE:-}" ] && echo "    Query source: ${QUERY_FILE_SOURCE}"
 [ -n "${METADATA_FILE:-}" ] && echo "    Metadata:   $(basename "$METADATA_FILE")"
 echo ""
 echo -e "  ${BOLD}Parameters${NC}"
@@ -396,6 +635,7 @@ case "$TEST_TYPE" in
         ;;
     *"Load Profile"*)
         echo "    Load Profile:    ${LOAD_PROFILE}"
+        [ -n "${LOAD_PROFILE_SOURCE:-}" ] && echo "    Profile source:  ${LOAD_PROFILE_SOURCE}"
         echo "    Hold Period:     ${HOLD_PERIOD}s"
         ;;
     *)
@@ -445,12 +685,31 @@ fi
 # by Databricks Driver 3 PAT auth. Engine selection already determines the
 # driver, so adapt this internally without adding another user-facing input.
 JDBC_DRIVER=$(grep -E '^DRIVER_CLASS=' "$CONNECTION_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+PROFILE_JDBC_INIT_SQL=$(grep -E '^JDBC_INIT_SQL=' "$CONNECTION_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+JDBC_INIT_SQL="${JDBC_INIT_SQL:-$PROFILE_JDBC_INIT_SQL}"
 if [ "$JDBC_DRIVER" = "com.databricks.client.jdbc.Driver" ]; then
     JDBC_PLAN="${REPORT_DIR}/$(basename "${TEST_PLAN%.jmx}")-jdbc-configured.jmx"
     python3 "${PROJECT_ROOT}/utilities/configure_jdbc_connection.py" \
         "$TEST_PLAN" "$JDBC_PLAN" 'PWD=${PASSWORD}' || exit 1
     TEST_PLAN="$JDBC_PLAN"
     echo "  Databricks Driver 3: PAT authentication configured"
+    echo ""
+fi
+if [ "$JDBC_DRIVER" = "net.snowflake.client.api.driver.SnowflakeDriver" ]; then
+    # Disable Snowflake persisted-result reuse once for every physical pooled
+    # connection. This preserves JMeter connection reuse and avoids adding a
+    # control query to every measured sample.
+    JDBC_INIT_SQL="${JDBC_INIT_SQL:-ALTER SESSION SET USE_CACHED_RESULT = FALSE}"
+    # Snowflake's result path uses Apache Arrow. Java 9+ requires this narrow
+    # module opening or every query can fail while materializing its result.
+    # Append without replacing caller-provided heap/tuning options.
+    case " ${JVM_ARGS:-} " in
+        *" --add-opens=java.base/java.nio=ALL-UNNAMED "*) ;;
+        *) JVM_ARGS="${JVM_ARGS:+$JVM_ARGS }--add-opens=java.base/java.nio=ALL-UNNAMED" ;;
+    esac
+    export JVM_ARGS
+    echo "  Snowflake Arrow: Java NIO module access configured"
+    echo "  Snowflake result cache: disabled for every pooled connection"
     echo ""
 fi
 
@@ -499,6 +758,7 @@ fi
 JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
 JMETER_CMD+=(-t "$TEST_PLAN")
 JMETER_CMD+=(-q "$CONNECTION_FILE")
+JMETER_CMD+=(-q "$TEST_PROPERTIES_FILE")
 JMETER_CMD+=(-l "${REPORT_DIR}/JmeterResultFile.csv")
 # HTML dashboard is ~3.5MB of vendored assets per run. CLAUDE.md documents
 # GENERATE_DASHBOARD=false to skip it; honour that here.
@@ -526,6 +786,7 @@ JMETER_CMD+=("-JRECYCLE_ON_EOF=$RECYCLE_ON_EOF")
 JMETER_CMD+=("-JQUERY_TIMEOUT=$QUERY_TIMEOUT")
 JMETER_CMD+=("-JLIMIT_RESULTSET=$LIMIT_RESULTSET")
 JMETER_CMD+=("-JMAX_CONCURRANCY=$MAX_CONCURRANCY")
+JMETER_CMD+=("-JJDBC_INIT_SQL=${JDBC_INIT_SQL:-}")
 JMETER_CMD+=("-Jjmeter.save.saveservice.autoflush=$JMETER_RESULT_AUTOFLUSH")
 if [ "$PROMETHEUS_ENABLED" = "true" ]; then
     JMETER_CMD+=("-Jprometheus.ip=$PROMETHEUS_IP" "-Jprometheus.port=$PROMETHEUS_PORT" "-Jprometheus.delay=$PROMETHEUS_DELAY")
@@ -580,18 +841,25 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     # participate in JMeter load generation or query execution.
     for _meta_var in DATA_SIZE DATA_TYPE RUN_MODE CUSTOMER CONFIG TAGS COMMENTS \
         ESTIMATED_CORES MEMORY_GB INSTANCE_TYPE EXECUTORS CORES_PER_EXECUTOR \
-        SERVERLESS ENGINE_BUILD; do
+        SERVERLESS ENGINE_BUILD RUN_SCOPE RUN_PURPOSE RUN_VALIDITY \
+        SUITE_ID SUITE_RUN_ID SUITE_SEQUENCE SUITE_WORKLOAD SUITE_NAME \
+        SUITE_COMPARISON_KEY; do
         _meta_value="${!_meta_var:-}"
         [ -n "$_meta_value" ] && CAPTURE_ARGS+=(--meta "${_meta_var}=${_meta_value}")
     done
-    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$QUERY_FILE")")
+    CAPTURE_ARGS+=(--meta "test_plan=$(basename "$ORIGINAL_TEST_PLAN")" --meta "queries=$(basename "$ORIGINAL_QUERY_FILE")")
+    [ -n "${QUERY_FILE_SOURCE:-}" ] && CAPTURE_ARGS+=(--meta "query_source=${QUERY_FILE_SOURCE}")
     [ -n "${GENERATED_PLAN:-}" ] && CAPTURE_ARGS+=(--meta "generated_plan=$(basename "$GENERATED_PLAN")")
-    QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$QUERY_FILE" --field sha256)
-    CAPTURE_ARGS+=(--meta "query_sha256=${QUERY_SHA}" --meta "requested_concurrency=${CONCURRENT_QUERY_COUNT}")
+    QUERY_SHA=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$ORIGINAL_QUERY_FILE" --field sha256)
+    CAPTURE_ARGS+=(--meta "query_sha256=${QUERY_SHA}" --meta "measured_iterations=${MEASURED_ITERATIONS}" --meta "requested_concurrency=${CONCURRENT_QUERY_COUNT}")
     CAPTURE_ARGS+=(--meta "requested_qps=${QPS}" --meta "requested_qpm=${QPM}")
     CAPTURE_ARGS+=(--meta "hold_period=${HOLD_PERIOD}" --meta "ramp_up_time=${RAMP_UP_TIME}" --meta "ramp_up_steps=${RAMP_UP_STEPS}")
     CAPTURE_ARGS+=(--meta "max_concurrency=${MAX_CONCURRANCY}" --meta "recycle_on_eof=${RECYCLE_ON_EOF}" --meta "random_order=${RANDOM_ORDER}")
     CAPTURE_ARGS+=(--meta "jmeter_result_autoflush=${JMETER_RESULT_AUTOFLUSH}")
+    CAPTURE_ARGS+=(--meta "warmup_enabled=${WARMUP_ENABLED}" --meta "warmup_iterations=${WARMUP_ITERATIONS}")
+    if [ "$WARMUP_ENABLED" = "true" ]; then
+        CAPTURE_ARGS+=(--meta "warmup_queries=$(basename "$WARMUP_QUERY_FILE")")
+    fi
     CAPTURE_ARGS+=(--meta "prometheus_enabled=${PROMETHEUS_ENABLED}")
     [ "$PROMETHEUS_ENABLED" = "true" ] && CAPTURE_ARGS+=(--meta "prometheus_endpoint=http://${PROMETHEUS_IP}:${PROMETHEUS_PORT}/metrics")
     [ -n "${PROMETHEUS_URL:-}" ] && CAPTURE_ARGS+=(--meta "prometheus_url=${PROMETHEUS_URL}")
@@ -601,6 +869,7 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     if [ -n "${LOAD_PROFILE:-}" ] && [ -f "$LOAD_PROFILE" ] \
        && grep -qE "FreeFormArrivalsThreadGroup|UltimateThreadGroup" "$TEST_PLAN" 2>/dev/null; then
         CAPTURE_ARGS+=(--meta "profile=$(basename "$LOAD_PROFILE")" --meta "profile_sha256=$(python3 "${PROJECT_ROOT}/utilities/query_file_info.py" "$LOAD_PROFILE" --field sha256)")
+        [ -n "${LOAD_PROFILE_SOURCE:-}" ] && CAPTURE_ARGS+=(--meta "profile_source=${LOAD_PROFILE_SOURCE}")
     fi
     # Exit 2 from the report means the run itself failed (no samples, or an error
     # rate above MAX_ERROR_PCT). Propagate it: a run where the queries did not
@@ -630,6 +899,36 @@ done
 [ -f "${REPORT_DIR}/dashboard/statistics.json" ] && \
     cp "${REPORT_DIR}/dashboard/statistics.json" "${REPORT_DIR}/statistics.json"
 
+# Optional e6-only enrichment. Machine-client credentials are deployment
+# secrets rather than JDBC properties and are never copied into artifacts.
+# Capture errors are non-fatal because they must not alter JMeter pass/fail.
+if [ "$E6_QUERY_HISTORY_ENABLED" = "true" ]; then
+    _e6_connection_string=$(grep -E '^CONNECTION_STRING=' "$CONNECTION_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+    if printf '%s' "$_e6_connection_string" | grep -q '^jdbc:e6data://'; then
+        _e6_host=$(printf '%s' "$_e6_connection_string" | sed -E 's#^jdbc:e6data://([^/:;]+).*#\1#')
+        _e6_cluster=$(printf '%s' "$_e6_connection_string" | sed -nE 's#.*[?&;]cluster-name=([^&;]+).*#\1#p')
+        E6_QH_ARGS=(
+            --base-url "https://${_e6_host}"
+            --jmeter-results "${REPORT_DIR}/JmeterResultFile.csv"
+            --output "${REPORT_DIR}/e6_query_history.csv"
+            --status-output "${REPORT_DIR}/e6_query_history_capture.json"
+            --wait-seconds "$E6_QUERY_HISTORY_WAIT_SECONDS"
+        )
+        [ -n "$_e6_cluster" ] && E6_QH_ARGS+=(--cluster "$_e6_cluster")
+        [ -n "${E6_QUERY_HISTORY_EMAIL:-}" ] && E6_QH_ARGS+=(--email "$E6_QUERY_HISTORY_EMAIL")
+        echo ""
+        echo "Capturing e6 Query History..."
+        set +e
+        python3 "${PROJECT_ROOT}/utilities/get_e6_query_history.py" "${E6_QH_ARGS[@]}"
+        E6_QH_RC=$?
+        set -e
+        [ "$E6_QH_RC" -ne 0 ] && echo -e "  ${YELLOW}Query History capture failed; JMeter results are unaffected.${NC}"
+        unset _e6_connection_string _e6_host _e6_cluster E6_QH_ARGS E6_QH_RC
+    else
+        echo -e "${YELLOW}Warning: E6_QUERY_HISTORY_ENABLED=true ignored for a non-e6 JDBC connection.${NC}"
+    fi
+fi
+
 echo ""
 if [ "${RUN_FAILED:-0}" -eq 1 ]; then
     echo -e "${RED}=========================================="
@@ -651,10 +950,16 @@ fi
 
 # Copy to S3 if enabled
 if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_UPLOAD_ROOT:-}" ]; then
-    ENGINE_VAL="${ENGINE:-unknown}"
-    CLUSTER_SIZE_VAL="${CLUSTER_SIZE:-unknown}"
-    BENCHMARK_VAL="${BENCHMARK_TYPE:-unknown}"
-    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/benchmark=${BENCHMARK_VAL}/run_type=${RUN_TYPE}/run_date=${RUN_DATE}/run_id=${TIMESTAMP}-${RUN_ID}/"
+    s3_partition_value() {
+        printf '%s' "${1:-unknown}" | tr '[:space:]/' '__' | tr -cd '[:alnum:]_.-'
+    }
+    ENGINE_VAL="$(s3_partition_value "${ENGINE:-unknown}")"
+    BENCHMARK_VAL="$(s3_partition_value "${BENCHMARK_TYPE:-unknown}")"
+    DATA_SIZE_VAL="$(s3_partition_value "${DATA_SIZE:-unknown}")"
+    CLUSTER_SIZE_VAL="$(s3_partition_value "${CLUSTER_SIZE:-unknown}")"
+    RUN_TYPE_VAL="$(s3_partition_value "${RUN_TYPE:-unknown}")"
+    RUN_ID_VAL="$(s3_partition_value "${TIMESTAMP}-${RUN_ID}")"
+    S3_DEST="${S3_UPLOAD_ROOT%/}/engine=${ENGINE_VAL}/benchmark=${BENCHMARK_VAL}/data_size=${DATA_SIZE_VAL}/cluster_size=${CLUSTER_SIZE_VAL}/run_type=${RUN_TYPE_VAL}/run_date=${RUN_DATE}/run_id=${RUN_ID_VAL}/"
 
     echo ""
     echo "Uploading results to S3..."

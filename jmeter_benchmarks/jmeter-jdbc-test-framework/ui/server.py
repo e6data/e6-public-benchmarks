@@ -19,6 +19,7 @@ import logging
 import mimetypes
 import os
 import re
+import shlex
 import signal
 import shutil
 import sqlite3
@@ -39,14 +40,19 @@ from utilities.load_profile import (
     expected_arrivals_per_second, expected_concurrency_per_second,
     read_arrivals_profile, read_concurrency_profile,
 )
+from ui.ec2_runner import EC2Config, EC2Runner, EC2RunnerError
 
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = Path(__file__).resolve().parent / "static"
 REPORTS = ROOT / "reports"
 LOG_DIR = ROOT / "logs"
+SUITE_MANIFESTS = ROOT / "suite_manifests"
+BENCHMARK_DEFINITIONS = ROOT / "benchmark_definitions"
 LOGGER = logging.getLogger("benchmark-ui")
-SETTINGS_PATH = Path(os.environ.get("BENCHMARK_UI_SETTINGS_FILE", ROOT / "ui" / "system_settings.json"))
+SETTINGS_PATH = Path(os.environ.get("BENCHMARK_SYSTEM_SETTINGS_FILE",
+                                    os.environ.get("BENCHMARK_UI_SETTINGS_FILE",
+                                                   ROOT / "config" / "system_settings.json")))
 ALLOW_SETTINGS_WRITE = os.environ.get("BENCHMARK_UI_ALLOW_SETTINGS_WRITE", "false").lower() == "true"
 try:
     SAVED_SETTINGS = json.loads(SETTINGS_PATH.read_text()) if SETTINGS_PATH.is_file() else {}
@@ -62,16 +68,32 @@ PROMETHEUS_DEFAULT_PORT = str(SAVED_SETTINGS.get("prometheus_port", os.environ.g
 PROMETHEUS_DEFAULT_DELAY = os.environ.get("PROMETHEUS_DELAY", "15")
 PROMETHEUS_URL = str(SAVED_SETTINGS.get("prometheus_url", os.environ.get("PROMETHEUS_URL", "")))
 GRAFANA_URL = str(SAVED_SETTINGS.get("grafana_url", os.environ.get("GRAFANA_URL", "")))
-SYSTEM_COPY_TO_S3 = SAVED_SETTINGS.get("copy_to_s3", os.environ.get("BENCHMARK_UI_COPY_TO_S3", "false").lower() == "true")
+SYSTEM_COPY_TO_S3 = SAVED_SETTINGS.get(
+    "copy_to_s3",
+    os.environ.get("COPY_TO_S3", os.environ.get("BENCHMARK_UI_COPY_TO_S3", "false")).lower() == "true",
+)
 SYSTEM_S3_REPORT_PATH = str(SAVED_SETTINGS.get("s3_report_path", os.environ.get("S3_REPORT_PATH", "")))
 SYSTEM_GENERATE_DASHBOARD = SAVED_SETTINGS.get("generate_dashboard", os.environ.get("GENERATE_DASHBOARD", "true").lower() == "true")
+E6_QUERY_HISTORY_ENABLED = SAVED_SETTINGS.get(
+    "e6_query_history_enabled", os.environ.get("E6_QUERY_HISTORY_ENABLED", "false").lower() == "true",
+)
+E6_MACHINE_CLIENT_ID = str(SAVED_SETTINGS.get("e6_machine_client_id", os.environ.get("E6_MACHINE_CLIENT_ID", "")))
+E6_MACHINE_CLIENT_SECRET = str(SAVED_SETTINGS.get("e6_machine_client_secret", os.environ.get("E6_MACHINE_CLIENT_SECRET", "")))
+E6_QUERY_HISTORY_EMAIL = str(SAVED_SETTINGS.get("e6_query_history_email", os.environ.get("E6_QUERY_HISTORY_EMAIL", "")))
+E6_QUERY_HISTORY_WAIT_SECONDS = str(SAVED_SETTINGS.get(
+    "e6_query_history_wait_seconds", os.environ.get("E6_QUERY_HISTORY_WAIT_SECONDS", "5"),
+))
 REPORT_RETENTION_DAYS = int(SAVED_SETTINGS.get("retention_days", os.environ.get("BENCHMARK_UI_REPORT_RETENTION_DAYS", "30")))
 MAX_LOCAL_REPORT_GB = int(SAVED_SETTINGS.get("max_local_report_gb", os.environ.get("BENCHMARK_UI_MAX_LOCAL_REPORT_GB", "100")))
 DELETE_LOCAL_AFTER_S3 = os.environ.get("BENCHMARK_UI_DELETE_LOCAL_AFTER_S3", "false").lower() == "true"
+RUNNER_BACKEND = os.environ.get("BENCHMARK_UI_RUNNER", "local").lower()
+if RUNNER_BACKEND not in {"local", "ec2"}:
+    raise RuntimeError("BENCHMARK_UI_RUNNER must be local or ec2")
 DB_READY = False
 
 PLANS = {
-    "jdbc_run_once": ("Run once", "Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "jdbc"),
+    "jdbc_sequential": ("Sequential", "Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "jdbc"),
+    "jdbc_run_once": ("Run once (concurrent)", "Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "jdbc"),
     "jdbc_concurrency": ("Fixed concurrency", "Test-Plans/Test-Plan-Maintain-static-concurrency.jmx", "jdbc"),
     "jdbc_qps": ("Constant QPS", "Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx", "jdbc"),
     "jdbc_qpm": ("Constant QPM", "Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx", "jdbc"),
@@ -81,12 +103,26 @@ PLANS = {
     "http_concurrency": ("Fixed concurrency (HTTP)", "Test-Plans/Test-Plan-Maintain-static-concurrency-http-endpoint.jmx", "http"),
     "http_arrivals": ("Variable arrival rate (HTTP)", "Test-Plans/Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx", "http"),
 }
+RUN_ONCE_PLANS = {"jdbc_sequential", "jdbc_run_once", "http_run_once"}
+PLAN_TEST_PROPERTIES = {
+    "jdbc_sequential": "test_properties/run_once.properties",
+    "jdbc_run_once": "test_properties/run_once.properties",
+    "http_run_once": "test_properties/run_once.properties",
+    "jdbc_concurrency": "test_properties/fixed_concurrency.properties",
+    "http_concurrency": "test_properties/fixed_concurrency.properties",
+    "jdbc_qps": "test_properties/constant_qps.properties",
+    "jdbc_qpm": "test_properties/constant_qpm.properties",
+    "jdbc_arrivals": "test_properties/variable_arrivals.properties",
+    "http_arrivals": "test_properties/variable_arrivals.properties",
+    "jdbc_variable_concurrency": "test_properties/variable_concurrency.properties",
+}
 
 NUMERIC_LIMITS = {
     "CONCURRENT_QUERY_COUNT": (1, 10000), "QPS": (1, 100000), "QPM": (1, 1000000),
     "HOLD_PERIOD": (1, 86400), "RAMP_UP_TIME": (0, 86400), "RAMP_UP_STEPS": (1, 10000),
     "MAX_CONCURRANCY": (1, 100000), "QUERY_TIMEOUT": (1, 86400),
     "LIMIT_RESULTSET": (1, 10000000), "MAX_ERROR_PCT": (0, 100),
+    "MEASURED_ITERATIONS": (1, 20),
 }
 
 PROFILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -94,30 +130,37 @@ CSV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.csv$", re.IGNORECASE)
 JDBC_DRIVERS = {
     "e6data": "io.e6.jdbc.driver.E6Driver",
     "databricks": "com.databricks.client.jdbc.Driver",
+    "snowflake": "net.snowflake.client.api.driver.SnowflakeDriver",
     "trino": "io.trino.jdbc.TrinoDriver",
 }
 PUBLIC_RUN_FIELDS = {
-    "plan", "engine", "connection", "query_file", "load_profile", "CONCURRENT_QUERY_COUNT",
+    "plan", "engine", "connection", "query_file", "load_profile", "test_properties_file", "CONCURRENT_QUERY_COUNT",
     "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME", "RAMP_UP_STEPS",
     "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET", "MAX_ERROR_PCT",
     "RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD", "PROMETHEUS_ENABLED",
-    "PROMETHEUS_PORT", "execution_mode", "metadata", "planned_workload", "rerun_of",
+    "PROMETHEUS_PORT", "WARMUP_ENABLED", "WARMUP_QUERY_FILE", "WARMUP_ITERATIONS", "MEASURED_ITERATIONS",
+    "execution_mode", "metadata", "planned_workload", "rerun_of",
 }
 METADATA_FIELDS = {
     "CLUSTER_SIZE": 80, "BENCHMARK_TYPE": 100, "DATA_SIZE": 40,
     "DATA_TYPE": 40, "RUN_MODE": 40, "CUSTOMER": 100, "CONFIG": 120,
     "TAGS": 300, "COMMENTS": 1000, "ESTIMATED_CORES": 20, "MEMORY_GB": 20,
     "INSTANCE_TYPE": 100, "EXECUTORS": 20, "CORES_PER_EXECUTOR": 20,
-    "SERVERLESS": 20, "ENGINE_BUILD": 120,
+    "SERVERLESS": 20, "ENGINE_BUILD": 120, "RUN_SCOPE": 20,
+    "RUN_PURPOSE": 40, "RUN_VALIDITY": 20,
 }
+RUN_SCOPES = {"internal", "external"}
+RUN_PURPOSES = {"adhoc", "reference-candidate", "nightly", "validation"}
+RUN_VALIDITIES = {"valid", "invalid", "pending"}
 DISPLAY_ENV_FIELDS = (
-    "RUN_ID", "ENGINE", "CONNECTION_FILE", "TEST_PLAN", "QUERY_FILE", "LOAD_PROFILE",
+    "RUN_ID", "ENGINE", "CONNECTION_FILE", "TEST_PLAN", "TEST_PROPERTIES_FILE", "QUERY_FILE", "LOAD_PROFILE",
     "CONCURRENT_QUERY_COUNT", "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME",
     "RAMP_UP_STEPS", "MAX_CONCURRANCY", "QUERY_TIMEOUT", "LIMIT_RESULTSET",
     "MAX_ERROR_PCT", "RECYCLE_ON_EOF", "RANDOM_ORDER", "REPORT_PATH",
     "RUN_TYPE", "COPY_TO_S3", "GENERATE_DASHBOARD", "PROMETHEUS_ENABLED",
     "PROMETHEUS_IP", "PROMETHEUS_PORT", "PROMETHEUS_DELAY", "PROMETHEUS_URL",
     "GRAFANA_URL", "JMETER_RESULT_AUTOFLUSH", *METADATA_FIELDS,
+    "WARMUP_ENABLED", "WARMUP_QUERY_FILE", "WARMUP_ITERATIONS", "MEASURED_ITERATIONS",
 )
 
 
@@ -149,10 +192,32 @@ def init_registry() -> None:
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS run_facts_search_idx ON run_facts(engine, benchmark, cluster_size, started_at DESC)")
             db.execute("CREATE INDEX IF NOT EXISTS query_results_transaction_idx ON query_results(transaction, run_id)")
+            db.execute("""CREATE TABLE IF NOT EXISTS run_annotations (
+                run_id TEXT PRIMARY KEY, scope TEXT NOT NULL, purpose TEXT NOT NULL,
+                validity TEXT NOT NULL, reason TEXT, updated_at DOUBLE PRECISION NOT NULL
+            )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS reference_promotions (
+                promotion_id TEXT PRIMARY KEY, reference_key TEXT NOT NULL, run_id TEXT NOT NULL,
+                report_id TEXT NOT NULL, engine TEXT NOT NULL, workload_signature JSONB NOT NULL,
+                promoted_at DOUBLE PRECISION NOT NULL, promoted_by TEXT, reason TEXT NOT NULL,
+                active BOOLEAN NOT NULL
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS reference_promotions_lookup_idx ON reference_promotions(reference_key, active)")
     else:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(DB_PATH) as db:
             db.execute("CREATE TABLE IF NOT EXISTS runs (run_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at REAL NOT NULL)")
+            db.execute("""CREATE TABLE IF NOT EXISTS run_annotations (
+                run_id TEXT PRIMARY KEY, scope TEXT NOT NULL, purpose TEXT NOT NULL,
+                validity TEXT NOT NULL, reason TEXT, updated_at REAL NOT NULL
+            )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS reference_promotions (
+                promotion_id TEXT PRIMARY KEY, reference_key TEXT NOT NULL, run_id TEXT NOT NULL,
+                report_id TEXT NOT NULL, engine TEXT NOT NULL, workload_signature TEXT NOT NULL,
+                promoted_at REAL NOT NULL, promoted_by TEXT, reason TEXT NOT NULL,
+                active INTEGER NOT NULL
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS reference_promotions_lookup_idx ON reference_promotions(reference_key, active)")
     DB_READY = True
 
 
@@ -163,7 +228,8 @@ def persist_run(run: "Run") -> None:
         "id": run.run_id, "label": run.label, "config": run.config,
         "report_root": str(run.report_root), "status": run.status,
         "started_at": run.started_at, "finished_at": run.finished_at,
-        "return_code": run.return_code, "logs": list(run.logs),
+        "return_code": run.return_code, "remote_command_id": run.remote_command_id,
+        "logs": list(run.logs),
     }
     if REGISTRY_BACKEND == "postgresql":
         import psycopg
@@ -177,11 +243,21 @@ def persist_run(run: "Run") -> None:
             persist_run_facts(db, run)
     else:
         with sqlite3.connect(DB_PATH) as db:
-            db.execute(
-                "INSERT INTO runs(run_id,payload,updated_at) VALUES(?,?,?) "
-                "ON CONFLICT(run_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
-                (run.run_id, json.dumps(payload), time.time()),
+            # Amazon Linux 2 links Python against SQLite 3.7, which predates
+            # SQLite's PostgreSQL-style ON CONFLICT ... DO UPDATE syntax.
+            # UPDATE followed by conditional INSERT is equivalent here and is
+            # supported by every SQLite version used by this project.
+            serialized = json.dumps(payload)
+            updated_at = time.time()
+            cursor = db.execute(
+                "UPDATE runs SET payload=?,updated_at=? WHERE run_id=?",
+                (serialized, updated_at, run.run_id),
             )
+            if cursor.rowcount == 0:
+                db.execute(
+                    "INSERT INTO runs(run_id,payload,updated_at) VALUES(?,?,?)",
+                    (run.run_id, serialized, updated_at),
+                )
 
 
 def _numeric(value: Any, integer: bool = False) -> int | float | None:
@@ -267,13 +343,14 @@ def restore_runs() -> None:
         try:
             item = raw if isinstance(raw, dict) else json.loads(raw)
             status = item["status"]
-            if status in {"queued", "running"}:
+            if status in {"queued", "worker_starting", "running", "finalizing"}:
                 status = "interrupted"
             run = Run(
                 item["id"], item.get("label", "Benchmark"), item.get("config", {}),
                 Path(item["report_root"]), status=status,
                 started_at=item.get("started_at"), finished_at=item.get("finished_at"),
-                return_code=item.get("return_code"), logs=deque(item.get("logs", []), maxlen=300),
+                return_code=item.get("return_code"), remote_command_id=item.get("remote_command_id"),
+                logs=deque(item.get("logs", []), maxlen=300),
             )
             if run.status == "failed" and run.return_code not in {None, 0}:
                 run.status = benchmark_status(
@@ -319,28 +396,58 @@ def storage_snapshot() -> dict[str, Any]:
 def update_system_settings(values: dict[str, Any]) -> dict[str, Any]:
     global PROMETHEUS_DEFAULT_ENABLED, PROMETHEUS_DEFAULT_PORT, PROMETHEUS_URL, GRAFANA_URL
     global SYSTEM_COPY_TO_S3, SYSTEM_S3_REPORT_PATH, SYSTEM_GENERATE_DASHBOARD
+    global E6_QUERY_HISTORY_ENABLED, E6_MACHINE_CLIENT_ID, E6_MACHINE_CLIENT_SECRET
+    global E6_QUERY_HISTORY_EMAIL, E6_QUERY_HISTORY_WAIT_SECONDS
     global REPORT_RETENTION_DAYS, MAX_LOCAL_REPORT_GB
     if not ALLOW_SETTINGS_WRITE:
         raise ValueError("System setting writes are disabled; set BENCHMARK_UI_ALLOW_SETTINGS_WRITE=true")
-    booleans = {key: values.get(key) is True for key in ("prometheus_enabled", "copy_to_s3", "generate_dashboard")}
+    booleans = {key: values.get(key) is True for key in (
+        "prometheus_enabled", "copy_to_s3", "generate_dashboard", "e6_query_history_enabled",
+    )}
     numbers = {
         "prometheus_port": max(1, min(65535, int(values.get("prometheus_port", PROMETHEUS_DEFAULT_PORT)))),
         "retention_days": max(1, min(3650, int(values.get("retention_days", REPORT_RETENTION_DAYS)))),
         "max_local_report_gb": max(1, min(100000, int(values.get("max_local_report_gb", MAX_LOCAL_REPORT_GB)))),
+        "e6_query_history_wait_seconds": max(0, min(300, int(values.get(
+            "e6_query_history_wait_seconds", E6_QUERY_HISTORY_WAIT_SECONDS,
+        )))),
     }
-    strings = {key: _property_value(values.get(key), key) for key in ("prometheus_url", "grafana_url", "s3_report_path")}
+    strings = {key: _property_value(values.get(key), key) for key in (
+        "prometheus_url", "grafana_url", "s3_report_path",
+        "e6_machine_client_id", "e6_query_history_email",
+    )}
+    supplied_secret = str(values.get("e6_machine_client_secret") or "")
+    if supplied_secret:
+        if any(ord(char) < 32 for char in supplied_secret):
+            raise ValueError("Machine client secret contains an invalid control character")
+    effective_secret = supplied_secret or str(SAVED_SETTINGS.get("e6_machine_client_secret", "")) or E6_MACHINE_CLIENT_SECRET
+    if booleans["e6_query_history_enabled"] and (not strings["e6_machine_client_id"] or not effective_secret):
+        raise ValueError("e6 Query History capture requires a machine client ID and secret")
     if strings["s3_report_path"] and not strings["s3_report_path"].startswith("s3://"):
         raise ValueError("S3 report path must start with s3://")
     saved = {**booleans, **numbers, **strings}
+    persisted_secret = supplied_secret or str(SAVED_SETTINGS.get("e6_machine_client_secret", ""))
+    if persisted_secret:
+        saved["e6_machine_client_secret"] = persisted_secret
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PATH.touch(mode=0o600, exist_ok=True)
+    SETTINGS_PATH.chmod(0o600)
     SETTINGS_PATH.write_text(json.dumps(saved, indent=2) + "\n")
+    SETTINGS_PATH.chmod(0o600)
+    SAVED_SETTINGS.clear()
+    SAVED_SETTINGS.update(saved)
     PROMETHEUS_DEFAULT_ENABLED = booleans["prometheus_enabled"]
     SYSTEM_COPY_TO_S3 = booleans["copy_to_s3"]
     SYSTEM_GENERATE_DASHBOARD = booleans["generate_dashboard"]
     PROMETHEUS_DEFAULT_PORT = str(numbers["prometheus_port"])
     REPORT_RETENTION_DAYS, MAX_LOCAL_REPORT_GB = numbers["retention_days"], numbers["max_local_report_gb"]
     PROMETHEUS_URL, GRAFANA_URL, SYSTEM_S3_REPORT_PATH = strings["prometheus_url"], strings["grafana_url"], strings["s3_report_path"]
-    return saved
+    E6_QUERY_HISTORY_ENABLED = booleans["e6_query_history_enabled"]
+    E6_MACHINE_CLIENT_ID = strings["e6_machine_client_id"]
+    E6_MACHINE_CLIENT_SECRET = effective_secret
+    E6_QUERY_HISTORY_EMAIL = strings["e6_query_history_email"]
+    E6_QUERY_HISTORY_WAIT_SECONDS = str(numbers["e6_query_history_wait_seconds"])
+    return {key: value for key, value in saved.items() if key != "e6_machine_client_secret"}
 
 
 def write_manifest(run: "Run", env: dict[str, str]) -> None:
@@ -354,6 +461,8 @@ def write_manifest(run: "Run", env: dict[str, str]) -> None:
     }
     if env.get("LOAD_PROFILE") and (ROOT / env["LOAD_PROFILE"]).is_file():
         manifest["artifacts"]["load_profile_sha256"] = file_sha256(ROOT / env["LOAD_PROFILE"])
+    if env.get("WARMUP_QUERY_FILE") and (ROOT / env["WARMUP_QUERY_FILE"]).is_file():
+        manifest["artifacts"]["warmup_query_sha256"] = file_sha256(ROOT / env["WARMUP_QUERY_FILE"])
     run.report_root.mkdir(parents=True, exist_ok=True)
     (run.report_root / "ui_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -364,6 +473,10 @@ def preflight(config: dict[str, Any]) -> dict[str, Any]:
     query_info = inspect_query_file(query_path)
     if query_info["errors"]:
         raise ValueError("Invalid QUERY_FILE: " + "; ".join(query_info["errors"][:5]))
+    if env.get("WARMUP_ENABLED") == "true":
+        warmup_info = inspect_query_file(ROOT / env["WARMUP_QUERY_FILE"])
+        if warmup_info["errors"]:
+            raise ValueError("Invalid WARMUP_QUERY_FILE: " + "; ".join(warmup_info["errors"][:5]))
     query_count = query_info["rows"]
     warnings = []
     free_gb = shutil.disk_usage(ROOT).free / 1024 ** 3
@@ -374,6 +487,55 @@ def preflight(config: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "query_count": query_count, "warnings": warnings,
             "workload_preview": workload_preview(config),
             "environment": {key: env[key] for key in DISPLAY_ENV_FIELDS if key in env}, "host": host_snapshot()}
+
+
+def _ordered_query_aliases(path: Path) -> list[str]:
+    """Read the normalized comparison identity without retaining SQL text."""
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle, strict=True)
+        alias_header = next(
+            (name for name in (reader.fieldnames or [])
+             if name.strip().casefold() in {"query_alias", "query_alias_name", "alias"}),
+            None,
+        )
+        if not alias_header:
+            raise ValueError(f"{path.name} does not contain a query alias column")
+        return [str(row.get(alias_header) or "").strip().casefold() for row in reader]
+
+
+def validate_paired_workloads(environments: list[dict[str, str]]) -> None:
+    """Require dialect-specific files to represent the same logical workload."""
+    if len(environments) != 2:
+        return
+    left, right = environments
+    left_aliases = _ordered_query_aliases(ROOT / left["QUERY_FILE"])
+    right_aliases = _ordered_query_aliases(ROOT / right["QUERY_FILE"])
+    if left_aliases != right_aliases:
+        left_only = sorted(set(left_aliases) - set(right_aliases))[:5]
+        right_only = sorted(set(right_aliases) - set(left_aliases))[:5]
+        detail = []
+        if len(left_aliases) != len(right_aliases):
+            detail.append(f"row counts differ ({len(left_aliases)} vs {len(right_aliases)})")
+        if left_only:
+            detail.append("only in primary: " + ", ".join(left_only))
+        if right_only:
+            detail.append("only in comparison: " + ", ".join(right_only))
+        if not detail:
+            detail.append("aliases are in a different order")
+        raise ValueError(
+            "Paired QUERY_FILE values must contain the same normalized QUERY_ALIAS values in the same order; "
+            + "; ".join(detail)
+        )
+    warmup_enabled = [env.get("WARMUP_ENABLED") == "true" for env in environments]
+    if warmup_enabled[0] != warmup_enabled[1]:
+        raise ValueError("Paired runs must either both enable warm-up or both disable it")
+    if all(warmup_enabled):
+        left_warmup = _ordered_query_aliases(ROOT / left["WARMUP_QUERY_FILE"])
+        right_warmup = _ordered_query_aliases(ROOT / right["WARMUP_QUERY_FILE"])
+        if left_warmup != right_warmup:
+            raise ValueError(
+                "Paired WARMUP_QUERY_FILE values must contain the same normalized QUERY_ALIAS values in the same order"
+            )
 
 
 def _compress_preview(values: list[float], mode: str, max_points: int = 600) -> tuple[list[float], int]:
@@ -391,22 +553,25 @@ def workload_preview(config: dict[str, Any]) -> dict[str, Any]:
     plan = str(config.get("plan", ""))
     if plan not in PLANS:
         raise ValueError("Unknown test plan")
-    ramp = int(config.get("RAMP_UP_TIME", 1))
+    ramp = int(config.get("RAMP_UP_TIME", 0))
     steps = int(config.get("RAMP_UP_STEPS", 1))
     hold = int(config.get("HOLD_PERIOD", 60))
-    concurrency = int(config.get("CONCURRENT_QUERY_COUNT", 2))
+    concurrency = 1 if plan == "jdbc_sequential" else int(config.get("CONCURRENT_QUERY_COUNT", 2))
     if ramp < 0 or steps < 1 or hold < 1 or concurrency < 1:
         raise ValueError("Workload ramp, duration, and concurrency values are invalid")
     source = "resolved run_test.sh inputs"
     expected_total = None
-    if plan.endswith("run_once"):
+    if plan in RUN_ONCE_PLANS:
+        measured_iterations = int(config.get("MEASURED_ITERATIONS", 1))
+        if not 1 <= measured_iterations <= 20:
+            raise ValueError("MEASURED_ITERATIONS must be between 1 and 20")
         values, kind, duration_s = [float(concurrency)], "concurrency", None
         query_file = str(config.get("query_file", "")).strip()
         if query_file:
             query_path = _inside(query_file, "data_files", ".csv")
             query_info = inspect_query_file(ROOT / query_path)
             if not query_info["errors"]:
-                expected_total = query_info["rows"]
+                expected_total = query_info["rows"] * measured_iterations
     elif plan in {"jdbc_concurrency", "http_concurrency"}:
         values = ([concurrency * second / ramp for second in range(ramp)] if ramp else []) + [float(concurrency)] * hold
         kind, duration_s = "concurrency", len(values)
@@ -443,12 +608,12 @@ def workload_preview(config: dict[str, Any]) -> dict[str, Any]:
         "kind": kind, "unit": "queries/sec" if kind == "arrivals" else "queries in flight",
         "values": compressed, "bucket_s": bucket, "duration_s": duration_s,
         "peak": round(max(values), 3) if values else 0, "expected_total": expected_total,
-        "source": source, "is_run_once": plan.endswith("run_once"),
+        "source": source, "is_run_once": plan in RUN_ONCE_PLANS,
     }
 
 
 def _property_value(value: Any, field: str, required: bool = False) -> str:
-    text = str(value or "").strip()
+    text = ("true" if value else "false") if isinstance(value, bool) else str(value or "").strip()
     if required and not text:
         raise ValueError(f"{field} is required")
     if "\n" in text or "\r" in text or "\x00" in text:
@@ -482,8 +647,21 @@ def read_preset(path: Path) -> dict[str, str]:
 
 
 def preset_catalog(directory: str, pattern: str) -> list[dict[str, Any]]:
-    return [{"file": path.relative_to(ROOT).as_posix(), "name": path.stem, "values": read_preset(path), "editable": path.stem.startswith("ui_")}
-            for path in sorted((ROOT / directory).glob(pattern)) if path.is_file()]
+    workload_names = {
+        "run_once": "Run once / sequential defaults",
+        "fixed_concurrency": "Fixed concurrency defaults",
+        "constant_qps": "Constant QPS defaults",
+        "constant_qpm": "Constant QPM defaults",
+        "variable_arrivals": "Variable QPS profile defaults",
+        "variable_concurrency": "Variable concurrency profile defaults",
+    }
+    return [{
+        "file": path.relative_to(ROOT).as_posix(),
+        "name": workload_names.get(path.stem, path.stem.removeprefix("ui_")),
+        "values": read_preset(path),
+        "editable": path.stem.startswith("ui_"),
+    } for path in sorted((ROOT / directory).glob(pattern))
+      if path.is_file() and not (directory == "test_properties" and path.stem == "default")]
 
 
 def create_preset(kind: str, config: dict[str, Any], overwrite: bool = False) -> str:
@@ -496,7 +674,11 @@ def create_preset(kind: str, config: dict[str, Any], overwrite: bool = False) ->
         raise ValueError("Preset name may contain only letters, numbers, dot, dash, and underscore")
     if not name.startswith("ui_"):
         name = "ui_" + name
-    allowed = set(NUMERIC_LIMITS) | {"TEST_PLAN", "LOAD_PROFILE", "QUERY_PATH", "RANDOM_ORDER", "RECYCLE_ON_EOF"} if kind == "workload" else set(METADATA_FIELDS)
+    allowed = set(NUMERIC_LIMITS) | {
+        "TEST_PLAN", "LOAD_PROFILE", "QUERY_PATH", "WARMUP_ENABLED",
+        "WARMUP_QUERY_FILE", "WARMUP_ITERATIONS", "RANDOM_ORDER", "RECYCLE_ON_EOF",
+        "GENERATE_DASHBOARD",
+    } if kind == "workload" else set(METADATA_FIELDS)
     values = config.get("values")
     if not isinstance(values, dict):
         raise ValueError("Preset values must be an object")
@@ -525,6 +707,307 @@ def delete_preset(kind: str, name: str) -> str:
     return target.relative_to(ROOT).as_posix()
 
 
+def _suite_manifest(path: Path, editable: bool) -> dict[str, Any]:
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Invalid suite manifest: {path.name}") from exc
+    schema_version = int(manifest.get("schema_version", 1))
+    workloads = manifest.get("benchmarks") if schema_version >= 3 else manifest.get("workloads")
+    if not isinstance(workloads, list) or not workloads:
+        raise ValueError(f"Suite manifest {path.name} must contain benchmarks")
+    return {
+        "file": path.relative_to(ROOT).as_posix(),
+        "name": str(manifest.get("name") or manifest.get("catalog_id") or path.stem),
+        "description": str(manifest.get("description") or manifest.get("selection") or ""),
+        "engine": str(manifest.get("engine") or ""),
+        "comparison_key": str(manifest.get("comparison_key") or ""),
+        "source_uri": str(manifest.get("source_uri") or ""),
+        "default_connection": str(manifest.get("default_connection") or ""),
+        "metadata": manifest.get("metadata") if isinstance(manifest.get("metadata"), dict) else {},
+        "schema_version": schema_version,
+        "workload_count": len(workloads), "workloads": workloads,
+        "benchmarks": workloads if schema_version >= 3 else [], "editable": editable,
+    }
+
+
+def suite_catalog() -> list[dict[str, Any]]:
+    manifests: list[dict[str, Any]] = []
+    for path in sorted((ROOT / "data_files").rglob("manifest.json")):
+        try:
+            manifests.append(_suite_manifest(path, False))
+        except ValueError:
+            LOGGER.warning("Ignoring invalid tracked suite manifest %s", path)
+    for path in sorted(SUITE_MANIFESTS.glob("*.json")):
+        try:
+            manifests.append(_suite_manifest(path, path.stem.startswith("ui_")))
+        except ValueError:
+            LOGGER.warning("Ignoring invalid local suite manifest %s", path)
+    return manifests
+
+
+def benchmark_definition_catalog() -> list[dict[str, Any]]:
+    """Return non-secret, complete ad-hoc run forms available for suite composition."""
+    definitions = []
+    for path in sorted(BENCHMARK_DEFINITIONS.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text())
+            run = payload.get("run")
+            if not isinstance(run, dict):
+                raise ValueError("run must be an object")
+            definitions.append({
+                "file": path.relative_to(ROOT).as_posix(),
+                "name": str(payload.get("name") or path.stem),
+                "description": str(payload.get("description") or ""),
+                "run": run,
+                "editable": path.stem.startswith("ui_"),
+            })
+        except (OSError, ValueError, json.JSONDecodeError):
+            LOGGER.warning("Ignoring invalid benchmark definition %s", path)
+    return definitions
+
+
+def create_benchmark_definition(config: dict[str, Any], overwrite: bool = False) -> str:
+    name = _property_value(config.get("name"), "Benchmark name", required=True)
+    if not PROFILE_NAME.fullmatch(name):
+        raise ValueError("Benchmark name may contain only letters, numbers, dot, dash, and underscore")
+    run = config.get("run")
+    if not isinstance(run, dict):
+        raise ValueError("Benchmark run form must be an object")
+    # Resolve the exact ad-hoc contract before saving it. This performs the same
+    # file, plan, connection and numeric validation used at launch.
+    build_environment(run, "definition-validation")
+    safe_run = {key: value for key, value in run.items() if key in PUBLIC_RUN_FIELDS}
+    safe_run["label"] = str(run.get("label") or name)[:80]
+    if not safe_run.get("connection"):
+        raise ValueError("Save the connection profile locally before saving a benchmark")
+    target = BENCHMARK_DEFINITIONS / f"ui_{name.removeprefix('ui_')}.json"
+    if target.exists() and not overwrite:
+        raise ValueError("A benchmark with this name already exists")
+    BENCHMARK_DEFINITIONS.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps({
+        "schema_version": 1,
+        "name": name.removeprefix("ui_"),
+        "description": _property_value(config.get("description"), "Description"),
+        "run": safe_run,
+    }, indent=2) + "\n")
+    return target.relative_to(ROOT).as_posix()
+
+
+def delete_benchmark_definition(name: str) -> str:
+    stem = Path(name).stem
+    if not stem.startswith("ui_") or not PROFILE_NAME.fullmatch(stem):
+        raise ValueError("Only locally-created ui_* benchmarks can be deleted")
+    target = BENCHMARK_DEFINITIONS / f"{stem}.json"
+    if not target.is_file():
+        raise ValueError("Benchmark definition not found")
+    target.unlink()
+    return target.relative_to(ROOT).as_posix()
+
+
+def import_s3_suite(uri: str) -> str:
+    """Cache a non-secret Performance Suite and its relative artifacts from S3."""
+    uri = _property_value(uri, "S3 suite URI", required=True)
+    if not re.fullmatch(r"s3://[A-Za-z0-9._-]+/[A-Za-z0-9._~!$&'()+,;=:@%/-]+\.json", uri):
+        raise ValueError("S3 suite URI must point to a JSON file")
+    digest = hashlib.sha256(uri.encode()).hexdigest()[:16]
+    target = SUITE_MANIFESTS / f"s3_{digest}.json"
+    query_root = ROOT / "data_files" / "suite_cache" / digest
+    property_root = ROOT / "test_properties" / "suite_cache" / digest
+    SUITE_MANIFESTS.mkdir(parents=True, exist_ok=True)
+    query_root.mkdir(parents=True, exist_ok=True)
+    property_root.mkdir(parents=True, exist_ok=True)
+    base_uri = uri.rsplit("/", 1)[0]
+
+    def download(source: str, destination: Path, max_bytes: int) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(["aws", "s3", "cp", source, str(destination), "--only-show-errors"], capture_output=True, text=True, timeout=120, check=False)
+        if result.returncode != 0:
+            raise ValueError((result.stderr or f"Could not download {source}").strip()[:500])
+        if not destination.is_file() or not 0 < destination.stat().st_size <= max_bytes:
+            destination.unlink(missing_ok=True)
+            raise ValueError(f"Downloaded suite artifact has an invalid size: {source}")
+
+    temporary = SUITE_MANIFESTS / f".{target.name}.download"
+    try:
+        download(uri, temporary, 1024 * 1024)
+        manifest = json.loads(temporary.read_text())
+        if int(manifest.get("schema_version", 0)) != 2:
+            raise ValueError("S3 Performance Suite must use schema_version 2")
+        workloads = manifest.get("workloads")
+        if not isinstance(workloads, list) or not workloads:
+            raise ValueError("S3 Performance Suite must contain workloads")
+        engine = str(manifest.get("engine") or "").lower()
+        if engine not in JDBC_DRIVERS:
+            raise ValueError("S3 Performance Suite engine is not supported")
+        # Credential profiles are deliberately host-local. An imported suite
+        # must never select a local credential file by name.
+        manifest["default_connection"] = ""
+        for index, workload in enumerate(workloads, 1):
+            if not isinstance(workload, dict):
+                raise ValueError(f"Workload {index} must be an object")
+            plan = str(workload.get("plan") or "")
+            if plan not in PLANS or PLANS[plan][2] != "jdbc":
+                raise ValueError(f"Workload {index} has an unsupported JDBC test plan")
+            for field in ("query_file", "warmup_query_file"):
+                value = str(workload.get(field) or "")
+                if not value:
+                    continue
+                if value.startswith("s3://") or Path(value).is_absolute() or ".." in Path(value).parts:
+                    raise ValueError(f"S3 suite {field} must be relative to suite.json")
+                destination = query_root / Path(value).name
+                download(f"{base_uri}/{value}", destination, 50 * 1024 * 1024)
+                workload[field] = destination.relative_to(ROOT).as_posix()
+            for field, suffix in (("load_profile", ".csv"), ("test_properties_file", ".properties")):
+                value = str(workload.get(field) or "")
+                if not value:
+                    continue
+                if value.startswith("test_properties/") and (ROOT / value).is_file():
+                    continue
+                if value.startswith("s3://") or Path(value).is_absolute() or ".." in Path(value).parts or Path(value).suffix != suffix:
+                    raise ValueError(f"S3 suite {field} must be a relative {suffix} file")
+                destination = property_root / Path(value).name
+                download(f"{base_uri}/{value}", destination, 5 * 1024 * 1024)
+                workload[field] = destination.relative_to(ROOT).as_posix()
+        manifest["source_uri"] = uri
+        target.write_text(json.dumps(manifest, indent=2) + "\n")
+    except FileNotFoundError as exc:
+        raise ValueError("AWS CLI is not installed on the UI host") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("S3 suite download timed out") from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target.relative_to(ROOT).as_posix()
+
+
+def create_suite_manifest(config: dict[str, Any], overwrite: bool = False) -> str:
+    name = _property_value(config.get("name"), "Suite name", required=True)
+    if not PROFILE_NAME.fullmatch(name):
+        raise ValueError("Suite name may contain only letters, numbers, dot, dash, and underscore")
+    stem = name if name.startswith("ui_") else f"ui_{name}"
+    selected_benchmarks = config.get("benchmarks")
+    if isinstance(selected_benchmarks, list):
+        if not selected_benchmarks:
+            raise ValueError("A Performance Suite requires at least one saved benchmark")
+        catalog = {item["file"]: item for item in benchmark_definition_catalog()}
+        snapshots = []
+        for sequence, selected in enumerate(selected_benchmarks, 1):
+            definition = catalog.get(str(selected))
+            if not definition:
+                raise ValueError(f"Unknown saved benchmark at position {sequence}")
+            # Copy the resolved form into the suite so later edits to the source
+            # definition cannot silently alter a reproducible suite.
+            snapshots.append({
+                "definition": definition["file"], "name": definition["name"],
+                "run": definition["run"],
+            })
+        SUITE_MANIFESTS.mkdir(parents=True, exist_ok=True)
+        target = SUITE_MANIFESTS / f"{stem}.json"
+        if target.exists() and not overwrite:
+            raise ValueError("A suite with this name already exists")
+        target.write_text(json.dumps({
+            "schema_version": 3, "name": name.removeprefix("ui_"),
+            "description": _property_value(config.get("description"), "Description"),
+            "benchmarks": snapshots,
+        }, indent=2) + "\n")
+        return target.relative_to(ROOT).as_posix()
+    engine = _property_value(config.get("engine"), "Engine", required=True).lower()
+    if engine not in JDBC_DRIVERS:
+        raise ValueError("Performance Suite engine is not supported")
+    comparison_key = _property_value(config.get("comparison_key"), "Comparison key")
+    if comparison_key and not PROFILE_NAME.fullmatch(comparison_key):
+        raise ValueError("Comparison key contains unsupported characters")
+    default_connection_value = str(config.get("default_connection") or "")
+    default_connection = _inside(default_connection_value, "connection_properties", ".properties") if default_connection_value else ""
+    if default_connection:
+        driver = next((line.split("=", 1)[1].strip() for line in (ROOT / default_connection).read_text(errors="ignore").splitlines() if line.startswith("DRIVER_CLASS=")), "")
+        profile_engine = {value: key for key, value in JDBC_DRIVERS.items()}.get(driver)
+        if profile_engine and profile_engine != engine:
+            raise ValueError(f"Default connection belongs to {profile_engine}, not {engine}")
+    metadata = config.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        raise ValueError("Suite metadata must be an object")
+    clean_metadata = {}
+    metadata_enums = {"RUN_SCOPE": RUN_SCOPES, "RUN_PURPOSE": RUN_PURPOSES, "RUN_VALIDITY": RUN_VALIDITIES}
+    for key, limit in METADATA_FIELDS.items():
+        value = _property_value(metadata.get(key), key)
+        if len(value) > limit:
+            raise ValueError(f"{key} must not exceed {limit} characters")
+        if value and key in metadata_enums and value not in metadata_enums[key]:
+            raise ValueError(f"{key} has an unsupported value")
+        if value:
+            clean_metadata[key] = value
+    workloads = config.get("workloads")
+    if not isinstance(workloads, list) or not workloads:
+        raise ValueError("A suite requires at least one workload")
+    clean_workloads = []
+    for index, workload in enumerate(workloads, 1):
+        if not isinstance(workload, dict):
+            raise ValueError(f"Workload {index} must be an object")
+        workload_id = _property_value(workload.get("id"), f"Workload {index} name", required=True)
+        if not PROFILE_NAME.fullmatch(workload_id):
+            raise ValueError(f"Workload {index} name contains unsupported characters")
+        query_file = _inside(str(workload.get("query_file", "")), "data_files", ".csv")
+        plan = _property_value(workload.get("plan"), f"Workload {index} plan", required=True)
+        if plan not in PLANS:
+            raise ValueError(f"Workload {index} has an unknown test plan")
+        if PLANS[plan][2] != "jdbc":
+            raise ValueError("Performance Suites currently support JDBC plans")
+        test_properties_value = str(workload.get("test_properties_file") or PLAN_TEST_PROPERTIES[plan])
+        test_properties_file = _inside(test_properties_value, "test_properties", ".properties")
+        warmup_value = str(workload.get("warmup_query_file") or "")
+        warmup_file = _inside(warmup_value, "data_files", ".csv") if warmup_value else ""
+        load_profile_value = str(workload.get("load_profile") or "")
+        needs_profile = plan in {"jdbc_arrivals", "jdbc_variable_concurrency"}
+        if needs_profile and not load_profile_value:
+            raise ValueError(f"Workload {index} requires a load profile")
+        load_profile = _inside(load_profile_value, "test_properties", ".csv") if load_profile_value else ""
+        try:
+            iterations = int(workload.get("measured_iterations", 1))
+            warmup_iterations = int(workload.get("warmup_iterations", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Workload {index} iterations must be integers") from exc
+        if not 1 <= iterations <= 20 or not 1 <= warmup_iterations <= 20:
+            raise ValueError(f"Workload {index} iterations must be between 1 and 20")
+        settings = workload.get("settings") or {}
+        if not isinstance(settings, dict):
+            raise ValueError(f"Workload {index} settings must be an object")
+        clean_settings = {}
+        for key in NUMERIC_LIMITS:
+            if key in settings and settings[key] not in {None, ""}:
+                clean_settings[key] = int(_number(settings, key, 1))
+        for key in {"RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD"}:
+            if key in settings:
+                clean_settings[key] = settings[key] is True
+        clean_workloads.append({"id": workload_id, "plan": plan,
+            "test_properties_file": test_properties_file, "query_file": query_file,
+            "warmup_query_file": warmup_file, "warmup_iterations": warmup_iterations,
+            "load_profile": load_profile, "measured_iterations": iterations, "settings": clean_settings})
+    SUITE_MANIFESTS.mkdir(parents=True, exist_ok=True)
+    target = SUITE_MANIFESTS / f"{stem}.json"
+    if target.exists() and not overwrite:
+        raise ValueError("A suite with this name already exists")
+    manifest = {
+        "schema_version": 2, "name": name.removeprefix("ui_"), "engine": engine,
+        "comparison_key": comparison_key, "default_connection": default_connection,
+        "description": _property_value(config.get("description"), "Description"),
+        "metadata": clean_metadata, "workloads": clean_workloads,
+    }
+    target.write_text(json.dumps(manifest, indent=2) + "\n")
+    return target.relative_to(ROOT).as_posix()
+
+
+def delete_suite_manifest(name: str) -> str:
+    stem = Path(name).stem
+    if not stem.startswith("ui_") or not PROFILE_NAME.fullmatch(stem):
+        raise ValueError("Only locally-created ui_* suites can be deleted")
+    target = SUITE_MANIFESTS / f"{stem}.json"
+    if not target.is_file():
+        raise ValueError("Suite not found")
+    target.unlink()
+    return target.relative_to(ROOT).as_posix()
+
+
 def create_connection_profile(config: dict[str, Any]) -> str:
     """Create a local properties file compatible with run_test.sh.
 
@@ -549,6 +1032,10 @@ def create_connection_profile(config: dict[str, Any]) -> str:
             "USER": _property_value(config.get("user"), "USER"),
             "PASSWORD": _property_value(config.get("password"), "PASSWORD"),
             "DRIVER_CLASS": _property_value(driver, "DRIVER_CLASS", required=True),
+            "JDBC_INIT_SQL": (
+                "ALTER SESSION SET USE_CACHED_RESULT = FALSE"
+                if engine == "snowflake" else ""
+            ),
         }
         heading = "# JDBC Connection Properties"
     elif transport == "http":
@@ -580,10 +1067,10 @@ def create_connection_profile(config: dict[str, Any]) -> str:
 
 
 def input_destination(kind: str, filename: str, allow_existing: bool = False) -> Path:
-    directory = {"query": "data_files", "profile": "test_properties"}.get(kind)
+    directory = {"query": "data_files", "warmup": "data_files", "profile": "test_properties"}.get(kind)
     clean_name = Path(filename).name
     if not directory or filename != clean_name or not CSV_NAME.fullmatch(clean_name):
-        raise ValueError("Input must be a CSV filename for query or profile")
+        raise ValueError("Input must be a CSV filename for query, warm-up, or profile")
     target = ROOT / directory / clean_name
     if target.exists() and not allow_existing:
         raise ValueError("A local input with this filename already exists")
@@ -608,14 +1095,39 @@ def import_s3_input(kind: str, uri: str) -> str:
     parsed = urlparse(uri)
     filename = Path(parsed.path).name
     if parsed.scheme != "s3" or not parsed.netloc or not filename:
-        raise ValueError("Use a complete s3://bucket/path/file.csv URI")
+        raise ValueError("Use a complete s3://bucket/path/file URI")
+    if kind == "metadata":
+        suffix = Path(filename).suffix.lower()
+        stem = Path(filename).stem
+        if suffix not in {".txt", ".properties"} or not PROFILE_NAME.fullmatch(stem):
+            raise ValueError("Metadata profile must be a .txt or .properties file with a safe filename")
+        temp = ROOT / "metadata_files" / f".{stem}.{uuid.uuid4().hex}.s3-download"
+        try:
+            command = ["aws", "s3", "cp", uri, str(temp), "--only-show-errors"]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+            if result.returncode != 0:
+                result = subprocess.run(
+                    [*command, "--no-sign-request"], capture_output=True, text=True,
+                    timeout=120, check=False,
+                )
+            if result.returncode != 0:
+                raise ValueError((result.stderr or "S3 download failed; check AWS credentials and URI").strip()[:500])
+            if not temp.is_file() or not 0 < temp.stat().st_size <= 1024 * 1024:
+                raise ValueError("Downloaded metadata profile must be between 1 byte and 1 MB")
+            values = {key: value for key, value in read_preset(temp).items() if key in METADATA_FIELDS}
+            if not values:
+                raise ValueError("Metadata profile contains no supported metadata fields")
+            return create_preset("metadata", {"name": stem, "values": values}, overwrite=True)
+        except FileNotFoundError as exc:
+            raise ValueError("AWS CLI is not installed on the UI host") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError("S3 download timed out after 120 seconds") from exc
+        finally:
+            temp.unlink(missing_ok=True)
     target = input_destination(kind, filename, allow_existing=True)
-    # S3 selection is idempotent: if this exact destination is already local,
-    # select it instead of forcing an overwrite or another network operation.
-    if target.exists():
-        return target.relative_to(ROOT).as_posix()
+    temp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.s3-download")
     try:
-        command = ["aws", "s3", "cp", uri, str(target), "--only-show-errors"]
+        command = ["aws", "s3", "cp", uri, str(temp), "--only-show-errors"]
         result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
         # Public buckets remain readable without credentials. AWS CLI may report
         # an expired session as ExpiredToken or only as an HTTP 400, so retry any
@@ -627,15 +1139,18 @@ def import_s3_input(kind: str, uri: str) -> str:
             )
         if result.returncode != 0:
             raise ValueError((result.stderr or "S3 download failed; check AWS credentials and URI").strip()[:500])
-        if not target.is_file() or not 0 < target.stat().st_size <= 50 * 1024 * 1024:
+        if not temp.is_file() or not 0 < temp.stat().st_size <= 50 * 1024 * 1024:
             raise ValueError("Downloaded CSV must be between 1 byte and 50 MB")
+        os.replace(temp, target)
     except FileNotFoundError as exc:
         raise ValueError("AWS CLI is not installed on the UI host") from exc
     except subprocess.TimeoutExpired as exc:
         raise ValueError("S3 download timed out after 120 seconds") from exc
     except Exception:
-        target.unlink(missing_ok=True)
+        temp.unlink(missing_ok=True)
         raise
+    finally:
+        temp.unlink(missing_ok=True)
     return target.relative_to(ROOT).as_posix()
 
 
@@ -643,9 +1158,9 @@ def _inside(relative: str, directory: str, suffix: str) -> str:
     """Return a normalized repo-relative file from one allowed directory."""
     candidate = (ROOT / relative).resolve()
     base = (ROOT / directory).resolve()
-    if candidate.parent != base or candidate.suffix.lower() != suffix or not candidate.is_file():
+    if not candidate.is_relative_to(base) or candidate.suffix.lower() != suffix or not candidate.is_file():
         raise ValueError(f"Invalid {directory} file")
-    return candidate.relative_to(ROOT).as_posix()
+    return candidate.relative_to(ROOT.resolve()).as_posix()
 
 
 def _number(config: dict[str, Any], key: str, default: int) -> str:
@@ -670,26 +1185,45 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
     if (transport == "http") != is_http:
         raise ValueError(f"The selected connection is not a {transport.upper()} connection")
     query = _inside(str(config.get("query_file", "")), "data_files", ".csv")
+    test_properties_file = _inside(
+        str(config.get("test_properties_file") or PLAN_TEST_PROPERTIES[plan_key]),
+        "test_properties", ".properties",
+    )
+    property_defaults = read_preset(ROOT / test_properties_file)
 
     env = os.environ.copy()
     env.update({
         "RUN_ID": run_id,
         "CONNECTION_FILE": connection,
         "TEST_PLAN": plan_path,
+        "TEST_PROPERTIES_FILE": test_properties_file,
         "QUERY_FILE": query,
         "REPORT_PATH": f"reports/ui-{run_id}",
         "RUN_TYPE": f"ui_{plan_key}",
         "COPY_TO_S3": "true" if SYSTEM_COPY_TO_S3 else "false",
         "GENERATE_DASHBOARD": "true" if config.get("GENERATE_DASHBOARD", SYSTEM_GENERATE_DASHBOARD) is True else "false",
         "PROMETHEUS_ENABLED": "true" if config.get("PROMETHEUS_ENABLED", PROMETHEUS_DEFAULT_ENABLED) is True else "false",
-        "RANDOM_ORDER": "true" if config.get("RANDOM_ORDER") is True else "false",
+        "RANDOM_ORDER": "true" if config.get("RANDOM_ORDER", property_defaults.get("RANDOM_ORDER") == "true") is True else "false",
         # A run-once plan must terminate at EOF even if a stale browser form
         # submits RECYCLE_ON_EOF=true. Rate/concurrency plans default to repeat.
-        "RECYCLE_ON_EOF": "false" if plan_key.endswith("run_once") else ("true" if config.get("RECYCLE_ON_EOF", True) is True else "false"),
+        "RECYCLE_ON_EOF": "false" if plan_key in RUN_ONCE_PLANS else ("true" if config.get("RECYCLE_ON_EOF", property_defaults.get("RECYCLE_ON_EOF") == "true") is True else "false"),
         # UI telemetry tails the JMeter CSV while the process runs. CLI keeps
         # JMeter's lower-I/O buffered default unless explicitly overridden.
         "JMETER_RESULT_AUTOFLUSH": "true",
+        "WARMUP_ENABLED": "true" if config.get("WARMUP_ENABLED") is True else "false",
     })
+    warmup_file = str(config.get("WARMUP_QUERY_FILE") or "")
+    if env["WARMUP_ENABLED"] == "true":
+        if not warmup_file:
+            raise ValueError("Select a WARMUP_QUERY_FILE when warm-up is enabled")
+        env["WARMUP_QUERY_FILE"] = _inside(warmup_file, "data_files", ".csv")
+        try:
+            warmup_iterations = int(config.get("WARMUP_ITERATIONS", 1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("WARMUP_ITERATIONS must be an integer") from exc
+        if not 1 <= warmup_iterations <= 20:
+            raise ValueError("WARMUP_ITERATIONS must be between 1 and 20")
+        env["WARMUP_ITERATIONS"] = str(warmup_iterations)
     configured_engine = _property_value(config.get("engine"), "ENGINE") or "unknown"
     driver = next((line.split("=", 1)[1].strip() for line in connection_lines
                    if line.startswith("DRIVER_CLASS=")), "")
@@ -704,19 +1238,28 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
     metadata = config.get("metadata") or {}
     if not isinstance(metadata, dict):
         raise ValueError("metadata must be an object")
+    enum_metadata = {
+        "RUN_SCOPE": RUN_SCOPES, "RUN_PURPOSE": RUN_PURPOSES,
+        "RUN_VALIDITY": RUN_VALIDITIES,
+    }
     for key, limit in METADATA_FIELDS.items():
         value = _property_value(metadata.get(key), key)
         if len(value) > limit:
             raise ValueError(f"{key} must not exceed {limit} characters")
+        if value and key in enum_metadata and value not in enum_metadata[key]:
+            raise ValueError(f"{key} has an unsupported value")
         if value:
             env[key] = value
     defaults = {
-        "CONCURRENT_QUERY_COUNT": 2, "QPS": 1, "QPM": 60, "HOLD_PERIOD": 60,
-        "RAMP_UP_TIME": 1, "RAMP_UP_STEPS": 1, "MAX_CONCURRANCY": 100,
+        "CONCURRENT_QUERY_COUNT": 2, "QPS": 1, "QPM": 10, "HOLD_PERIOD": 300,
+        "RAMP_UP_TIME": 0, "RAMP_UP_STEPS": 1, "MAX_CONCURRANCY": 900,
         "QUERY_TIMEOUT": 300, "LIMIT_RESULTSET": 1000, "MAX_ERROR_PCT": 5,
     }
     for key, default in defaults.items():
-        env[key] = _number(config, key, default)
+        env[key] = _number(config, key, int(property_defaults.get(key, default)))
+    if plan_key == "jdbc_sequential":
+        env["CONCURRENT_QUERY_COUNT"] = "1"
+    env["MEASURED_ITERATIONS"] = _number(config, "MEASURED_ITERATIONS", 1) if plan_key in RUN_ONCE_PLANS else "1"
     try:
         prometheus_port = int(config.get("PROMETHEUS_PORT", PROMETHEUS_DEFAULT_PORT))
         prometheus_delay = int(PROMETHEUS_DEFAULT_DELAY)
@@ -733,6 +1276,16 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
         env["GRAFANA_URL"] = GRAFANA_URL
     if SYSTEM_S3_REPORT_PATH:
         env["S3_REPORT_PATH"] = SYSTEM_S3_REPORT_PATH
+    env.update({
+        "E6_QUERY_HISTORY_ENABLED": "true" if E6_QUERY_HISTORY_ENABLED else "false",
+        "E6_QUERY_HISTORY_WAIT_SECONDS": E6_QUERY_HISTORY_WAIT_SECONDS,
+    })
+    if E6_MACHINE_CLIENT_ID:
+        env["E6_MACHINE_CLIENT_ID"] = E6_MACHINE_CLIENT_ID
+    if E6_MACHINE_CLIENT_SECRET:
+        env["E6_MACHINE_CLIENT_SECRET"] = E6_MACHINE_CLIENT_SECRET
+    if E6_QUERY_HISTORY_EMAIL:
+        env["E6_QUERY_HISTORY_EMAIL"] = E6_QUERY_HISTORY_EMAIL
     if plan_key in {"jdbc_arrivals", "http_arrivals"}:
         env["LOAD_PROFILE"] = _inside(str(config.get("load_profile", "")), "test_properties", ".csv")
     elif plan_key == "jdbc_variable_concurrency":
@@ -765,10 +1318,15 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         pass
     if not rows:
         return {"samples": 0, "successful": 0, "failed": 0, "throughput": 0, "p50": None, "p95": None, "active": 0, "duration_s": 0, "series": {"arrivals": [], "successful": [], "failed": [], "in_flight": [], "latency_ms": []}}
-    elapsed = sorted(int(row["elapsed"]) for row in rows if row["success"] == "true")
+    successful_rows = [row for row in rows if row["success"] == "true"]
+    has_jmeter_latency = bool(successful_rows) and all(
+        (row.get("Latency") or "").isdigit() for row in successful_rows
+    )
+    latency_field = "Latency" if has_jmeter_latency else "elapsed"
+    latencies = sorted(int(row[latency_field]) for row in successful_rows)
     started = [int(row["timeStamp"]) for row in rows]
     arrival_window = max(0.001, (max(started) - min(started)) / 1000)
-    percentile = lambda pct: elapsed[min(len(elapsed) - 1, max(0, (len(elapsed) * pct + 99) // 100 - 1))] if elapsed else None
+    percentile = lambda pct: latencies[min(len(latencies) - 1, max(0, (len(latencies) * pct + 99) // 100 - 1))] if latencies else None
     origin = min(started)
     last_second = max(max(0, (int(row["timeStamp"]) + int(row.get("elapsed") or 0) - origin) // 1000) for row in rows)
     arrivals = [0] * (last_second + 1)
@@ -792,7 +1350,7 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         in_flight_events.setdefault(end_ms, [0, 0])[0] += 1
         if row["success"] == "true":
             successful[end] += 1
-            latency_sum[end] += duration
+            latency_sum[end] += int(row[latency_field])
             latency_count[end] += 1
         else:
             failed[end] += 1
@@ -820,6 +1378,12 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
             event_index += 1
         in_flight.append(peak)
     latency_series = [round(total / count) if count else 0 for total, count in zip(latency_sum, latency_count)]
+    thread_cap = max(
+        (int(row.get("allThreads") or row.get("grpThreads") or 0) for row in rows),
+        default=0,
+    )
+    if thread_cap:
+        in_flight = [min(value, thread_cap) for value in in_flight]
     top_failure = max(failures.items(), key=lambda item: item[1]) if failures else None
     series = {"arrivals": arrivals, "successful": successful, "failed": failed, "in_flight": in_flight, "latency_ms": latency_series}
     bucket = max(1, (len(arrivals) + 599) // 600)
@@ -835,7 +1399,15 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
         }
     completion_window = max(0.001, (max(int(row["timeStamp"]) + int(row.get("elapsed") or 0) for row in rows) - origin) / 1000)
     return {
-        "samples": len(rows), "successful": len(elapsed), "failed": len(rows) - len(elapsed),
+        "samples": len(rows), "successful": len(latencies), "failed": len(rows) - len(latencies),
+        "latency_source": "jmeter_latency" if has_jmeter_latency else "jmeter_elapsed_legacy_fallback",
+        "latency_ms": {
+            "min": latencies[0] if latencies else None,
+            "p50": percentile(50), "p90": percentile(90),
+            "p95": percentile(95), "p99": percentile(99),
+            "max": latencies[-1] if latencies else None,
+            "mean": round(sum(latencies) / len(latencies)) if latencies else None,
+        },
         # Keep throughput completion-based so live/cancelled cards mean the
         # same thing as final run_summary.json. Arrival rate is separate.
         "throughput": round(len(rows) / completion_window, 2),
@@ -910,6 +1482,7 @@ class Run:
     started_at: float | None = None
     finished_at: float | None = None
     return_code: int | None = None
+    remote_command_id: str | None = None
     process: subprocess.Popen[str] | None = field(default=None, repr=False)
     logs: deque[str] = field(default_factory=lambda: deque(maxlen=300), repr=False)
 
@@ -929,11 +1502,21 @@ class Run:
                 "status": "failed",
                 "message": "S3 artifact upload failed; see runner output",
             }
+        input_artifacts: dict[str, str] = {}
+        if summary_paths:
+            inputs = summary_paths[-1].parent / "inputs"
+            for key, filename in (
+                ("query", "query.csv"),
+                ("load_profile", "load-profile.csv"),
+                ("warmup_query", "warmup-query.csv"),
+            ):
+                if (inputs / filename).is_file():
+                    input_artifacts[key] = filename
         public_config = self.config
         planned = self.config.get("planned_workload")
         # Older persisted run-once records predate planned query totals. Fill
         # them from the same validated query CSV without rewriting history.
-        if self.config.get("plan", "").endswith("run_once") \
+        if self.config.get("plan", "") in RUN_ONCE_PLANS \
                 and isinstance(planned, dict) and planned.get("expected_total") is None:
             try:
                 public_config = dict(self.config)
@@ -947,6 +1530,10 @@ class Run:
             "metrics": live_metrics(self.report_root), "summary": compact_summary(summary),
             "logs": list(self.logs), "report_path": str(self.report_root.relative_to(ROOT)), "report_id": report_id,
             "artifact_storage": artifact_storage,
+            "input_artifacts": input_artifacts,
+            "cancellable": self.status == "running" and (
+                RUNNER_BACKEND == "local" or bool(self.remote_command_id)
+            ),
             "finalization_warning": self.return_code not in {None, 0} and self.status == "completed",
         }
 
@@ -955,26 +1542,378 @@ RUNS: dict[str, Run] = {}
 RUN_LOCK = threading.Lock()
 
 
+@dataclass
+class SuiteExecution:
+    suite_run_id: str
+    suite_file: str
+    suite_name: str
+    connection: str
+    report_root: Path
+    continue_on_failure: bool = False
+    status: str = "queued"
+    started_at: float | None = None
+    finished_at: float | None = None
+    return_code: int | None = None
+    process: subprocess.Popen[str] | None = field(default=None, repr=False)
+    runner_pid: int | None = None
+    logs: deque[str] = field(default_factory=lambda: deque(maxlen=300), repr=False)
+
+    def _active_workload(self, rows: list[dict[str, str]], suite: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Expose the in-progress suite item through the normal run-card contract."""
+        finished_sequences = {int(row["sequence"]) for row in rows if str(row.get("sequence", "")).isdigit()}
+        candidates = sorted(
+            (path for path in self.report_root.iterdir()
+             if path.is_dir() and re.match(r"^\d{2}-", path.name)),
+            key=lambda path: path.name,
+        ) if self.report_root.is_dir() else []
+        active_root = next(
+            (path for path in candidates
+             if int(path.name.split("-", 1)[0]) not in finished_sequences),
+            None,
+        )
+        if active_root is None:
+            return None
+        sequence = int(active_root.name.split("-", 1)[0])
+        measured_dirs = sorted(
+            (path for path in active_root.iterdir()
+             if path.is_dir() and path.name != "_warmup" and (path / "JmeterResultFile.csv").exists()),
+            key=lambda path: path.stat().st_mtime,
+        )
+        if not measured_dirs:
+            return {
+                "sequence": sequence, "workload_count": 0, "planned_samples": None,
+                "progress_pct": 0, "phase": "warm-up",
+            }
+        measured = measured_dirs[-1]
+        metrics = live_metrics(active_root)
+        summary_path = measured / "run_summary.json"
+        summary = None
+        if summary_path.is_file():
+            try:
+                summary = json.loads(summary_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                pass
+        generated = measured / "measured-queries-3x.csv"
+        if not generated.is_file():
+            generated = next(iter(sorted(measured.glob("measured-queries-*.csv"))), Path())
+        planned_samples = None
+        if generated.is_file():
+            try:
+                with generated.open(newline="", encoding="utf-8-sig", errors="replace") as handle:
+                    planned_samples = max(0, sum(1 for _ in csv.reader(handle)) - 1)
+            except (OSError, csv.Error):
+                pass
+
+        raw: dict[str, Any] = {}
+        if suite:
+            items = suite.get("benchmarks") if int(suite.get("schema_version", 1)) >= 3 else suite.get("workloads")
+            if isinstance(items, list) and sequence <= len(items):
+                selected = items[sequence - 1]
+                raw = dict(selected.get("run") or {}) if int(suite.get("schema_version", 1)) >= 3 else dict(selected)
+        plan = str(raw.get("plan") or "jdbc_sequential")
+        settings = raw.get("settings") if isinstance(raw.get("settings"), dict) else {}
+        iterations = int(raw.get("MEASURED_ITERATIONS", raw.get("measured_iterations", 1)) or 1)
+        query_file = str(raw.get("query_file") or "")
+        if not query_file and generated.is_file():
+            try:
+                query_file = generated.resolve().relative_to(ROOT).as_posix()
+            except ValueError:
+                query_file = generated.as_posix()
+        engine = str(raw.get("engine") or (suite or {}).get("engine") or "")
+        environment = {
+            "ENGINE": engine,
+            "TEST_PLAN": PLANS.get(plan, (plan, plan, "jdbc"))[1],
+            "QUERY_FILE": query_file,
+            "CONCURRENT_QUERY_COUNT": str(settings.get("CONCURRENT_QUERY_COUNT", raw.get("CONCURRENT_QUERY_COUNT", 1))),
+            "MEASURED_ITERATIONS": str(iterations),
+            "QUERY_TIMEOUT": str(settings.get("QUERY_TIMEOUT", raw.get("QUERY_TIMEOUT", 300))),
+        }
+        planned = {
+            "pattern": PLANS.get(plan, (plan, plan, "jdbc"))[0],
+            "kind": "concurrency", "unit": "queries in flight",
+            "values": [float(environment["CONCURRENT_QUERY_COUNT"])], "bucket_s": 1,
+            "duration_s": None, "peak": float(environment["CONCURRENT_QUERY_COUNT"]),
+            "expected_total": planned_samples, "source": "suite measured query file",
+            "is_run_once": plan in RUN_ONCE_PLANS,
+        }
+        samples = int((summary or {}).get("samples", metrics.get("samples", 0)) or 0)
+        report_id = measured.resolve().relative_to(REPORTS).as_posix() if summary else None
+        runner_log = self.report_root / "suite_runner.log"
+        log_lines: list[str] = []
+        if runner_log.is_file():
+            try:
+                log_lines = runner_log.read_text(errors="replace").splitlines()[-40:]
+            except OSError:
+                pass
+        return {
+            "sequence": sequence, "workload_count": samples,
+            "planned_samples": planned_samples,
+            "progress_pct": round(samples / planned_samples * 100, 1) if planned_samples else 0,
+            "phase": "measured",
+            "run": {
+                "id": f"{self.suite_run_id}-{sequence:02d}",
+                "label": str(raw.get("id") or raw.get("label") or active_root.name.split("-", 1)[1]),
+                "status": "running" if self.status == "running" and summary is None else ("completed" if summary else self.status),
+                "started_at": measured.stat().st_mtime,
+                "finished_at": None,
+                "return_code": None,
+                "config": {"plan": plan, "environment": environment, "planned_workload": planned},
+                "metrics": metrics, "summary": compact_summary(summary), "logs": log_lines,
+                "report_path": active_root.resolve().relative_to(ROOT).as_posix(), "report_id": report_id,
+                "artifact_storage": None, "cancellable": False, "finalization_warning": False,
+            },
+        }
+
+    def public(self) -> dict[str, Any]:
+        rows = []
+        summary = self.report_root / "suite_summary.tsv"
+        if summary.is_file():
+            try:
+                with summary.open(newline="", errors="replace") as handle:
+                    rows = list(csv.DictReader(handle, delimiter="\t"))
+            except (OSError, csv.Error):
+                rows = []
+        manifest_count = 0
+        suite = None
+        try:
+            suite = next((item for item in suite_catalog() if item["file"] == self.suite_file), None)
+            manifest_count = int((suite or {}).get("workload_count", 0))
+        except (OSError, json.JSONDecodeError):
+            pass
+        active_workload = self._active_workload(rows, suite)
+        enriched_rows = []
+        for row in rows:
+            item = dict(row)
+            report_value = str(item.get("report") or "")
+            report_root = Path(report_value)
+            if not report_root.is_absolute():
+                report_root = ROOT / report_root
+            summaries = sorted(
+                report_root.glob("*/run_summary.json"),
+                key=lambda path: path.stat().st_mtime,
+            ) if report_root.is_dir() else []
+            run_summary = None
+            if summaries:
+                try:
+                    run_summary = json.loads(summaries[-1].read_text())
+                except (OSError, json.JSONDecodeError):
+                    run_summary = None
+            if run_summary:
+                latency = run_summary.get("latency_ms") or {}
+                item.update({
+                    "samples": int(run_summary.get("samples") or 0),
+                    "successful": int(run_summary.get("successful") or 0),
+                    "failed_samples": int(run_summary.get("failed") or 0),
+                    "error_pct": float(run_summary.get("error_pct") or 0),
+                    "elapsed_s": run_summary.get("wall_clock_s"),
+                    "latency_source": run_summary.get("latency_source", "jmeter_elapsed_legacy_fallback"),
+                    "throughput_per_s": run_summary.get("throughput_per_s"),
+                    "mean_ms": latency.get("mean"),
+                    "p90_ms": latency.get("p90"),
+                    "p95_ms": latency.get("p95"),
+                })
+                failures = run_summary.get("failure_messages") or []
+                if failures:
+                    message = " ".join(str(failures[0].get("message") or "").split())
+                    item["failure_reason"] = message[:300]
+                    item["failure_reason_count"] = int(failures[0].get("count") or 1)
+                try:
+                    item["report_id"] = summaries[-1].parent.resolve().relative_to(REPORTS).as_posix()
+                except ValueError:
+                    pass
+                item["dashboard"] = (summaries[-1].parent / "dashboard" / "index.html").is_file()
+            elif str(item.get("status", "")).startswith("failed"):
+                item["failure_reason"] = "No final JMeter summary was generated. Open runner output for the setup or execution error."
+            enriched_rows.append(item)
+        command = ["./run_benchmark_suite.sh", self.suite_file]
+        if self.connection:
+            command.append(self.connection)
+        if self.continue_on_failure:
+            command.append("--continue-on-failure")
+        return {
+            "id": self.suite_run_id, "suite_file": self.suite_file, "suite_name": self.suite_name,
+            "connection": self.connection, "status": self.status,
+            "continue_on_failure": self.continue_on_failure,
+            "started_at": self.started_at, "finished_at": self.finished_at,
+            "return_code": self.return_code, "workload_count": manifest_count,
+            "runner_pid": self.runner_pid,
+            "completed": sum(row.get("status") == "completed" for row in rows),
+            "failed": sum(str(row.get("status", "")).startswith("failed") for row in rows),
+            "results": enriched_rows, "active_workload": active_workload, "logs": list(self.logs),
+            "report_path": self.report_root.relative_to(ROOT).as_posix(),
+            "command": " ".join(shlex.quote(part) for part in command),
+            "cancellable": self.status == "running" and (self.process is not None or self.runner_pid is not None),
+        }
+
+
+SUITE_EXECUTIONS: dict[str, SuiteExecution] = {}
+SUITE_LOCK = threading.Lock()
+
+
+def _persist_suite_execution(execution: SuiteExecution) -> None:
+    execution.report_root.mkdir(parents=True, exist_ok=True)
+    payload = execution.public()
+    payload.pop("cancellable", None)
+    (execution.report_root / "suite_status.json").write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def restore_suite_executions() -> None:
+    for path in sorted(REPORTS.glob("suite-ui-*/suite_status.json")):
+        try:
+            item = json.loads(path.read_text())
+            status = str(item.get("status", "interrupted"))
+            runner_pid = int(item["runner_pid"]) if item.get("runner_pid") else None
+            runner_alive = False
+            if runner_pid:
+                try:
+                    os.kill(runner_pid, 0)
+                    runner_alive = True
+                except (ProcessLookupError, PermissionError):
+                    pass
+            if status in {"queued", "running"} and not runner_alive:
+                status = "interrupted"
+            execution = SuiteExecution(
+                str(item["id"]), str(item["suite_file"]), str(item.get("suite_name") or "Suite"),
+                str(item.get("connection") or ""), path.parent,
+                bool(item.get("continue_on_failure", False)), status,
+                item.get("started_at"), item.get("finished_at"), item.get("return_code"),
+                runner_pid=runner_pid if runner_alive else None,
+                logs=deque(item.get("logs", []), maxlen=300),
+            )
+            SUITE_EXECUTIONS[execution.suite_run_id] = execution
+        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
+            LOGGER.warning("Ignoring invalid persisted suite execution %s", path)
+
+
+def _execute_suite(execution: SuiteExecution) -> None:
+    execution.status, execution.started_at = "running", time.time()
+    _persist_suite_execution(execution)
+    env = os.environ.copy()
+    env.update({
+        "SUITE_RUN_ID": execution.suite_run_id,
+        "SUITE_REPORT_PATH": str(execution.report_root.relative_to(ROOT)),
+        "COPY_TO_S3": "true" if SYSTEM_COPY_TO_S3 else "false",
+        "GENERATE_DASHBOARD": "true" if SYSTEM_GENERATE_DASHBOARD else "false",
+        "PROMETHEUS_ENABLED": "true" if PROMETHEUS_DEFAULT_ENABLED else "false",
+        "PROMETHEUS_IP": PROMETHEUS_DEFAULT_IP,
+        "PROMETHEUS_PORT": PROMETHEUS_DEFAULT_PORT,
+        "PROMETHEUS_DELAY": PROMETHEUS_DEFAULT_DELAY,
+        # Suite executions use the same live CSV telemetry contract as an
+        # ad-hoc UI run. Without autoflush, long workloads look stuck until
+        # JMeter happens to flush or the workload finishes.
+        "JMETER_RESULT_AUTOFLUSH": "true",
+    })
+    if SYSTEM_S3_REPORT_PATH:
+        env["S3_REPORT_PATH"] = SYSTEM_S3_REPORT_PATH
+    env.update({
+        "E6_QUERY_HISTORY_ENABLED": "true" if E6_QUERY_HISTORY_ENABLED else "false",
+        "E6_QUERY_HISTORY_WAIT_SECONDS": E6_QUERY_HISTORY_WAIT_SECONDS,
+    })
+    if E6_MACHINE_CLIENT_ID:
+        env["E6_MACHINE_CLIENT_ID"] = E6_MACHINE_CLIENT_ID
+    if E6_MACHINE_CLIENT_SECRET:
+        env["E6_MACHINE_CLIENT_SECRET"] = E6_MACHINE_CLIENT_SECRET
+    if E6_QUERY_HISTORY_EMAIL:
+        env["E6_QUERY_HISTORY_EMAIL"] = E6_QUERY_HISTORY_EMAIL
+    command = [str(ROOT / "run_benchmark_suite.sh"), execution.suite_file]
+    if execution.connection:
+        command.append(execution.connection)
+    if execution.continue_on_failure:
+        command.append("--continue-on-failure")
+    try:
+        execution.process = subprocess.Popen(
+            command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, start_new_session=True,
+        )
+        execution.runner_pid = execution.process.pid
+        _persist_suite_execution(execution)
+        assert execution.process.stdout
+        with (execution.report_root / "suite_runner.log").open("a") as log:
+            for line in execution.process.stdout:
+                clean = line.rstrip()
+                execution.logs.append(clean)
+                log.write(line)
+                log.flush()
+        execution.return_code = execution.process.wait()
+        execution.runner_pid = None
+        if execution.status != "cancelled":
+            execution.status = "completed" if execution.return_code == 0 else "failed"
+    except Exception as exc:
+        execution.logs.append(f"Suite runner error: {exc}")
+        execution.return_code, execution.status = 1, "failed"
+        LOGGER.exception("suite=%s runner failure", execution.suite_run_id)
+    finally:
+        execution.runner_pid = None
+        execution.finished_at = time.time()
+        _persist_suite_execution(execution)
+
+
+def start_suite_execution(suite_file: str, connection: str, continue_on_failure: bool) -> SuiteExecution:
+    if RUNNER_BACKEND != "local":
+        raise ValueError(
+            "Suite launches currently require the UI and JMeter runner on the same host; "
+            "run the suite CLI on the remote worker"
+        )
+    suite = next((item for item in suite_catalog() if item["file"] == suite_file), None)
+    if not suite:
+        raise ValueError("Unknown suite manifest")
+    schema_version = int(suite.get("schema_version", 1))
+    connection_value = connection or str(suite.get("default_connection") or "")
+    connection_file = _inside(connection_value, "connection_properties", ".properties") if connection_value else ""
+    if schema_version < 3 and not connection_file:
+        raise ValueError("This legacy suite requires a connection profile")
+    timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    suite_run_id = f"{timestamp}-{re.sub(r'[^a-z0-9]+', '-', suite['name'].lower()).strip('-')[:32]}-{uuid.uuid4().hex[:6]}"
+    execution = SuiteExecution(
+        suite_run_id, suite_file, suite["name"], connection_file,
+        REPORTS / f"suite-ui-{suite_run_id}", continue_on_failure,
+    )
+    with SUITE_LOCK:
+        SUITE_EXECUTIONS[suite_run_id] = execution
+    _persist_suite_execution(execution)
+    threading.Thread(target=_execute_suite, args=(execution,), daemon=True).start()
+    return execution
+
+
 def _execute(run: Run, env: dict[str, str]) -> None:
-    run.status, run.started_at = "running", time.time()
+    run.status = "worker_starting" if RUNNER_BACKEND == "ec2" else "running"
+    run.started_at = time.time()
     persist_run(run)
     LOGGER.info("run=%s status=running label=%s plan=%s", run.run_id, run.label, run.config.get("plan"))
+    adapter = None
     try:
         run.report_root.mkdir(parents=True, exist_ok=True)
         write_manifest(run, env)
         runner_log = run.report_root / "ui_runner.log"
-        run.process = subprocess.Popen(
-            [str(ROOT / "run_test.sh")], cwd=ROOT, env=env, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True,
-        )
-        assert run.process.stdout
-        with runner_log.open("a") as log_handle:
-            for line in run.process.stdout:
-                clean = line.rstrip()
-                run.logs.append(clean)
-                log_handle.write(line)
-                log_handle.flush()
-        run.return_code = run.process.wait()
+        if RUNNER_BACKEND == "ec2":
+            adapter = EC2Runner(EC2Config.from_env())
+            def set_status(value: str) -> None:
+                run.status = value
+                persist_run(run)
+            def append_log(value: str) -> None:
+                if value and (not run.logs or run.logs[-1] != value):
+                    run.logs.append(value)
+                    with runner_log.open("a") as handle:
+                        handle.write(value + "\n")
+            def command_started(command_id: str) -> None:
+                run.remote_command_id = command_id
+                persist_run(run)
+            run.return_code = adapter.execute(
+                run.run_id, env, ROOT, run.report_root, set_status, append_log, command_started,
+            )
+        else:
+            run.process = subprocess.Popen(
+                [str(ROOT / "run_test.sh")], cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True,
+            )
+            assert run.process.stdout
+            with runner_log.open("a") as log_handle:
+                for line in run.process.stdout:
+                    clean = line.rstrip()
+                    run.logs.append(clean)
+                    log_handle.write(line)
+                    log_handle.flush()
+            run.return_code = run.process.wait()
         if run.status != "cancelled":
             run.status = benchmark_status(
                 run.return_code, find_summary(run.report_root),
@@ -984,6 +1923,8 @@ def _execute(run: Run, env: dict[str, str]) -> None:
         run.logs.append(f"UI runner error: {exc}")
         LOGGER.exception("run=%s runner failure", run.run_id)
         run.return_code, run.status = 1, "failed"
+        if adapter is not None:
+            adapter.schedule_stop(lambda value: run.logs.append(value))
     finally:
         run.finished_at = time.time()
         try:
@@ -1004,8 +1945,17 @@ def _execute(run: Run, env: dict[str, str]) -> None:
         LOGGER.info("run=%s status=%s return_code=%s report=%s", run.run_id, run.status, run.return_code, run.report_root)
 
 
+def new_run_id(engine: str, plan: str) -> str:
+    """Return a sortable identifier that remains safe for report and S3 paths."""
+    timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    engine_slug = re.sub(r"[^a-z0-9]+", "-", engine.lower()).strip("-") or "engine"
+    plan_slug = re.sub(r"^(?:jdbc|http)_", "", plan.lower())
+    plan_slug = re.sub(r"[^a-z0-9]+", "-", plan_slug).strip("-") or "run"
+    return f"{timestamp}-{engine_slug[:20]}-{plan_slug[:24]}-{uuid.uuid4().hex[:6]}"
+
+
 def prepare_run(config: dict[str, Any], label: str = "Benchmark") -> tuple[Run, dict[str, str]]:
-    run_id = uuid.uuid4().hex[:10]
+    run_id = new_run_id(str(config.get("engine") or "engine"), str(config.get("plan") or "run"))
     env = build_environment(config, run_id)
     public_config = {key: value for key, value in config.items() if key in PUBLIC_RUN_FIELDS}
     public_config["engine"] = env["ENGINE"]
@@ -1031,13 +1981,179 @@ def start_runs(configs: list[dict[str, Any]], sequential: bool = False) -> list[
     return [run for run, _ in prepared]
 
 
+def _annotation_defaults(summary: dict[str, Any]) -> dict[str, Any]:
+    meta = summary.get("meta", {})
+    return {
+        "scope": str(meta.get("RUN_SCOPE") or "internal"),
+        "purpose": str(meta.get("RUN_PURPOSE") or "adhoc"),
+        "validity": str(meta.get("RUN_VALIDITY") or "valid"),
+        "reason": "",
+    }
+
+
+def governance_catalog() -> tuple[dict[str, tuple[Any, ...]], dict[str, tuple[Any, ...]]]:
+    if not DB_READY:
+        return {}, {}
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as db:
+            annotations = db.execute("SELECT run_id,scope,purpose,validity,reason FROM run_annotations").fetchall()
+            references = db.execute(
+                "SELECT run_id,reference_key,promoted_at,promoted_by,reason FROM reference_promotions WHERE active=true"
+            ).fetchall()
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            annotations = db.execute("SELECT run_id,scope,purpose,validity,reason FROM run_annotations").fetchall()
+            references = db.execute(
+                "SELECT run_id,reference_key,promoted_at,promoted_by,reason FROM reference_promotions WHERE active=1"
+            ).fetchall()
+    return ({row[0]: tuple(row[1:]) for row in annotations}, {row[0]: tuple(row[1:]) for row in references})
+
+
+def report_governance(
+        summary: dict[str, Any], catalog: tuple[dict[str, tuple[Any, ...]], dict[str, tuple[Any, ...]]] | None = None,
+) -> dict[str, Any]:
+    values = _annotation_defaults(summary)
+    run_id = str(summary.get("meta", {}).get("run_id") or "")
+    values.update({"is_active_reference": False, "reference_key": ""})
+    if not DB_READY or not run_id:
+        return values
+    if catalog is not None:
+        annotation, reference = catalog[0].get(run_id), catalog[1].get(run_id)
+        if annotation:
+            values.update(dict(zip(("scope", "purpose", "validity", "reason"), annotation)))
+        if reference:
+            values.update({"is_active_reference": True, "reference_key": reference[0],
+                           "promoted_at": reference[1], "promoted_by": reference[2],
+                           "promotion_reason": reference[3]})
+        return values
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as db:
+            annotation = db.execute(
+                "SELECT scope,purpose,validity,reason FROM run_annotations WHERE run_id=%s", (run_id,)
+            ).fetchone()
+            reference = db.execute(
+                "SELECT reference_key,promoted_at,promoted_by,reason FROM reference_promotions "
+                "WHERE run_id=%s AND active=true ORDER BY promoted_at DESC LIMIT 1", (run_id,)
+            ).fetchone()
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            annotation = db.execute(
+                "SELECT scope,purpose,validity,reason FROM run_annotations WHERE run_id=?", (run_id,)
+            ).fetchone()
+            reference = db.execute(
+                "SELECT reference_key,promoted_at,promoted_by,reason FROM reference_promotions "
+                "WHERE run_id=? AND active=1 ORDER BY promoted_at DESC LIMIT 1", (run_id,)
+            ).fetchone()
+    if annotation:
+        values.update(dict(zip(("scope", "purpose", "validity", "reason"), annotation)))
+    if reference:
+        values.update({
+            "is_active_reference": True, "reference_key": reference[0],
+            "promoted_at": reference[1], "promoted_by": reference[2],
+            "promotion_reason": reference[3],
+        })
+    return values
+
+
+def annotate_report(report_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    summary = report_by_id(report_id)
+    run_id = str(summary.get("meta", {}).get("run_id") or "")
+    if not run_id:
+        raise ValueError("Report does not contain a run_id")
+    current = report_governance(summary)
+    scope = str(body.get("scope") or current["scope"])
+    purpose = str(body.get("purpose") or current["purpose"])
+    validity = str(body.get("validity") or current["validity"])
+    reason = str(body.get("reason") or "").strip()
+    if scope not in RUN_SCOPES or purpose not in RUN_PURPOSES or validity not in RUN_VALIDITIES:
+        raise ValueError("Invalid run scope, purpose, or validity")
+    if validity == "invalid" and not reason:
+        raise ValueError("A reason is required when marking a run invalid")
+    now = time.time()
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute(
+                "INSERT INTO run_annotations(run_id,scope,purpose,validity,reason,updated_at) VALUES(%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT(run_id) DO UPDATE SET scope=excluded.scope,purpose=excluded.purpose,validity=excluded.validity,reason=excluded.reason,updated_at=excluded.updated_at",
+                (run_id, scope, purpose, validity, reason, now),
+            )
+            if validity == "invalid":
+                db.execute("UPDATE reference_promotions SET active=false WHERE run_id=%s", (run_id,))
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            values = (scope, purpose, validity, reason, now, run_id)
+            cursor = db.execute(
+                "UPDATE run_annotations SET scope=?,purpose=?,validity=?,reason=?,updated_at=? WHERE run_id=?", values
+            )
+            if cursor.rowcount == 0:
+                db.execute(
+                    "INSERT INTO run_annotations(run_id,scope,purpose,validity,reason,updated_at) VALUES(?,?,?,?,?,?)",
+                    (run_id, scope, purpose, validity, reason, now),
+                )
+            if validity == "invalid":
+                db.execute("UPDATE reference_promotions SET active=0 WHERE run_id=?", (run_id,))
+    return report_governance(summary)
+
+
+def workload_signature(summary: dict[str, Any]) -> dict[str, str]:
+    meta = summary.get("meta", {})
+    return {key: str(meta.get(key) or "") for key in (
+        "queries", "query_sha256", "test_plan", "run_type", "requested_concurrency",
+        "requested_qps", "requested_qpm", "hold_period", "ramp_up_time", "ramp_up_steps",
+        "max_concurrency", "recycle_on_eof", "random_order", "profile", "profile_sha256",
+    )}
+
+
+def promote_reference(report_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    summary = report_by_id(report_id)
+    meta = summary.get("meta", {})
+    run_id, engine = str(meta.get("run_id") or ""), str(meta.get("engine") or "")
+    reason = str(body.get("reason") or "").strip()
+    if report_status(summary) != "completed" or int(summary.get("samples") or 0) == 0 \
+            or int(summary.get("failed") or 0) != 0:
+        raise ValueError("Only completed, non-empty, zero-failure runs can be promoted")
+    if not run_id or not engine or not (meta.get("query_sha256") or meta.get("queries")):
+        raise ValueError("Reference promotion requires run, engine, and query identity metadata")
+    if report_governance(summary)["validity"] != "valid":
+        raise ValueError("Only runs marked valid can be promoted")
+    if not reason:
+        raise ValueError("Promotion reason is required")
+    signature = workload_signature(summary)
+    key_source = json.dumps({"engine": engine, **signature}, sort_keys=True)
+    reference_key = hashlib.sha256(key_source.encode()).hexdigest()
+    values = (uuid.uuid4().hex, reference_key, run_id, report_id, engine, time.time(),
+              str(body.get("promoted_by") or "ui-user")[:100], reason[:1000])
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        from psycopg.types.json import Jsonb
+        with psycopg.connect(DATABASE_URL) as db:
+            db.execute("UPDATE reference_promotions SET active=false WHERE reference_key=%s AND active=true", (reference_key,))
+            db.execute(
+                "INSERT INTO reference_promotions(promotion_id,reference_key,run_id,report_id,engine,workload_signature,promoted_at,promoted_by,reason,active) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,true)",
+                (*values[:5], Jsonb(signature), *values[5:]),
+            )
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            db.execute("UPDATE reference_promotions SET active=0 WHERE reference_key=? AND active=1", (reference_key,))
+            db.execute(
+                "INSERT INTO reference_promotions(promotion_id,reference_key,run_id,report_id,engine,workload_signature,promoted_at,promoted_by,reason,active) VALUES(?,?,?,?,?,?,?,?,?,1)",
+                (*values[:5], json.dumps(signature, sort_keys=True), *values[5:]),
+            )
+    return report_governance(summary)
+
+
 def completed_reports() -> list[dict[str, Any]]:
     found = []
+    catalog = governance_catalog()
     for path in REPORTS.glob("**/run_summary.json"):
         try:
             summary = json.loads(path.read_text())
             found.append({"id": str(path.parent.relative_to(REPORTS)), "mtime": path.stat().st_mtime,
-                          "status": report_status(summary), "summary": compact_summary(summary)})
+                          "status": report_status(summary), "summary": compact_summary(summary),
+                          "governance": report_governance(summary, catalog)})
         except (OSError, json.JSONDecodeError):
             continue
     return sorted(found, key=lambda item: item["mtime"], reverse=True)[:200]
@@ -1048,7 +2164,7 @@ def report_status(summary: dict[str, Any]) -> str:
     run_id = str(summary.get("meta", {}).get("run_id") or "")
     with RUN_LOCK:
         run = RUNS.get(run_id)
-    if run and run.status not in {"queued", "running"}:
+    if run and run.status not in {"queued", "worker_starting", "running", "finalizing"}:
         return run.status
     return "completed" if int(summary.get("failed") or 0) == 0 else "failed"
 
@@ -1208,6 +2324,10 @@ class Handler(SimpleHTTPRequestHandler):
         LOGGER.info("client=%s %s", self.address_string(), fmt % args)
 
     def end_headers(self) -> None:
+        if urlparse(self.path).path in {"/", "/index.html", "/app.js", "/styles.css"}:
+            # Benchmark Studio is frequently restarted while being configured.
+            # Never let a browser combine a new page with stale JS or CSS.
+            self.send_header("Cache-Control", "no-store, max-age=0")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -1249,18 +2369,20 @@ class Handler(SimpleHTTPRequestHandler):
             raise ValueError("Request too large")
         return json.loads(self.rfile.read(length) or b"{}")
 
-    def _dashboard_asset(self, request_path: str) -> None:
+    def _artifact(self, request_path: str, query: str = "") -> None:
         remainder = request_path.removeprefix("/artifacts/")
-        encoded_id, separator, asset = remainder.partition("/dashboard/")
+        encoded_id, separator, asset = remainder.partition("/")
         if not separator:
-            raise ValueError("Unknown dashboard artifact")
-        directory = (REPORTS / unquote(encoded_id) / "dashboard").resolve()
+            raise ValueError("Unknown artifact")
+        directory = (REPORTS / unquote(encoded_id)).resolve()
         path = (directory / asset).resolve()
         if REPORTS.resolve() not in directory.parents or directory not in path.parents or not path.is_file():
-            raise ValueError("Unknown dashboard artifact")
+            raise ValueError("Unknown artifact")
         content = path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+        if parse_qs(query).get("download", [""])[0] == "1":
+            self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
@@ -1272,6 +2394,11 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/readyz":
             ready = DB_READY and (ROOT / "run_test.sh").is_file() and REPORTS.parent.is_dir()
+            if ready and RUNNER_BACKEND == "ec2":
+                try:
+                    EC2Config.from_env()
+                except EC2RunnerError:
+                    ready = False
             self._json({"status": "ready" if ready else "not_ready"}, 200 if ready else 503)
             return
         if self._require_auth():
@@ -1279,12 +2406,19 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             if parsed.path == "/api/config":
                 connections = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "connection_properties").glob("*.properties"))
-                queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").glob("*.csv"))
+                queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").rglob("*.csv"))
                 profiles = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "test_properties").glob("*.csv"))
-                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
+                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2], "test_properties": PLAN_TEST_PROPERTIES[k]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "query_history": {"enabled": E6_QUERY_HISTORY_ENABLED, "client_id": E6_MACHINE_CLIENT_ID, "secret_configured": bool(E6_MACHINE_CLIENT_SECRET), "email": E6_QUERY_HISTORY_EMAIL, "wait_seconds": int(E6_QUERY_HISTORY_WAIT_SECONDS)}, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
             elif parsed.path == "/api/runs":
                 with RUN_LOCK:
                     self._json([run.public() for run in RUNS.values()])
+            elif parsed.path == "/api/suites":
+                self._json(suite_catalog())
+            elif parsed.path == "/api/benchmark-definitions":
+                self._json(benchmark_definition_catalog())
+            elif parsed.path == "/api/suite-runs":
+                with SUITE_LOCK:
+                    self._json([run.public() for run in SUITE_EXECUTIONS.values()])
             elif parsed.path.startswith("/api/runs/"):
                 run_id = parsed.path.rsplit("/", 1)[-1]
                 with RUN_LOCK:
@@ -1299,7 +2433,7 @@ class Handler(SimpleHTTPRequestHandler):
                 report_id = parse_qs(parsed.query).get("id", [""])[0]
                 self._json(report_details(report_id))
             elif parsed.path.startswith("/artifacts/"):
-                self._dashboard_asset(parsed.path)
+                self._artifact(parsed.path, parsed.query)
             else:
                 super().do_GET()
         except (ValueError, json.JSONDecodeError) as exc:
@@ -1327,13 +2461,21 @@ class Handler(SimpleHTTPRequestHandler):
                 if not isinstance(configs, list) or not 1 <= len(configs) <= 2:
                     raise ValueError("Start one or two runs at a time")
                 # Validate the complete pair before starting either process.
+                environments = []
                 for item in configs:
                     if not isinstance(item, dict):
                         raise ValueError("Each run must be an object")
-                    build_environment(item, "validation")
+                    environments.append(build_environment(item, "validation"))
+                validate_paired_workloads(environments)
                 execution_mode = str(body.get("execution_mode", "parallel"))
                 if execution_mode not in {"parallel", "sequential"}:
                     raise ValueError("execution_mode must be parallel or sequential")
+                if RUNNER_BACKEND == "ec2" and execution_mode == "parallel" \
+                        and len(configs) > int(os.environ.get("BENCHMARK_EC2_MAX_PARALLEL", "1")):
+                    raise ValueError(
+                        "This EC2 worker is configured for fewer parallel runs; choose sequential execution "
+                        "or increase BENCHMARK_EC2_MAX_PARALLEL after validating load-generator capacity"
+                    )
                 if execution_mode == "parallel" and len(configs) == 2 \
                         and any(item.get("PROMETHEUS_ENABLED") is True for item in configs):
                     raise ValueError(
@@ -1354,16 +2496,46 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/presets/delete":
                 deleted = delete_preset(str(body.get("kind", "")), str(body.get("name", "")))
                 self._json({"file": deleted})
+            elif self.path == "/api/suites":
+                saved = create_suite_manifest(body, overwrite=body.get("overwrite") is True)
+                self._json({"file": saved}, HTTPStatus.CREATED)
+            elif self.path == "/api/benchmark-definitions":
+                saved = create_benchmark_definition(body, overwrite=body.get("overwrite") is True)
+                self._json({"file": saved}, HTTPStatus.CREATED)
+            elif self.path == "/api/benchmark-definitions/delete":
+                self._json({"file": delete_benchmark_definition(str(body.get("name", "")))})
+            elif self.path == "/api/suites/import-s3":
+                self._json({"file": import_s3_suite(str(body.get("uri", "")))}, HTTPStatus.CREATED)
+            elif self.path == "/api/suites/delete":
+                self._json({"file": delete_suite_manifest(str(body.get("name", "")))})
+            elif self.path == "/api/suite-runs":
+                execution = start_suite_execution(
+                    str(body.get("suite_file", "")), str(body.get("connection", "")),
+                    body.get("continue_on_failure") is True,
+                )
+                self._json(execution.public(), HTTPStatus.ACCEPTED)
             elif self.path == "/api/system-settings":
                 self._json(update_system_settings(body))
             elif self.path == "/api/workload-preview":
                 self._json(workload_preview(body))
             elif self.path == "/api/preflight":
                 self._json(preflight(body))
+            elif self.path == "/api/reports/annotate":
+                self._json(annotate_report(str(body.get("report_id", "")), body))
+            elif self.path == "/api/references/promote":
+                self._json(promote_reference(str(body.get("report_id", "")), body), HTTPStatus.CREATED)
             elif self.path.endswith("/cancel") and self.path.startswith("/api/runs/"):
                 run_id = self.path.split("/")[3]
                 with RUN_LOCK:
                     run = RUNS.get(run_id)
+                if RUNNER_BACKEND == "ec2":
+                    if not run or not run.remote_command_id or run.status not in {"running", "worker_starting"}:
+                        raise ValueError("Remote run is not cancellable yet")
+                    EC2Runner(EC2Config.from_env()).cancel(run.remote_command_id)
+                    run.status = "cancelled"
+                    persist_run(run)
+                    self._json(run.public())
+                    return
                 if not run or not run.process or run.status != "running":
                     raise ValueError("Run is not active")
                 os.killpg(run.process.pid, signal.SIGTERM)
@@ -1371,13 +2543,24 @@ class Handler(SimpleHTTPRequestHandler):
                 persist_run(run)
                 LOGGER.info("run=%s cancellation requested", run.run_id)
                 self._json(run.public())
+            elif self.path.endswith("/cancel") and self.path.startswith("/api/suite-runs/"):
+                suite_run_id = self.path.split("/")[3]
+                with SUITE_LOCK:
+                    execution = SUITE_EXECUTIONS.get(suite_run_id)
+                runner_pid = execution.process.pid if execution and execution.process else (execution.runner_pid if execution else None)
+                if not execution or not runner_pid or execution.status != "running":
+                    raise ValueError("Suite is not active")
+                os.killpg(runner_pid, signal.SIGTERM)
+                execution.status = "cancelled"
+                _persist_suite_execution(execution)
+                self._json(execution.public())
             elif self.path == "/api/compare":
                 left_id, right_id = str(body.get("left", "")), str(body.get("right", ""))
                 left, right = report_by_id(left_id), report_by_id(right_id)
                 result = comparison(left, right)
                 result["report_identity"] = {
-                    "left": {"id": left_id, "status": report_status(left)},
-                    "right": {"id": right_id, "status": report_status(right)},
+                    "left": {"id": left_id, "status": report_status(left), "governance": report_governance(left)},
+                    "right": {"id": right_id, "status": report_status(right), "governance": report_governance(right)},
                 }
                 result["per_query"] = per_query_comparison(left_id, right_id)
                 self._json(result)
@@ -1405,6 +2588,7 @@ def main() -> None:
         parser.exit(2, "Remote binding requires BENCHMARK_UI_TOKEN. Put TLS in front of this service.\n")
     init_registry()
     restore_runs()
+    restore_suite_executions()
     try:
         server = ThreadingHTTPServer((args.host, args.port), Handler)
     except OSError as exc:

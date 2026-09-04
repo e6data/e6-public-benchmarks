@@ -1,5 +1,25 @@
 # JMeter JDBC Test Framework
 
+## Public repository and bring-your-own configuration
+
+This is a public, reusable benchmark framework. A fresh clone contains JMX
+plans, scripts, sample workload shapes and connection templates only. It does
+not contain credentials, a usable connection profile, or
+AWS infrastructure configuration.
+
+Users may run the CLI workflow or invoke a JMX plan directly with their own
+JMeter property files. Runtime connection profiles, query datasets, custom
+load profiles, generated reports, databases, and local environment
+files are ignored by Git. Before committing, always check `git status` and
+never force-add those files. The optional EC2 runner is disabled by default and
+operates only after an administrator supplies their own instance, private S3
+prefix and IAM permissions outside the repository.
+
+The repository secret-scan workflow checks complete Git history on pushes and
+pull requests. Repository administrators should additionally enable GitHub
+Secret Scanning and Push Protection so recognized credentials are blocked
+before they enter public history.
+
 Run **JMeter JDBC performance tests** against any database that supports JDBC connections.
 
 The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
@@ -25,7 +45,10 @@ It is suitable for measuring:
 - queue build-up, saturation, drain time, and error behavior;
 - repeatable comparisons across engines or builds.
 
-JMeter measures the workload from the client. Its `elapsed` value includes driver/network/fetch time as well as engine work. For engine-only analysis, correlate each sample's query ID with engine execution, planning, queue, scan, spill, and cache metrics. Keep result fetching and row limits identical across engines, and separate cold-cache, warm-cache, and sustained-load runs.
+JMeter `Latency` measures request start through the first response exposed by
+JDBC. `elapsed` also includes the remaining network/result fetch, JDBC decoding,
+and client processing. For engine-only analysis, correlate samples with engine
+execution, planning, queue, scan, spill, and cache metrics.
 
 ## Steps to Run
 
@@ -35,20 +58,11 @@ JMeter measures the workload from the client. Its `elapsed` value includes drive
 git clone https://github.com/e6data/e6-public-benchmarks.git
 cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
 
-# Installs Java 17, JMeter 5.6.3, thread-group/Prometheus plugins, JDBC drivers, Groovy 4.0.29,
-# and the isolated Benchmark Studio Python environment.
+# Installs Java 17, JMeter 5.6.3, plugins, JDBC drivers, and runner dependencies.
 ./setup_jmeter.sh
 ```
 
-The default uses the built-in local SQLite registry and does not require
-Docker. To provision the supplied local PostgreSQL registry as part of setup:
-
-```bash
-./setup_jmeter.sh --with-postgres
-```
-
-Both setup modes are safe to rerun. PostgreSQL credentials are generated into
-the ignored, permission-protected `.benchmark-ui.env`; they are not committed.
+Setup is safe to rerun and does not replace the system Python.
 
 If any dependency fails to install automatically, install it manually: Java 17+, jq 1.5+, git 2.x+.
 
@@ -58,25 +72,17 @@ If any dependency fails to install automatically, install it manually: Java 17+,
 ./create_connection.sh
 ```
 
-Interactive prompts for JDBC URL, credentials, driver class. Supports e6data, Databricks, Trino, and HTTP endpoints.
+Interactive prompts collect the JDBC URL, credentials, and driver class. The
+generated connection profile remains local and is ignored by Git. Supply the
+driver class and connection properties documented by the target JDBC provider.
+The setup script installs the repository-supported dependencies and removes
+superseded downloaded driver versions from JMeter's classpath.
 
 This creates a file in `connection_properties/` — e.g., `connection_properties/my_connection.properties`.
 
-For Databricks JDBC Driver 3, copy the short URL from the SQL warehouse
-connection page and leave `USER` empty. Store the PAT only as `PASSWORD`:
-
-```properties
-CONNECTION_STRING=jdbc:databricks://workspace-host:443;HttpPath=/sql/1.0/warehouses/warehouse-id;ConnCatalog=hive_metastore;ConnSchema=my_schema
-USER=
-PASSWORD=<access-token>
-DRIVER_CLASS=com.databricks.client.jdbc.Driver
-```
-
-Engine selection supplies the driver adapter. For Databricks Driver 3, the
-runner maps the protected PAT to the driver's required `PWD` property in a
-run-local JMX. No additional UI, interactive, or CLI input is required. The
-runner does not modify source plans or place the token in the command line or
-generated report metadata.
+For third-party drivers, follow the provider's JDBC documentation and keep all
+passwords or access tokens only in the git-ignored connection profile. The
+runner does not place protected values in generated report metadata.
 
 ### Step 3: Create your queries CSV file
 
@@ -93,7 +99,52 @@ mkdir -p data_files
 cp my_queries.csv data_files/
 ```
 
+The repository intentionally does not bundle vendor-specific TPC-DS or TPC-H
+SQL. This is a generic JMeter framework: provide the workload you are
+authorized to use as a local CSV or an `s3://` URI. S3 inputs are downloaded
+afresh for each run. The CLI validates the two-column query CSV and records its
+source URI and resolved SHA-256.
+
+For cross-engine comparisons, use stable logical aliases and equivalent data
+and execution policies. Dialect-specific files should contain the same logical
+aliases in the same order. Keep optimized or proprietary workloads outside this
+public repository.
+
 ### Step 4: Run a test
+
+Every bundled plan family has one canonical file under `test_properties/`:
+`run_once.properties`, `fixed_concurrency.properties`,
+`constant_qps.properties`, `constant_qpm.properties`,
+`variable_arrivals.properties`, or `variable_concurrency.properties`.
+`run_test.sh` selects the matching file automatically. You may select a local
+or `s3://` file with `TEST_PROPERTIES_FILE`; the runner downloads S3 inputs
+fresh for that run.
+
+The effective precedence is JMX fallback, then connection and test `-q`
+files, then explicit environment values emitted as JMeter `-J` overrides.
+For example, this uses `fixed_concurrency.properties` but runs at concurrency
+5 without creating another properties file:
+
+```bash
+export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
+export CONCURRENT_QUERY_COUNT=5
+./run_test.sh test_configs/my_benchmark.env
+```
+
+The equivalent raw JMeter shape is:
+
+```bash
+./apache-jmeter-5.6.3/bin/jmeter -n \
+  -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
+  -q connection_properties/my_connection.properties \
+  -q test_properties/fixed_concurrency.properties \
+  -JQUERY_PATH=data_files/my_queries.csv \
+  -JCONCURRENT_QUERY_COUNT=5 \
+  -l reports/results.csv
+```
+
+JVM startup options such as `HEAP` and `JVM_ARGS` must remain environment
+variables because Java has already started before JMeter reads `-q` files.
 
 **Option A — One reusable config, choose the load model at runtime (recommended):**
 
@@ -138,6 +189,35 @@ TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.j
 
 Environment values override the config file, so no JMX editing or separate config per load level is required.
 
+**Sequential** and **Run once (concurrent)** both reuse the same run-once JMX. Sequential forces
+concurrency to 1, while concurrent Run Once lets threads consume the query CSV
+together. Neither uses `HOLD_PERIOD`—both stop when every query-file row has
+been consumed for the configured `MEASURED_ITERATIONS` (default `1`). For
+example, `MEASURED_ITERATIONS=3` produces three samples per query label in one
+standard JMeter result. The JMeter Aggregate Report and per-query view then
+provide count, average, median, and percentiles across those three samples.
+
+#### Optional excluded warm-up
+
+Warm a suspended engine without contaminating the measured JMeter CSV,
+percentiles, throughput, dashboard, or comparison result:
+
+```bash
+WARMUP_ENABLED=true \
+WARMUP_QUERY_FILE=s3://my-private-bucket/workloads/warmup.csv \
+WARMUP_ITERATIONS=1 \
+TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
+CONCURRENT_QUERY_COUNT=1 \
+./run_test.sh test_configs/my_benchmark.env
+```
+
+The runner executes each warm-up pass in a separate JMeter process using the
+unchanged run-once JMX at concurrency 1. Warm-up artifacts are written below
+`REPORT_PATH/_warmup/`; the measured run starts only after every pass succeeds.
+Warm-up inputs are supplied by the user and are never bundled with the public
+framework. Engine-specific cache or persisted-result behavior remains the
+responsibility of the selected connection and workload.
+
 **Option B — Export variables and run:**
 
 ```bash
@@ -169,144 +249,71 @@ vi test_configs/my_test.env
 ./run_jmeter_tests_interactive.sh
 ```
 
-Guides you through selecting connection, test plan, query file, and parameters.
+Guides you through selecting a connection, test plan, query file, optional metadata,
+and the workload values relevant to the selected plan. The plan automatically selects
+its canonical file under `test_properties/`; interactive answers override those defaults
+for that run and the script delegates execution to `run_test.sh`.
 
-## Optional local web UI
+## Performance Suites
 
-The CLI remains the primary execution interface. The optional UI calls the same
-`run_test.sh` runner and reads the same `JmeterResultFile.csv` and
-`run_summary.json` artifacts; it does not replace or modify any JMX plan.
-
-Start it from the framework directory:
-
-```bash
-./start_ui.sh
-```
-
-Stop a UI started by `start_ui.sh` without affecting JMeter runs:
+Run an ordered suite through the same CLI contract used by individual tests:
 
 ```bash
-./stop_ui.sh
+./run_benchmark_suite.sh suite_manifests/example_saved_benchmarks.json \
+  --continue-on-failure
 ```
 
-The scripts use `logs/ui.pid` by default. Set `BENCHMARK_UI_PID_FILE` on both
-commands to use a different PID-file location. For a systemd deployment, use
-`systemctl stop e6-benchmark-ui` instead.
+Use `--dry-run` to validate its query files, plans, properties, and load
+profiles without starting JMeter.
 
-`run_ui.sh` remains as a backwards-compatible alias for `start_ui.sh`.
+## Optional internal UI
 
-Then open <http://127.0.0.1:8765>. The UI supports:
+An optional Benchmark Studio wrapper is included for internal evaluation. It
+invokes the same CLI runners and reads the same JMeter artifacts. The CLI is the
+supported public interface; UI deployment and operation are intentionally not
+documented here.
 
-- creating a private local JDBC or HTTP connection properties file, or selecting
-  an existing one;
-- selecting the same `TEST_PLAN`, `QUERY_FILE`, `LOAD_PROFILE`, concurrency,
-  rate, duration, and safety variables accepted by `run_test.sh`;
-- choosing an already-local CSV, uploading a CSV from the browser, or importing
-  one from S3 using the UI host's configured AWS CLI credentials;
-- starting one engine or the same workload on two engines;
-- running two engines sequentially for cleaner measurements (the default) or
-  in parallel for a live side-by-side demonstration;
-- live samples, throughput, errors, active threads, latency, and runner logs;
-- opening JMeter's standard HTML dashboard after a run when
-  `GENERATE_DASHBOARD` is enabled;
-- cancelling only the selected UI-started process;
-- comparing completed `run_summary.json` reports with query-file/test-plan
-  candidate matching, run identity cards, quality warnings, rich workload/date filters,
-  visual deltas, cross-engine per-query JMeter statistics, and JSON/CSV/print
-  export. Candidate compatibility restriction is opt-in; failed or cancelled
-  runs stay hidden unless explicitly included;
-- previewing the backend-resolved planned workload before launch and comparing
-  it with actual arrivals/in-flight behavior read from JMeter's result CSV;
-- applying tracked or locally-created workload and metadata presets through the
-  **Presets** tab. Presets populate visible Launch fields and never
-  bypass the resolved-configuration preview.
+### Optional e6 Query History capture
 
-The **Advanced runner settings** section exposes `RAMP_UP_TIME`,
-`RAMP_UP_STEPS`, `QUERY_TIMEOUT`, and `LIMIT_RESULTSET`. The resolved preview
-shows the exact non-secret values that will be passed to `run_test.sh`, and can
-export or import a reusable `.env` file. Importing a configuration never imports
-connection secrets; it references the local `CONNECTION_FILE`, just like CLI
-configuration.
+An e6 run can export the matching workspace Query History after JMeter
+finishes. The capture window is derived from the first sample start and last
+sample end in `JmeterResultFile.csv`; the workspace and cluster are derived
+from the selected e6 JDBC URL. It writes `e6_query_history.csv` and
+`e6_query_history_capture.json` into the run report directory before the normal
+S3 upload. Capture failure is reported but never changes the JMeter result.
 
-UI-created workload presets are stored as ignored
-`test_properties/ui_*.properties` files; metadata presets use ignored
-`metadata_files/ui_*.txt` files. Existing tracked examples remain available on
-a fresh clone. Administrator-owned defaults such as authentication, report
-storage, Prometheus/Grafana links, dashboard generation, and optional S3 upload
-are read from the UI server environment and shown in the **System settings**
-tab. They are read-only by default. An administrator can set
-`BENCHMARK_UI_ALLOW_SETTINGS_WRITE=true` to edit the non-secret defaults in the
-browser; changes persist to `ui/system_settings.json` (or
-`BENCHMARK_UI_SETTINGS_FILE`). Protect an enabled editor with
-`BENCHMARK_UI_TOKEN` and restricted network access. Database URLs, credentials,
-the authentication token, bind address, and AWS credentials remain service
-settings that require a restart and are never exposed by the browser.
-
-### Optional PostgreSQL registry and S3 artifact storage
-
-SQLite remains the default. For a local PostgreSQL registry, the setup script
-installs the Python driver, generates a protected password, starts the supplied
-container, and configures `start_ui.sh` automatically:
+Configure the OAuth2 machine client through environment variables, not in a
+JDBC connection properties file:
 
 ```bash
-./setup_ui.sh --with-postgres
-./start_ui.sh
+export E6_QUERY_HISTORY_ENABLED=true
+export E6_MACHINE_CLIENT_ID='<machine-client-id>'
+export E6_MACHINE_CLIENT_SECRET='<machine-client-secret>'
+export E6_QUERY_HISTORY_EMAIL='optional-query-user@example.com'
+./run_test.sh test_configs/my_benchmark.env
 ```
 
-The same option is available during full first-time setup:
-
-```bash
-./setup_jmeter.sh --with-postgres
-```
-
-For production, supply `BENCHMARK_UI_DATABASE_URL` and its password through the
-service environment/secret manager instead of using the local Docker helper.
-
-Migrate existing local run cards idempotently:
-
-```bash
-python3 utilities/migrate_ui_registry.py \
-  --sqlite ui/benchmark_ui.db \
-  --database-url "$BENCHMARK_UI_DATABASE_URL"
-```
-
-Keep raw JMeter artifacts out of PostgreSQL. Enable the existing runner upload
-path with `BENCHMARK_UI_COPY_TO_S3=true` and `S3_REPORT_PATH=s3://...`; the
-registry stores run state while CSV/JSON/dashboard artifacts remain local and
-optionally in S3. Successful uploads create `s3_upload.json` locally and in S3.
-The browser never receives the database password or AWS credentials.
-
-PostgreSQL also maintains normalized `run_facts` and `query_results` tables for
-UI search, comparisons, and trend analysis. `run_facts` contains one compact
-summary per run (workload identity, engine/cluster context, percentiles,
-throughput, status, and verified S3 URI); `query_results` contains JMeter's
-per-label aggregate statistics. Raw JMeter samples and dashboard assets are not
-inserted into PostgreSQL.
-
-New S3 uploads are immutable and date partitioned:
-
-```text
-engine=<engine>/cluster_size=<size>/benchmark=<name>/run_type=<type>/
-run_date=YYYY-MM-DD/run_id=<timestamp>-<stable-run-id>/
-```
-
-The stable run ID is shared by the UI card, PostgreSQL facts, `run_summary.json`,
-and S3 prefix. This makes PostgreSQL the searchable catalog and S3 the durable
-artifact store; Athena is not required for normal operation.
+`E6_QUERY_HISTORY_WAIT_SECONDS` defaults to `5` to allow history ingestion.
+Deployments whose Query History is eventually consistent should increase it;
+`300` seconds is a practical value when history can take several minutes to
+publish completed queries.
 
 ### Optional Prometheus and Grafana observability
 
-Prometheus support is opt-in and does not change the normal CLI/UI execution
+Prometheus support is opt-in and does not change the normal CLI execution
 path. When enabled, the runner creates a run-local copy of the selected JMX,
 adds the bundled upstream Prometheus Listener, and exposes live metrics for
 Prometheus to scrape. Source JMX files are never modified.
+
+The JMeter listener exists only while an enabled test is running, so the
+Prometheus `jmeter` target is expected to show down between runs.
 
 ```bash
 PROMETHEUS_ENABLED=true \
 PROMETHEUS_IP=0.0.0.0 PROMETHEUS_PORT=9270 \
 PROMETHEUS_DELAY=15 \
 PROMETHEUS_URL=http://localhost:9090 \
-GRAFANA_URL='http://localhost:3000/d/jmeter-prom/jmeter-performance?orgId=1' \
+GRAFANA_URL='http://localhost:3000/d/jbtLA0-Wk5/jmeter?orgId=1' \
   ./run_test.sh test_configs/my_benchmark.env
 ```
 
@@ -318,9 +325,21 @@ scrape. For the supplied local Docker stack, the target is
 access to the load generator, so bind to its private interface (or `0.0.0.0`)
 and restrict the port to Prometheus at the firewall/security-group level.
 
-The listener exports `jmeter_response_time`, `jmeter_success_success_total`,
-`jmeter_success_failure_total`, and the plugin's standard JVM/thread metrics.
-These names work with the live panels in the existing `jmeter-prom` dashboard.
+To switch from the local stack to company Prometheus and Grafana later, keep
+the same JMeter listener and update `PROMETHEUS_URL` and `GRAFANA_URL`. The
+company Prometheus must also be configured to scrape the runner's private
+address on port `9270`; changing the navigation URLs alone does not create that
+scrape target. After the company scrape target is verified, the local
+containers can be stopped without removing their retained data:
+
+```bash
+docker compose --env-file .benchmark-ui.env -f deploy/docker-compose.observability.yml stop
+```
+
+The listener exports the upstream dashboard-compatible `ResponseTime` summary,
+`Ratio_success`, `Ratio_failure`, and `Ratio_total` counters, plus the plugin's
+standard JVM/thread metrics. These names work with the live panels in the
+existing `jmeter-prom` dashboard.
 Its finalized `jmeter_run_*` panels belong to
 the other framework's Pushgateway reporting contract and are not duplicated
 here; use this framework's JMeter dashboard and `run_summary.json` for final
@@ -333,90 +352,15 @@ JMeter dashboard, and generated summary remain the benchmark evidence.
 
 ### Run metadata
 
-The UI can annotate a run with cluster size, estimated cores, memory, executor
-count, cores per executor, instance type, engine build, benchmark/data labels,
-run mode, configuration, tags, and comments. These values are descriptive only:
-they are added to `run_summary.json` and `run_report.md` but do not participate
-in JMeter load generation, connection configuration, or SQL execution.
-
-The Compare page can filter reports by engine, cluster size, and engine build.
-This makes it possible to compare the same workload across differently sized
-clusters while keeping the sizing context visible. CLI runs receive the same
-metadata when their corresponding environment variables are set, for example:
+Optional descriptive metadata can be added through environment variables. It is
+recorded in `run_summary.json` and `run_report.md` but does not affect JMeter
+load generation or SQL execution:
 
 ```bash
 CLUSTER_SIZE=S-2x2 ESTIMATED_CORES=60 MEMORY_GB=512 \
 ENGINE_BUILD=2026.08.18 BENCHMARK_TYPE=tpcds_25_1tb \
   ./run_test.sh test_configs/my_benchmark.env
 ```
-
-When the UI creates a profile, it writes the same format as
-`create_connection.sh` under the git-ignored `connection_properties/` directory
-with owner-only (`0600`) permissions. Connection secrets are never returned to
-the browser or stored in run metadata. Existing-profile selection is available
-through `CONNECTION_FILE mode`. Inputs are restricted to known test plans and
-files in `connection_properties/`, `data_files/`, and `test_properties/`. Local
-browser uploads and S3 imports are copied into those git-ignored input
-directories before the unchanged runner starts. Result upload to S3 remains
-disabled for UI runs. The UI produces normal reports under
-`reports/ui-<run-id>/`.
-
-The live workload chart is calculated from the actively growing
-`JmeterResultFile.csv`; JMeter does not produce its standard HTML graphs while a
-test is running. After completion, use **Per-query results → Open standard
-JMeter dashboard** for the standard report. Dashboard generation is enabled by
-default in the UI and can be disabled with `GENERATE_DASHBOARD` for lower disk
-usage.
-
-The server binds to localhost by default. On EC2, prefer SSH port forwarding:
-
-```bash
-ssh -L 8765:127.0.0.1:8765 user@your-ec2-host
-```
-
-Then open `http://127.0.0.1:8765` locally. Binding to a public interface has no
-built-in authentication and should only be done behind authenticated HTTPS.
-
-UI diagnostics are written to `logs/ui.log`. Each UI-started benchmark also
-writes its complete runner output to `reports/ui-<run-id>/ui_runner.log`, while
-JMeter errors and final metrics remain in the timestamped child directory's
-`JmeterResultFile.csv`, `run_report.md`, and `run_summary.json`.
-
-### Persistent and production operation
-
-Localhost remains zero-configuration. The UI stores its run registry in
-`ui/benchmark_ui.db` by default, so completed/interrupted run records survive a
-UI restart; JMeter artifacts remain ordinary files under `reports/`.
-
-For a fixed production URL, run the service on localhost behind authenticated
-HTTPS. Remote binding is refused unless `BENCHMARK_UI_TOKEN` is set. The token
-is used as the password for HTTP Basic authentication (the username can be any
-value); TLS must be terminated by the reverse proxy.
-
-Deployment templates are provided under `deploy/`:
-
-```bash
-sudo install -d -o e6benchmark -g e6benchmark /var/lib/e6-benchmark-ui
-sudo install -m 600 deploy/benchmark-ui.env.example /etc/e6-benchmark-ui.env
-# Edit the token and paths/server name in the three deployment templates.
-sudo install deploy/e6-benchmark-ui.service /etc/systemd/system/
-sudo install deploy/nginx-benchmark-ui.conf /etc/nginx/conf.d/e6-benchmark-ui.conf
-sudo systemctl daemon-reload
-sudo systemctl enable --now e6-benchmark-ui
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Operational endpoints:
-
-- `GET /healthz` — process liveness;
-- `GET /readyz` — registry and runner readiness.
-
-Every UI launch performs a query/configuration preflight and writes
-`ui_manifest.json` with the resolved non-secret environment, query/JMX/profile
-hashes, and load-generator host snapshots. Comparisons warn when workload
-signatures differ. These checks improve trustworthiness but do not modify the
-JMeter result files or metric calculations.
 
 ## Test Plans
 
@@ -467,21 +411,33 @@ export CONCURRENT_QUERY_COUNT=8
 | `QPS` | Queries per second | QPS-based plans |
 | `QPM` | Queries per minute | QPM-based plans |
 | `HOLD_PERIOD` | Test duration in seconds; the QPM arrivals plan interprets it as minutes | All plans except Run-Once |
-| `RECYCLE_ON_EOF` | Repeat queries when CSV ends (`true`/`false`) | All plans |
-| `RANDOM_ORDER` | Shuffle query execution order (`true`/`false`) | All plans |
+| `RECYCLE_ON_EOF` | Repeat queries when CSV ends (`true`/`false`); forced `false` for Run Once | Duration/profile plans |
+| `RANDOM_ORDER` | Shuffle query execution order (`true`/`false`) | Plans whose JMX contains the shuffle preprocessor; not Run Once |
+| `WARMUP_ENABLED` | Run excluded sequential warm-up pass(es) before measurement; default `false` | All JDBC plans |
+| `WARMUP_QUERY_FILE` | Warm-up query CSV, local path or `s3://` URI | When warm-up is enabled |
+| `WARMUP_ITERATIONS` | Number of separate excluded warm-up passes; default `1` | When warm-up is enabled |
+| `MEASURED_ITERATIONS` | Number of query-file passes included in one JMeter result; aliases remain unchanged for standard per-label aggregation | Run Once plans |
 | `COPY_TO_S3` | Upload results to S3 (`true`/`false`, default `false`) | All plans |
-| `S3_REPORT_PATH` | Root path for runner uploads; `S3_BASE_PATH` remains a legacy metadata alias | All plans |
+| `S3_REPORT_PATH` | Results root used by the existing runner uploader, for example `s3://my-bucket/benchmark-results/v1`; `S3_BASE_PATH` remains a legacy metadata alias | All plans |
 | `RUN_TYPE` | Optional S3 partition label; inferred from plan and concurrency/rate when omitted | All plans |
 | `MAX_ERROR_PCT` | Exit nonzero when sample error percentage exceeds this value | All plans |
 | `PROMETHEUS_ENABLED` | Expose live JMeter metrics for Prometheus; default `false` | All plans |
 | `PROMETHEUS_IP`, `PROMETHEUS_PORT` | Listener bind address and port; defaults `127.0.0.1:9270` | All plans |
 | `PROMETHEUS_DELAY` | Seconds to retain the endpoint after completion; default `15` | All plans |
 | `PROMETHEUS_URL`, `GRAFANA_URL` | Optional UI/report navigation links | All plans |
+| `E6_QUERY_HISTORY_ENABLED` | Export matching e6 Query History after a measured run; default `false` | e6 JDBC runs |
+| `E6_MACHINE_CLIENT_ID`, `E6_MACHINE_CLIENT_SECRET` | OAuth2 machine-client credentials used only for Query History export | e6 JDBC runs when capture is enabled |
+| `E6_QUERY_HISTORY_EMAIL` | Optional query-user filter for Query History export | e6 JDBC runs when capture is enabled |
+| `E6_QUERY_HISTORY_WAIT_SECONDS` | Delay before export to allow Query History ingestion; default `5` | e6 JDBC runs when capture is enabled |
 
 ### Load profile CSV
 
 The two load-profile plans control different things, so they take different CSV formats.
 The format is picked from the plan automatically — set `LOAD_PROFILE` to any CSV.
+Both `QUERY_FILE` and `LOAD_PROFILE` may be local paths or complete `s3://`
+URIs. CLI runs download a fresh, private temporary copy for every invocation,
+validate it, record the source URI and SHA-256 in run metadata, and remove the
+temporary copy on exit.
 
 **Arrival rate** — `Test-Plan-Fire-QPS-with-load-profile.jmx`, default
 `test_properties/load_profile.csv`. Controls how fast queries are *submitted*:
@@ -515,6 +471,7 @@ See `CLAUDE.md` for the full reference.
 | `create_connection.sh` | Create a connection properties file (interactive) |
 | `create_test_config.sh` | Create a full test config file (interactive) |
 | `run_test.sh` | Run a test (config file or env vars) |
+| `run_benchmark_suite.sh` | Run an ordered Performance Suite through `run_test.sh` |
 | `run_jmeter_tests_interactive.sh` | Run a test (interactive prompts) |
 
 ### Sample configs
@@ -539,11 +496,20 @@ cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 ├── create_connection.sh             # Create connection properties (interactive)
 ├── create_test_config.sh            # Create test config (interactive)
 ├── run_test.sh                      # Run test (config file or env vars)
+├── run_benchmark_suite.sh           # Ordered multi-benchmark runner
 ├── run_jmeter_tests_interactive.sh  # Run test (interactive)
+├── config/
+│   └── system_settings.example.json # Shared CLI/UI runner settings template
+├── suite_manifests/                 # Tracked examples + ignored local suites
 ├── connection_properties/           # JDBC connection files
 │   └── connection.properties.template
 ├── test_properties/                 # Test parameter files
-│   ├── test.properties.template
+│   ├── run_once.properties
+│   ├── fixed_concurrency.properties
+│   ├── constant_qps.properties
+│   ├── constant_qpm.properties
+│   ├── variable_arrivals.properties
+│   ├── variable_concurrency.properties
 │   └── load_profile.csv
 ├── test_configs/                    # Ready-to-run config files
 │   ├── sample_concurrency_test.env
@@ -569,7 +535,15 @@ Each run gets its own directory, `reports/<run_id>/`, containing:
 - **`run_report.md`** — human-readable summary, generated automatically after every run
 - **`run_summary.json`** — the same metrics in machine-readable form
 - **`statistics.json`** and **`dashboard/`** — JMeter's authoritative per-label
-  aggregate statistics and HTML dashboard; the UI displays these fields directly
+  aggregate statistics and HTML dashboard
+- **`e6_query_history.csv`** and **`e6_query_history_capture.json`** — optional
+  e6 workspace Query History export and capture metadata
+- **`s3_upload.json`** — verified immutable S3 destination when upload succeeds
+- **`inputs/query.csv`**, **`inputs/warmup-query.csv`**, and
+  **`inputs/load-profile.csv`** — exact non-secret workload inputs used by the
+  measured run (only applicable files are present); these are included in S3
+  uploads. Connection and test-property files are
+  deliberately excluded because they may contain credentials.
 
 Set `GENERATE_DASHBOARD=false` to skip the HTML dashboard (~3.5 MB per run).
 
@@ -580,16 +554,42 @@ ignored framework-control samples, and captures the requested load settings,
 query/profile checksums, original/generated plan names, Java/JMeter versions,
 and Git commit. It also records successful-query latency percentiles, complete
 failure classification (`cancelled`, `timed_out`, and `other`), and aggregate
-plus active-one-second-bucket completion rates. The UI organizes these JMeter
-results into outcome, workload delivery/throughput, timing/load, and latency
-sections; failure messages and raw runner inputs remain collapsible. Derived
-fields are labelled as such, and the CSV, `statistics.json`, and generated
-JMeter dashboard remain authoritative. This metadata is intended to make
-historical runs reproducible.
+plus active-one-second-bucket completion rates. The CSV, `statistics.json`, and
+generated JMeter dashboard remain authoritative. This metadata is intended to
+make historical runs reproducible.
 
 For analysis and comparison tools, see [utilities/README.md](utilities/README.md).
 
-S3 uploads use the common partition layout `engine=.../cluster_size=.../benchmark=.../run_type=.../run_id=.../`. Set `S3_REPORT_PATH` to its root. Existing metadata that defines `S3_BASE_PATH` is supported as a deprecated alias.
+The `run_test.sh` uploader is controlled by `COPY_TO_S3` and `S3_REPORT_PATH`.
+Defaults can be stored in the gitignored `config/system_settings.json` file:
+
+```bash
+cp config/system_settings.example.json config/system_settings.json
+```
+
+Explicit CLI exports and suite-file values take precedence over this file.
+Services can move it outside the checkout with
+`BENCHMARK_SYSTEM_SETTINGS_FILE=/etc/e6-benchmark-studio/system_settings.json`.
+
+The same two values may instead be supplied directly as `COPY_TO_S3` and
+`S3_REPORT_PATH` environment variables.
+
+S3 uploads use the partition layout
+`engine=.../benchmark=.../data_size=.../cluster_size=.../run_type=.../run_date=.../run_id=.../`.
+Set `S3_REPORT_PATH` to the versioned results root, such as
+`s3://my-bucket/benchmark-results/v1`. Query CSVs, warm-up files, and load
+profiles may independently be read from `s3://.../benchmark-workloads/...`;
+connection profiles and credentials must remain on the runner host. Existing
+metadata that defines `S3_BASE_PATH` is supported as a deprecated alias.
+
+When Query History enrichment is enabled, compare like-for-like fields:
+JMeter `Latency` normally aligns with Query History client/total time, while
+Query History execution duration excludes planning, queuing, transport, and
+driver response overhead. `LIMIT_RESULTSET` can also make a query appear
+successful to JMeter but `CANCELLED` in engine history: JDBC exposed a valid
+response and JMeter deliberately closed the result set after reaching the row
+limit. Treat that as a result-consumption status difference, not automatically
+as an engine execution failure, and retain both artifacts for audit.
 
 ## Developer checks
 
@@ -611,6 +611,10 @@ For a bounded live JDBC validation (five plans, real query load):
 
 - **Security**: Do not commit credentials to version control. Connection properties and data files are in `.gitignore`.
 - **JDBC drivers**: Place JARs in `jdbc_drivers/`. The setup script copies them to JMeter's lib directory.
+- JMeter uses one global classpath. Setup quarantines signed fat JARs that embed
+  conflicting dependencies. The
+  original JAR remains in `jdbc_drivers/`; use an isolated JMeter installation
+  when benchmarking a driver that requires the quarantined signed bundle.
 - **Start small**: Begin with 1-2 threads in a non-production environment. Monitor target database resources before scaling up.
 - **HOLD_PERIOD**: The test always runs for the full duration, even if queries finish early. With `RECYCLE_ON_EOF=true`, queries repeat until time expires.
 

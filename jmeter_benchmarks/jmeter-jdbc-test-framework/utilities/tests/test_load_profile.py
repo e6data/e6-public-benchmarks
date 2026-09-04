@@ -63,10 +63,11 @@ class LoadProfileParsingTests(unittest.TestCase):
 
 class ReportMetricTests(unittest.TestCase):
     @staticmethod
-    def row(start, elapsed, success="true"):
+    def row(start, elapsed, success="true", latency=None):
         return {
             "timeStamp": str(start),
             "elapsed": str(elapsed),
+            "Latency": str(elapsed if latency is None else latency),
             "success": success,
             "responseMessage": "OK" if success == "true" else "failed",
         }
@@ -81,11 +82,26 @@ class ReportMetricTests(unittest.TestCase):
         report = capture_run_report.analyse(rows)
         self.assertEqual(report["peak_in_flight"], 1)
 
+    def test_thread_count_caps_millisecond_handoff_rounding(self):
+        rows = [self.row(1000, 1001), self.row(2000, 100)]
+        for row in rows:
+            row["allThreads"] = "1"
+            row["threadName"] = "Thread Group 1-1"
+        report = capture_run_report.analyse(rows)
+        self.assertEqual(report["peak_in_flight"], 1)
+
     def test_error_metrics(self):
         rows = [self.row(1000, 100), self.row(1100, 100, "false")]
         report = capture_run_report.analyse(rows)
         self.assertEqual(report["failed"], 1)
         self.assertEqual(report["error_pct"], 50.0)
+
+    def test_primary_latency_uses_jmeter_time_to_first_response(self):
+        rows = [self.row(1000, 900, latency=100), self.row(2000, 800, latency=200)]
+        report = capture_run_report.analyse(rows)
+        self.assertEqual(report["latency_source"], "jmeter_latency")
+        self.assertEqual(report["latency_ms"]["mean"], 150)
+        self.assertEqual(report["wall_clock_s"], 1.8)
 
     def test_failure_breakdown_classifies_every_failed_sample(self):
         rows = [

@@ -73,7 +73,7 @@ Template files use a **template system** to eliminate redundancy and enable batc
 ```
 {ENGINE}_{CLUSTER_SIZE}_metadata.txt
 Test-Plan-Maintain-static-concurrency.jmx
-concurrency_{CONCURRENCY}_test.properties
+fixed_concurrency.properties
 {ENGINE}_{CLUSTER}_connection.properties
 E6Data_TPCDS_queries_29_1TB.csv
 ```
@@ -82,7 +82,8 @@ E6Data_TPCDS_queries_29_1TB.csv
 - `{ENGINE}` - Engine name (e.g., e6data)
 - `{CLUSTER_SIZE}` - Normalized cluster size (xs-1x1, s-2x2, m-4x4, s-4x4, s-1x1)
 - `{CLUSTER}` - Cluster identifier for connection file (default, demo-graviton, etc.)
-- `{CONCURRENCY}` - Concurrency level (1, 2, 4, 8, 12, 16)
+- The concurrency level is supplied to `run_test.sh` as
+  `CONCURRENT_QUERY_COUNT`; it is not encoded in a separate properties file.
 - `{BENCHMARK}` - Benchmark identifier (tpcds_29_1tb, tpcds_51_1tb)
 
 **Template File Naming Convention:**
@@ -115,6 +116,20 @@ container during setup, use `./setup_jmeter.sh --with-postgres`. Start and stop
 the optional UI with `./start_ui.sh` and `./stop_ui.sh`; the CLI runner remains
 independent of the UI.
 
+Benchmark Studio reports JMeter `Latency` as the primary query-engine metric
+(request start to first JDBC response). Do not replace it with `elapsed` in UI
+cards: elapsed additionally includes result iteration/materialization and
+client processing. Duration, throughput, and in-flight reconstruction still
+use elapsed completion timestamps. The standard JMeter HTML report remains
+unchanged and uses its normal elapsed/sample-time statistics.
+
+Completed measured runs snapshot non-secret reproducibility inputs under
+`inputs/` before recursive S3 upload. Never add connection properties or test
+property files to that snapshot because they may contain credentials. e6 Query
+History capture occurs before S3 upload and may intentionally wait several
+minutes for ingestion; sequential comparison legs wait for this full
+finalization, while parallel legs share load-generator resources.
+
 **Critical**: Java 17 is required. The interactive script validates this before running.
 
 ### Create Connection Properties (First Time Setup)
@@ -123,7 +138,7 @@ independent of the UI.
 ./create_connection.sh
 ```
 
-Interactive utility that creates connection properties files for JDBC (e6data, Databricks, Trino) or HTTP endpoints. Run once per cluster/engine — files are saved in `connection_properties/` for reuse.
+Interactive utility that creates connection properties files for e6data, other JDBC-compatible engines, or HTTP endpoints. Run once per cluster/engine — files are saved in `connection_properties/` for reuse.
 
 ### Interactive Mode (Recommended)
 
@@ -133,17 +148,17 @@ Interactive utility that creates connection properties files for JDBC (e6data, D
 
 Prompts accept a **filename as well as a list number**. Prefer filenames when scripting:
 the list is rebuilt from the directory each run and numbered by sort position, so adding a
-connection or properties file shifts every index after it and a piped number then selects a
+connection file shifts every index after it and a piped number then selects a
 different file silently.
 
 This script:
 1. Lists existing connection properties files for selection (if none exist, directs to `create_connection.sh`)
 2. Prompts for test plan type (concurrency, QPS, QPM, load profile, variable concurrency; JDBC or HTTP variants)
-3. Offers to select existing test properties or create new ones with relevant runtime parameters
+3. Selects the canonical test-properties file for that plan automatically and prompts only for relevant per-run overrides
 4. Prompts for query CSV data file
 5. Optionally selects metadata file (for S3 upload)
 6. Shows configuration summary and runs the JMeter test
-7. Test properties created during the flow are saved as files for reuse in future runs
+7. Delegates the resolved configuration to `run_test.sh`; it does not create another test-properties file
 
 ### Create Test Config
 
@@ -181,7 +196,7 @@ Reads all configuration from a `.env` config file or env vars. No prompts. Chang
 ./apache-jmeter-5.6.3/bin/jmeter \
   -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
   -q connection_properties/sample_connection.properties \
-  -q test_properties/sample_test.properties \
+  -q test_properties/fixed_concurrency.properties \
   -JQUERY_PATH=data_files/sample_queries.csv
 ```
 
@@ -200,7 +215,7 @@ Reads all configuration from a `.env` config file or env vars. No prompts. Chang
 ./apache-jmeter-5.6.3/bin/jmeter -n \
   -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
   -q connection_properties/sample_connection.properties \
-  -q test_properties/sample_test.properties \
+  -q test_properties/fixed_concurrency.properties \
   -JQUERY_PATH=data_files/sample_queries.csv \
   -l reports/results.jtl
 ```
@@ -602,11 +617,10 @@ To enable batch testing for a new engine/cluster/benchmark combination:
    ```
    Edit JDBC connection string, credentials, driver class
 
-3. **Create test properties for each concurrency level** (if not exists):
+3. **Use the fixed-concurrency plan defaults and override the level per run**:
    ```bash
-   # Already exists: concurrency_1_test.properties through concurrency_16_test.properties
-   # Only needed if using different concurrency levels
-   cp test_properties/concurrency_4_test.properties test_properties/concurrency_24_test.properties
+   TEST_PROPERTIES_FILE=test_properties/fixed_concurrency.properties \
+   CONCURRENT_QUERY_COUNT=24 ./run_test.sh test_configs/my_test.env
    ```
 
 4. **Add query CSV file** (if not exists):
@@ -619,7 +633,7 @@ To enable batch testing for a new engine/cluster/benchmark combination:
    cat > test_configs/my_engine_my-cluster_my_benchmark_template.txt << 'EOF'
    {ENGINE}_{CLUSTER_SIZE}_metadata.txt
    Test-Plan-Maintain-static-concurrency.jmx
-   concurrency_{CONCURRENCY}_test.properties
+   fixed_concurrency.properties
    {ENGINE}_{CLUSTER}_connection.properties
    My_Benchmark_queries.csv
    EOF
@@ -689,10 +703,10 @@ fallback.
 If arrivals fall short *within* the profile window, `MAX_CONCURRANCY` is too low and the
 arrivals thread group dropped them. `run_report.md` flags this as `SHORTFALL`.
 
-### Databricks: ExceptionInInitializerError on Java 9+
+### JDBC drivers using Apache Arrow: ExceptionInInitializerError on Java 9+
 
-Every query fails immediately with `java.lang.ExceptionInInitializerError`. The Databricks
-driver bundles Apache Arrow, whose off-heap memory layer reflectively accesses
+Every query fails immediately with `java.lang.ExceptionInInitializerError`. Some JDBC
+drivers bundle Apache Arrow, whose off-heap memory layer reflectively accesses
 `java.nio.DirectByteBuffer` internals. JMeter's launcher does not open `java.base/java.nio`,
 so Arrow's static initialiser fails. Either append to the connection string:
 

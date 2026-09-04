@@ -5,6 +5,7 @@
 *.log
 databricks_jdbc.log.*
 logs/
+temp/
 
 #ignore entire jmeter installation (downloaded via setup script)
 apache-jmeter-5.6.3/
@@ -41,6 +42,7 @@ ui/*.db
 ui/*.db-shm
 ui/*.db-wal
 ui/system_settings.json
+config/system_settings.json
 .venv/
 .benchmark-ui.env
 
@@ -57,6 +59,10 @@ test_configs/*.txt
 test_properties/*.csv
 test_properties/ui_*.properties
 metadata_files/ui_*.txt
+suite_manifests/ui_*.json
+suite_manifests/s3_*.json
+benchmark_definitions/ui_*.json
+test_properties/suite_cache/
 # ...except the load-profile examples. The two profile-driven plans fall back to
 # load_profile.csv / utg_load_profile.csv when LOAD_PROFILE is unset, so without
 # these a fresh clone cannot run either plan. They hold only shape numbers.

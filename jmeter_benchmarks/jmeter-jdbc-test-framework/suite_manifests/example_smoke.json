@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "name": "Example smoke suite",
+  "engine": "e6data",
+  "comparison_key": "example-smoke",
+  "default_connection": "",
+  "description": "Two small sequential workloads that demonstrate suite orchestration.",
+  "metadata": {
+    "RUN_SCOPE": "internal",
+    "RUN_PURPOSE": "validation",
+    "RUN_VALIDITY": "valid"
+  },
+  "workloads": [
+    {
+      "id": "simple-queries",
+      "plan": "jdbc_sequential",
+      "test_properties_file": "test_properties/run_once.properties",
+      "query_file": "data_files/simple_queries.csv",
+      "warmup_query_file": "",
+      "warmup_iterations": 1,
+      "load_profile": "",
+      "measured_iterations": 1,
+      "settings": {
+        "CONCURRENT_QUERY_COUNT": 1,
+        "RAMP_UP_TIME": 0,
+        "RECYCLE_ON_EOF": false
+      }
+    },
+    {
+      "id": "sample-queries",
+      "plan": "jdbc_run_once",
+      "test_properties_file": "test_properties/run_once.properties",
+      "query_file": "data_files/sample_jmeter_queries.csv",
+      "warmup_query_file": "",
+      "warmup_iterations": 1,
+      "load_profile": "",
+      "measured_iterations": 1,
+      "settings": {
+        "CONCURRENT_QUERY_COUNT": 2,
+        "RAMP_UP_TIME": 0,
+        "RECYCLE_ON_EOF": false
+      }
+    }
+  ]
+}

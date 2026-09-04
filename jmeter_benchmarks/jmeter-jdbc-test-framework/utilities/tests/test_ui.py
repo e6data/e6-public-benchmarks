@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import stat
 import tempfile
 import time
@@ -22,6 +23,9 @@ class UiTests(unittest.TestCase):
                 "PROMETHEUS_DEFAULT_ENABLED", "PROMETHEUS_DEFAULT_PORT",
                 "PROMETHEUS_URL", "GRAFANA_URL", "SYSTEM_COPY_TO_S3",
                 "SYSTEM_S3_REPORT_PATH", "SYSTEM_GENERATE_DASHBOARD",
+                "E6_QUERY_HISTORY_ENABLED", "E6_MACHINE_CLIENT_ID",
+                "E6_MACHINE_CLIENT_SECRET", "E6_QUERY_HISTORY_EMAIL",
+                "E6_QUERY_HISTORY_WAIT_SECONDS",
                 "REPORT_RETENTION_DAYS", "MAX_LOCAL_REPORT_GB",
             )
         }
@@ -36,18 +40,44 @@ class UiTests(unittest.TestCase):
                     "copy_to_s3": True, "s3_report_path": "s3://bucket/results",
                     "generate_dashboard": False, "retention_days": 45,
                     "max_local_report_gb": 250,
+                    "e6_query_history_enabled": True,
+                    "e6_machine_client_id": "machine-client",
+                    "e6_machine_client_secret": "write-only-secret",
+                    "e6_query_history_email": "benchmark@example.com",
+                    "e6_query_history_wait_seconds": 9,
                 }
                 saved = server.update_system_settings(values)
-                self.assertEqual(saved, values)
+                self.assertNotIn("e6_machine_client_secret", saved)
                 self.assertEqual(json.loads(server.SETTINGS_PATH.read_text()), values)
+                self.assertEqual(stat.S_IMODE(server.SETTINGS_PATH.stat().st_mode), 0o600)
                 self.assertEqual(server.PROMETHEUS_DEFAULT_PORT, "9123")
                 self.assertTrue(server.SYSTEM_COPY_TO_S3)
                 self.assertFalse(server.SYSTEM_GENERATE_DASHBOARD)
+                self.assertTrue(server.E6_QUERY_HISTORY_ENABLED)
+                self.assertEqual(server.E6_MACHINE_CLIENT_SECRET, "write-only-secret")
+                preserved = server.update_system_settings({**values, "e6_machine_client_secret": ""})
+                self.assertNotIn("e6_machine_client_secret", preserved)
+                self.assertEqual(
+                    json.loads(server.SETTINGS_PATH.read_text())["e6_machine_client_secret"],
+                    "write-only-secret",
+                )
                 with self.assertRaisesRegex(ValueError, "must start with s3://"):
                     server.update_system_settings({**values, "s3_report_path": "https://bucket/results"})
         finally:
             for name, value in original.items():
                 setattr(server, name, value)
+
+    def test_query_history_settings_require_machine_credentials(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch.object(server, "ALLOW_SETTINGS_WRITE", True), \
+                mock.patch.object(server, "SETTINGS_PATH", Path(temp) / "settings.json"), \
+                mock.patch.object(server, "SAVED_SETTINGS", {}), \
+                mock.patch.object(server, "E6_MACHINE_CLIENT_SECRET", ""):
+            with self.assertRaisesRegex(ValueError, "requires a machine client ID and secret"):
+                server.update_system_settings({
+                    "e6_query_history_enabled": True,
+                    "e6_machine_client_id": "machine-client",
+                })
 
     def test_create_jdbc_connection_profile_uses_runner_format_and_private_permissions(self):
         name = "ui_unit_profile"
@@ -80,6 +110,23 @@ class UiTests(unittest.TestCase):
             self.assertNotIn("JDBC_CONNECTION_PROPERTIES", contents)
         finally:
             target.unlink(missing_ok=True)
+
+    def test_snowflake_profile_uses_current_driver_class(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original_root = server.ROOT
+            server.ROOT = Path(tmp)
+            try:
+                relative = server.create_connection_profile({
+                    "name": "ui_snowflake_unit", "transport": "jdbc",
+                    "engine": "snowflake",
+                    "connection_string": "jdbc:snowflake://account.snowflakecomputing.com/?warehouse=BENCH",
+                    "user": "benchmark_user", "password": "private-token",
+                })
+            finally:
+                server.ROOT = original_root
+            contents = (Path(tmp) / relative).read_text()
+            self.assertIn("DRIVER_CLASS=net.snowflake.client.api.driver.SnowflakeDriver", contents)
+            self.assertIn("JDBC_INIT_SQL=ALTER SESSION SET USE_CACHED_RESULT = FALSE", contents)
 
     def test_create_connection_profile_rejects_injection_and_overwrite(self):
         with self.assertRaisesRegex(ValueError, "invalid character"):
@@ -143,17 +190,35 @@ class UiTests(unittest.TestCase):
         finally:
             target.unlink(missing_ok=True)
 
-    def test_s3_import_selects_existing_local_file(self):
+    def test_s3_import_refreshes_existing_local_file(self):
         target = server.ROOT / "data_files" / "ui_s3_existing.csv"
+        def fake_run(command, **_kwargs):
+            Path(command[4]).write_text("query_alias,query_string\nq2,select 2\n")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
         try:
             target.parent.mkdir(exist_ok=True)
             target.write_text("query_alias,query_string\nq1,select 1\n")
-            with mock.patch.object(server.subprocess, "run") as download:
+            with mock.patch.object(server.subprocess, "run", side_effect=fake_run) as download:
                 relative = server.import_s3_input(
                     "query", "s3://example-bucket/folder/ui_s3_existing.csv"
                 )
             self.assertEqual(relative, "data_files/ui_s3_existing.csv")
-            download.assert_not_called()
+            download.assert_called_once()
+            self.assertIn("q2,select 2", target.read_text())
+        finally:
+            target.unlink(missing_ok=True)
+
+    def test_warmup_s3_import_uses_query_input_directory(self):
+        target = server.ROOT / "data_files" / "ui_warmup_s3.csv"
+        def fake_run(command, **_kwargs):
+            Path(command[4]).write_text("query_alias,query_string\nw1,select 1\n")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        try:
+            with mock.patch.object(server.subprocess, "run", side_effect=fake_run):
+                relative = server.import_s3_input(
+                    "warmup", "s3://example-bucket/warmup/ui_warmup_s3.csv"
+                )
+            self.assertEqual(relative, "data_files/ui_warmup_s3.csv")
         finally:
             target.unlink(missing_ok=True)
 
@@ -255,6 +320,29 @@ class UiTests(unittest.TestCase):
         self.assertEqual(values["ESTIMATED_CORES"], "60")
         self.assertEqual(values["SERVERLESS"], "N")
 
+    def test_s3_metadata_import_keeps_only_supported_non_secret_fields(self):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(server, "ROOT", Path(temp)):
+            (Path(temp) / "metadata_files").mkdir()
+
+            def download(command, **_kwargs):
+                Path(command[4]).write_text(
+                    'CLUSTER_SIZE="S-2x2"\n'
+                    'ENGINE_BUILD="release-123"\n'
+                    'PASSWORD="must-not-be-imported"\n'
+                    'UNKNOWN_FIELD="ignored"\n'
+                )
+                return SimpleNamespace(returncode=0, stderr="")
+
+            with mock.patch.object(server.subprocess, "run", side_effect=download):
+                saved = server.import_s3_input("metadata", "s3://example/profiles/release.txt")
+
+            values = server.read_preset(Path(temp) / saved)
+            self.assertEqual(saved, "metadata_files/ui_release.txt")
+            self.assertEqual(values["CLUSTER_SIZE"], "S-2x2")
+            self.assertEqual(values["ENGINE_BUILD"], "release-123")
+            self.assertNotIn("PASSWORD", values)
+            self.assertNotIn("UNKNOWN_FIELD", values)
+
     def test_only_ui_presets_can_be_overwritten_and_deleted(self):
         with tempfile.TemporaryDirectory() as temp, mock.patch.object(server, "ROOT", Path(temp)):
             (Path(temp) / "test_properties").mkdir()
@@ -266,15 +354,35 @@ class UiTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 server.delete_preset("workload", "repository_example")
 
+    def test_workload_preset_preserves_warmup_and_boolean_fields(self):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(server, "ROOT", Path(temp)):
+            (Path(temp) / "test_properties").mkdir()
+            saved = server.create_preset("workload", {"name": "warm", "values": {
+                "QUERY_PATH": "data_files/queries.csv",
+                "WARMUP_ENABLED": True,
+                "WARMUP_QUERY_FILE": "data_files/warmup.csv",
+                "WARMUP_ITERATIONS": 2,
+                "RECYCLE_ON_EOF": False,
+                "RANDOM_ORDER": False,
+                "GENERATE_DASHBOARD": True,
+            }})
+            values = server.read_preset(Path(temp) / saved)
+            self.assertEqual(values["WARMUP_ENABLED"], "true")
+            self.assertEqual(values["WARMUP_QUERY_FILE"], "data_files/warmup.csv")
+            self.assertEqual(values["WARMUP_ITERATIONS"], "2")
+            self.assertEqual(values["RECYCLE_ON_EOF"], "false")
+            self.assertEqual(values["RANDOM_ORDER"], "false")
+            self.assertEqual(values["GENERATE_DASHBOARD"], "true")
+
     def test_live_metrics_ignores_setup_samples(self):
         with tempfile.TemporaryDirectory() as temp:
             run = Path(temp) / "child"
             run.mkdir()
             (run / "JmeterResultFile.csv").write_text(
-                "timeStamp,elapsed,label,success,allThreads\n"
-                "1000,0,Setup-Loader,true,1\n"
-                "1100,100,q1,true,2\n"
-                "1200,300,q2,false,2\n"
+                "timeStamp,elapsed,label,success,allThreads,Latency\n"
+                "1000,0,Setup-Loader,true,1,0\n"
+                "1100,100,q1,true,2,40\n"
+                "1200,300,q2,false,2,50\n"
             )
             metrics = server.live_metrics(Path(temp))
         self.assertEqual(metrics["samples"], 2)
@@ -285,7 +393,9 @@ class UiTests(unittest.TestCase):
         self.assertEqual(metrics["series"]["successful"], [1])
         self.assertEqual(metrics["series"]["failed"], [1])
         self.assertEqual(metrics["series"]["in_flight"], [1])
-        self.assertEqual(metrics["series"]["latency_ms"], [100])
+        self.assertEqual(metrics["series"]["latency_ms"], [40])
+        self.assertEqual(metrics["p50"], 40)
+        self.assertEqual(metrics["latency_source"], "jmeter_latency")
         self.assertEqual(metrics["duration_s"], 0.4)
         self.assertEqual(metrics["arrival_rate"], 20.0)
         self.assertEqual(metrics["completion_throughput"], 5.0)
@@ -324,9 +434,33 @@ class UiTests(unittest.TestCase):
         self.assertEqual(metrics["series"]["in_flight"], [1])
         self.assertEqual(metrics["successful"], 2)
 
+    def test_live_metrics_caps_rounding_overlap_at_jmeter_thread_count(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp) / "child"
+            run.mkdir()
+            (run / "JmeterResultFile.csv").write_text(
+                "timeStamp,elapsed,label,success,allThreads,threadName\n"
+                "1000,1001,Q1,true,1,Thread Group 1-1\n"
+                "2000,100,Q2,true,1,Thread Group 1-1\n"
+            )
+            metrics = server.live_metrics(Path(temp))
+        self.assertEqual(max(metrics["series"]["in_flight"]), 1)
+
     def test_path_validation_blocks_traversal(self):
         with self.assertRaises(ValueError):
             server._inside("../../etc/passwd", "connection_properties", ".properties")
+
+    def test_path_validation_accepts_nested_benchmark_query(self):
+        query = server.ROOT / "data_files" / "benchmarks" / "ui_nested_test.csv"
+        try:
+            query.parent.mkdir(parents=True, exist_ok=True)
+            query.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select 1"\n')
+            self.assertEqual(
+                server._inside("data_files/benchmarks/ui_nested_test.csv", "data_files", ".csv"),
+                "data_files/benchmarks/ui_nested_test.csv",
+            )
+        finally:
+            query.unlink(missing_ok=True)
 
     def test_build_environment_keeps_upload_disabled_and_enables_standard_dashboard(self):
         connection = server.ROOT / "connection_properties" / "ui_test.properties"
@@ -352,6 +486,12 @@ class UiTests(unittest.TestCase):
         self.assertEqual(env["REPORT_PATH"], "reports/ui-abc")
         self.assertEqual(env["PROMETHEUS_ENABLED"], "false")
         self.assertEqual(env["PROMETHEUS_PORT"], "9270")
+
+    def test_run_id_is_sortable_and_human_readable(self):
+        with mock.patch.object(server.time, "gmtime", return_value=time.gmtime(0)), \
+                mock.patch.object(server.uuid, "uuid4", return_value=mock.Mock(hex="abcdef123456")):
+            run_id = server.new_run_id("Snowflake", "jdbc_sequential")
+        self.assertEqual(run_id, "19700101T000000Z-snowflake-sequential-abcdef")
 
     def test_preflight_accepts_runner_query_header_variants(self):
         connection = server.ROOT / "connection_properties" / "ui_header_test.properties"
@@ -388,6 +528,35 @@ class UiTests(unittest.TestCase):
         finally:
             connection.unlink(missing_ok=True)
             query.unlink(missing_ok=True)
+
+    def test_paired_workloads_accept_dialect_sql_with_matching_aliases(self):
+        left = server.ROOT / "data_files" / "ui_pair_left.csv"
+        right = server.ROOT / "data_files" / "ui_pair_right.csv"
+        try:
+            left.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select date_add(d, 1)"\nTPCDS_Q02,"select 2"\n')
+            right.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select dateadd(day, 1, d)"\nTPCDS_Q02,"select 2"\n')
+            server.validate_paired_workloads([
+                {"QUERY_FILE": "data_files/ui_pair_left.csv", "WARMUP_ENABLED": "false"},
+                {"QUERY_FILE": "data_files/ui_pair_right.csv", "WARMUP_ENABLED": "false"},
+            ])
+        finally:
+            left.unlink(missing_ok=True)
+            right.unlink(missing_ok=True)
+
+    def test_paired_workloads_reject_mismatched_aliases(self):
+        left = server.ROOT / "data_files" / "ui_pair_left.csv"
+        right = server.ROOT / "data_files" / "ui_pair_right.csv"
+        try:
+            left.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select 1"\nTPCDS_Q02,"select 2"\n')
+            right.write_text('QUERY_ALIAS,QUERY\nTPCDS_Q01,"select 1"\nTPCDS_Q03,"select 3"\n')
+            with self.assertRaisesRegex(ValueError, "same normalized QUERY_ALIAS"):
+                server.validate_paired_workloads([
+                    {"QUERY_FILE": "data_files/ui_pair_left.csv", "WARMUP_ENABLED": "false"},
+                    {"QUERY_FILE": "data_files/ui_pair_right.csv", "WARMUP_ENABLED": "false"},
+                ])
+        finally:
+            left.unlink(missing_ok=True)
+            right.unlink(missing_ok=True)
 
     def test_build_environment_keeps_metadata_descriptive(self):
         connection = server.ROOT / "connection_properties" / "ui_meta_test.properties"
@@ -449,13 +618,77 @@ class UiTests(unittest.TestCase):
                 server.init_registry()
                 run = server.Run("persisted", "test", {}, Path(temp) / "reports", status="running")
                 server.persist_run(run)
+                run.status = "completed"
+                server.persist_run(run)
+                with sqlite3.connect(server.DB_PATH) as db:
+                    count, payload = db.execute(
+                        "SELECT COUNT(*), payload FROM runs WHERE run_id=?", (run.run_id,)
+                    ).fetchone()
+                self.assertEqual(count, 1)
+                self.assertEqual(json.loads(payload)["status"], "completed")
                 server.RUNS.clear()
                 server.restore_runs()
-                self.assertEqual(server.RUNS["persisted"].status, "interrupted")
+                self.assertEqual(server.RUNS["persisted"].status, "completed")
         finally:
             server.DB_PATH, server.DB_READY = old_path, old_ready
             server.RUNS.clear()
             server.RUNS.update(old_runs)
+
+    def test_reference_promotion_is_explicit_auditable_and_invalidatable(self):
+        old_path, old_reports, old_ready, old_backend = (
+            server.DB_PATH, server.REPORTS, server.DB_READY, server.REGISTRY_BACKEND,
+        )
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                server.DB_PATH = root / "registry.db"
+                server.REPORTS = root / "reports"
+                server.REPORTS.mkdir()
+                server.DB_READY = False
+                server.REGISTRY_BACKEND = "sqlite"
+                server.init_registry()
+                for run_id, report_id in (("first", "run-first"), ("second", "run-second")):
+                    directory = server.REPORTS / report_id
+                    directory.mkdir()
+                    (directory / "run_summary.json").write_text(json.dumps({
+                        "samples": 25, "successful": 25, "failed": 0, "error_pct": 0,
+                        "meta": {"run_id": run_id, "engine": "engine-a", "queries": "tpcds.csv",
+                                 "query_sha256": "same", "test_plan": "run-once.jmx", "run_type": "ui_run_once"},
+                    }))
+                first = server.promote_reference("run-first", {"reason": "initial baseline", "promoted_by": "qa"})
+                self.assertTrue(first["is_active_reference"])
+                second = server.promote_reference("run-second", {"reason": "driver upgrade", "promoted_by": "qa"})
+                self.assertTrue(second["is_active_reference"])
+                self.assertFalse(server.report_governance(server.report_by_id("run-first"))["is_active_reference"])
+                with sqlite3.connect(server.DB_PATH) as db:
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM reference_promotions").fetchone()[0], 2)
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM reference_promotions WHERE active=1").fetchone()[0], 1)
+                invalid = server.annotate_report("run-second", {
+                    "scope": "external", "purpose": "reference-candidate",
+                    "validity": "invalid", "reason": "wrong warehouse size",
+                })
+                self.assertEqual(invalid["scope"], "external")
+                self.assertEqual(invalid["validity"], "invalid")
+                self.assertFalse(invalid["is_active_reference"])
+        finally:
+            server.DB_PATH, server.REPORTS = old_path, old_reports
+            server.DB_READY, server.REGISTRY_BACKEND = old_ready, old_backend
+
+    def test_reference_promotion_rejects_failed_report(self):
+        old_reports = server.REPORTS
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                server.REPORTS = Path(temp)
+                report = server.REPORTS / "failed"
+                report.mkdir()
+                (report / "run_summary.json").write_text(json.dumps({
+                    "samples": 1, "successful": 0, "failed": 1,
+                    "meta": {"run_id": "failed", "engine": "engine-b", "queries": "q.csv"},
+                }))
+                with self.assertRaisesRegex(ValueError, "zero-failure"):
+                    server.promote_reference("failed", {"reason": "should fail"})
+        finally:
+            server.REPORTS = old_reports
 
     def test_run_once_always_disables_recycling(self):
         connection = server.ROOT / "connection_properties" / "ui_test.properties"
@@ -493,6 +726,8 @@ class UiTests(unittest.TestCase):
                     "load_profile": profile,
                 }, plan)
                 self.assertEqual(env["TEST_PLAN"], expected_path)
+                self.assertEqual(env["TEST_PROPERTIES_FILE"], server.PLAN_TEST_PROPERTIES[plan])
+                self.assertTrue((server.ROOT / env["TEST_PROPERTIES_FILE"]).is_file())
         finally:
             for path in (jdbc, http, query, arrivals, concurrency):
                 path.unlink(missing_ok=True)
@@ -545,6 +780,25 @@ class UiTests(unittest.TestCase):
         })
         self.assertEqual(preview["expected_total"], 2)
 
+    def test_run_once_preview_multiplies_total_by_measured_iterations(self):
+        preview = server.workload_preview({
+            "plan": "jdbc_run_once", "query_file": "data_files/simple_queries.csv",
+            "CONCURRENT_QUERY_COUNT": 2, "MEASURED_ITERATIONS": 3,
+            "RAMP_UP_TIME": 0, "RAMP_UP_STEPS": 1, "HOLD_PERIOD": 1,
+        })
+        self.assertEqual(preview["expected_total"], 6)
+
+    def test_sequential_is_run_once_with_concurrency_forced_to_one(self):
+        preview = server.workload_preview({
+            "plan": "jdbc_sequential", "query_file": "data_files/simple_queries.csv",
+            "CONCURRENT_QUERY_COUNT": 9, "RAMP_UP_TIME": 1,
+            "RAMP_UP_STEPS": 1, "HOLD_PERIOD": 60,
+        })
+        self.assertEqual(preview["pattern"], "Sequential")
+        self.assertTrue(preview["is_run_once"])
+        self.assertEqual(preview["peak"], 1)
+        self.assertIsNone(preview["duration_s"])
+
     def test_qps_preview_matches_arrivals_thread_group_step_ramp(self):
         preview = server.workload_preview({
             "plan": "jdbc_qps", "QPS": 4, "RAMP_UP_TIME": 4,
@@ -562,12 +816,96 @@ class UiTests(unittest.TestCase):
             "HOLD_PERIOD": 1,
         }
         expected = {
-            "jdbc_run_once": "Run once", "jdbc_concurrency": "Fixed concurrency",
+            "jdbc_sequential": "Sequential", "jdbc_run_once": "Run once (concurrent)",
+            "jdbc_concurrency": "Fixed concurrency",
             "jdbc_qps": "Constant QPS", "jdbc_qpm": "Constant QPM",
         }
         for plan, label in expected.items():
             with self.subTest(plan=plan):
                 self.assertEqual(server.workload_preview({**base, "plan": plan})["pattern"], label)
+
+    def test_create_suite_manifest_uses_root_relative_workloads(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "data_files").mkdir()
+            (root / "test_properties").mkdir()
+            (root / "test_properties" / "run_once.properties").write_text("CONCURRENT_QUERY_COUNT=1\n")
+            (root / "data_files" / "queries.csv").write_text(
+                "query_alias,query_string\nq1,select 1\n"
+            )
+            original_root, original_suites = server.ROOT, server.SUITE_MANIFESTS
+            server.ROOT, server.SUITE_MANIFESTS = root, root / "suite_manifests"
+            try:
+                relative = server.create_suite_manifest({
+                    "name": "smoke", "description": "Smoke suite", "engine": "e6data",
+                    "workloads": [{
+                        "id": "queries", "plan": "jdbc_sequential", "query_file": "data_files/queries.csv",
+                        "warmup_query_file": "", "measured_iterations": 2,
+                    }],
+                })
+                manifest = json.loads((root / relative).read_text())
+                catalog = server.suite_catalog()
+            finally:
+                server.ROOT, server.SUITE_MANIFESTS = original_root, original_suites
+            self.assertEqual(relative, "suite_manifests/ui_smoke.json")
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["engine"], "e6data")
+            self.assertEqual(manifest["workloads"][0]["plan"], "jdbc_sequential")
+            self.assertEqual(manifest["workloads"][0]["query_file"], "data_files/queries.csv")
+            self.assertEqual(catalog[0]["workload_count"], 1)
+
+    def test_suite_manifest_rejects_files_outside_data_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "data_files").mkdir()
+            (root / "test_properties").mkdir()
+            (root / "test_properties" / "run_once.properties").write_text("CONCURRENT_QUERY_COUNT=1\n")
+            (root / "outside.csv").write_text("query_alias,query_string\nq1,select 1\n")
+            original_root, original_suites = server.ROOT, server.SUITE_MANIFESTS
+            server.ROOT, server.SUITE_MANIFESTS = root, root / "suite_manifests"
+            try:
+                with self.assertRaisesRegex(ValueError, "Invalid data_files file"):
+                    server.create_suite_manifest({
+                        "name": "bad", "engine": "e6data", "workloads": [{
+                            "id": "bad", "plan": "jdbc_sequential", "query_file": "outside.csv",
+                        }],
+                    })
+            finally:
+                server.ROOT, server.SUITE_MANIFESTS = original_root, original_suites
+
+    def test_import_s3_suite_rejects_non_s3_uri(self):
+        with self.assertRaisesRegex(ValueError, "S3 suite URI"):
+            server.import_s3_suite("https://example.com/suite.json")
+
+    def test_saved_benchmarks_compose_schema_v3_suite_as_snapshots(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            definitions, suites = root / "benchmark_definitions", root / "suite_manifests"
+            original_root, original_definitions, original_suites = server.ROOT, server.BENCHMARK_DEFINITIONS, server.SUITE_MANIFESTS
+            server.ROOT, server.BENCHMARK_DEFINITIONS, server.SUITE_MANIFESTS = root, definitions, suites
+            run = {
+                "label": "TPCDS fast", "engine": "e6data",
+                "connection": "connection_properties/e6.properties",
+                "plan": "jdbc_sequential", "query_file": "data_files/tpcds.csv",
+                "metadata": {"BENCHMARK_TYPE": "tpcds25"},
+            }
+            try:
+                with mock.patch.object(server, "build_environment", return_value={}):
+                    definition_file = server.create_benchmark_definition({"name": "tpcds25-fast", "run": run})
+                suite_file = server.create_suite_manifest({
+                    "name": "release", "description": "Ordered checks",
+                    "benchmarks": [definition_file],
+                })
+                manifest = json.loads((root / suite_file).read_text())
+                definition = json.loads((root / definition_file).read_text())
+                definition["run"]["query_file"] = "data_files/changed.csv"
+                (root / definition_file).write_text(json.dumps(definition))
+            finally:
+                server.ROOT, server.BENCHMARK_DEFINITIONS, server.SUITE_MANIFESTS = original_root, original_definitions, original_suites
+            self.assertEqual(manifest["schema_version"], 3)
+            self.assertEqual(manifest["benchmarks"][0]["name"], "tpcds25-fast")
+            self.assertEqual(manifest["benchmarks"][0]["run"]["query_file"], "data_files/tpcds.csv")
+            self.assertNotIn("password", json.dumps(manifest).lower())
 
 
 if __name__ == "__main__":

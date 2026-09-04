@@ -30,7 +30,7 @@ Examples:
     python utilities/get_dbr_query_history.py connection_properties/dbr_connection.properties --hours 24
 
     # With metadata and test properties
-    python utilities/get_dbr_query_history.py connection_properties/dbr_connection.properties --metadata metadata_files/dbr_s-4x4_metadata.txt --test-properties test_properties/concurrency_16_test.properties --hours 6
+    python utilities/get_dbr_query_history.py connection_properties/dbr_connection.properties --metadata metadata_files/dbr_s-4x4_metadata.txt --test-properties test_properties/fixed_concurrency.properties --hours 6
 """
 
 import argparse

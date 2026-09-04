@@ -24,7 +24,6 @@ def metric(definitions: ET.Element, name: str, help_text: str, kind: str,
     for index, label in enumerate(labels):
         prop(label_collection, str(1000 + index), label)
     prop(item, "collector.quantiles_or_buckets", quantiles)
-    prop(item, "listener.collector.listen_to", "samples")
     prop(item, "listener.collector.measuring", measuring)
 
 
@@ -45,15 +44,22 @@ def enable(source: Path, destination: Path) -> None:
         "testname": "Prometheus metrics (generated)", "enabled": "true",
     })
     definitions = ET.SubElement(listener, "collectionProp", {"name": "prometheus.collector_definitions"})
-    # Names intentionally match the existing, upstream-plugin-compatible Grafana dashboard.
-    metric(definitions, "jmeter_response_time", "JMeter response time in milliseconds",
+    # These collector names intentionally match the upstream plugin's bundled
+    # Grafana dashboard. The listener itself supplies jmeter_threads and JVM
+    # process metrics. Do not set listener.collector.listen_to for sample
+    # collectors: the upstream JMX leaves that property absent unless a
+    # collector explicitly listens to assertions.
+    metric(definitions, "ResponseTime", "JMeter response time in milliseconds",
            "SUMMARY", "ResponseTime", ("label", "code"), "0.5,0.05|0.9,0.01|0.95,0.01|0.99,0.001")
-    metric(definitions, "jmeter_success_success_total", "Successful JMeter samples",
-           "COUNTER", "SuccessTotal", ("label",))
-    metric(definitions, "jmeter_success_failure_total", "Failed JMeter samples",
-           "COUNTER", "FailureTotal", ("label",))
+    metric(definitions, "Ratio", "JMeter sample success ratio",
+           "SUCCESS_RATIO", "SuccessRatio", ("label", "code"))
     ET.SubElement(plan_tree, "hashTree")
-    ET.indent(tree, space="  ")
+    # ElementTree.indent was added in Python 3.9. Formatting is cosmetic, so
+    # retain compatibility with older runner hosts (for example Amazon Linux 2
+    # with Python 3.7) instead of preventing the measured benchmark from
+    # starting when Prometheus is enabled.
+    if hasattr(ET, "indent"):
+        ET.indent(tree, space="  ")
     tree.write(destination, encoding="UTF-8", xml_declaration=True)
 
 
