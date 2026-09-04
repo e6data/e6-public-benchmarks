@@ -121,7 +121,6 @@ being throttled by `MAX_CONCURRANCY`. That is a capacity result, not a tooling f
 | Script | Purpose |
 |--------|---------|
 | `test_jdbc_connection.sh` | Test JDBC connectivity by compiling and running TestDriver.java |
-| `test_dbr_connectivity.sh` | Diagnose DBR connectivity issues with repeated DNS/HTTPS tests |
 | `test_queries_http.py` | Test SQL queries via e6data HTTP API (bypasses JMeter) |
 | `fix_jmeter_jar_conflicts.sh` | Quarantine duplicate e6 JDBC drivers and zero-byte jars (`--dry-run` supported) |
 | `run_premerge_checks.sh` | Run unit, Python, shell, JMX, and profile-injection checks used by CI |
@@ -148,12 +147,6 @@ The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. T
 | Script | Purpose |
 |--------|---------|
 | `jmeter_s3_utils.py` | Reusable functions for S3 path parsing, file downloading, statistics loading |
-
-### DBR-specific (1)
-
-| Script | Purpose |
-|--------|---------|
-| `get_dbr_query_history.py` | Fetch DBR SQL query history and export to CSV |
 
 ### Athena — Setup & DDL (7)
 
@@ -207,7 +200,7 @@ Current runner results are stored in an immutable partitioned hierarchy:
 
 ```
 s3://bucket/jmeter-results/
-  engine=<e6data|dbr>/
+  engine=<engine-name>/
     benchmark=<tpcds_29_1tb|etc>/
       data_size=<1tb|etc>/
         cluster_size=<XS-1x1|S-2x2|M-4x4|S-4x4|etc>/
@@ -247,7 +240,7 @@ aws s3 ls s3://your-s3-bucket/jmeter-results/engine=e6data/benchmark=tpcds_29_1t
 ```bash
 python utilities/compare_multi_concurrency_from_s3.py \
   s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
-  s3://your-s3-bucket/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
+  s3://your-s3-bucket/jmeter-results/engine=engine-b/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
 ```
 
 ## Comparison Scripts
@@ -277,7 +270,7 @@ Deep-dive comparison of two engines at a single concurrency level.
 ```bash
 python utilities/compare_jmeter_runs_from_s3.py \
   s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=M-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/ \
-  s3://your-s3-bucket/jmeter-results/engine=dbr/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/
+  s3://your-s3-bucket/jmeter-results/engine=engine-b/cluster_size=S-4x4/benchmark=tpcds_29_1tb/run_type=concurrency_4/
 ```
 
 **Output:** `reports/{eng1}_{cl1}_vs_{eng2}_{cl2}_C{X}_{date}.csv` + `_SUMMARY.md`
@@ -341,7 +334,7 @@ Shared utility module used by all S3-based scripts:
 - **`download_jmeter_statistics()`**: Download statistics.json from S3
 - **`load_jmeter_statistics()`**: Parse statistics.json
 - **`extract_query_metrics()`**: Extract metrics for a specific query
-- **`create_query_mapping()`**: Map query names between engines (E6Data `query-2-TPCDS-2` vs DBR `TPCDS-2`)
+- **`create_query_mapping()`**: Map differing query-label conventions between engines
 - **`calculate_percentage_diff()`**: Calculate percentage differences
 
 ```python
@@ -371,7 +364,7 @@ All metrics are in **seconds**:
 
 Scripts automatically normalize different naming conventions:
 - E6Data: `query-2-TPCDS-2`, `query-13-TPCDS-13-optimised`
-- DBR: `TPCDS-2`, `TPCDS-13`
+- Other engines: `TPCDS-2`, `TPCDS-13`
 - Normalized to: `TPCDS-X` format
 
 ### Report Naming Conventions
@@ -445,13 +438,13 @@ python utilities/analyze_concurrency_scaling_from_s3.py \
   --base-path s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 ```
 
-### Engine Evaluation (E6Data vs DBR)
+### Engine Evaluation
 
 ```bash
 # Full comparison + scaling analysis
 python utilities/compare_multi_concurrency_from_s3.py \
   s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/ \
-  s3://your-s3-bucket/jmeter-results/engine=dbr/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
+  s3://your-s3-bucket/jmeter-results/engine=engine-b/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
 ```
 
 ### Automated Post-Test Analysis

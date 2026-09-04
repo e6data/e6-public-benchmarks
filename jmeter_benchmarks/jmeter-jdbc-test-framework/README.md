@@ -4,7 +4,7 @@
 
 This is a public, reusable benchmark framework. A fresh clone contains JMX
 plans, scripts, sample workload shapes and connection templates only. It does
-not contain an e6data/Databricks credential, a usable connection profile, or
+not contain credentials, a usable connection profile, or
 AWS infrastructure configuration.
 
 Users may run the CLI workflow or invoke a JMX plan directly with their own
@@ -72,44 +72,17 @@ If any dependency fails to install automatically, install it manually: Java 17+,
 ./create_connection.sh
 ```
 
-Interactive prompts for JDBC URL, credentials, driver class. Supports e6data, Databricks, Snowflake, Trino, and HTTP endpoints.
-
-Snowflake profiles use a vendor URL such as
-`jdbc:snowflake://<account>.snowflakecomputing.com/?warehouse=...&db=...&schema=...`
-and the current `net.snowflake.client.api.driver.SnowflakeDriver` class. Setup
-downloads the pinned Snowflake JDBC 4.3.3 self-contained driver from Maven
-Central; credentials remain in the git-ignored connection profile.
-Snowflake profiles also initialize every physical pooled connection with
-`ALTER SESSION SET USE_CACHED_RESULT = FALSE`. `run_test.sh` applies the same
-default to existing Snowflake profiles, so persisted-result cache hits cannot
-silently invalidate a benchmark. Connection pooling and reuse remain enabled.
-For Java 9+, `run_test.sh` automatically appends Apache Arrow's required
-`java.nio` module option to `JVM_ARGS` only for this driver. Existing caller
-heap/tuning options are preserved; other JDBC engines are unchanged.
-
-The setup-time JDBC pins are Databricks 3.4.2, Snowflake 4.3.3, Trino 483, and
-Presto 0.298.1. The bundled e6data 2.0.27 driver remains the latest
-repository-approved internal artifact. Re-run setup after pulling an upgrade;
-it removes superseded versions of the Maven-downloaded drivers from JMeter's
-classpath.
+Interactive prompts collect the JDBC URL, credentials, and driver class. The
+generated connection profile remains local and is ignored by Git. Supply the
+driver class and connection properties documented by the target JDBC provider.
+The setup script installs the repository-supported dependencies and removes
+superseded downloaded driver versions from JMeter's classpath.
 
 This creates a file in `connection_properties/` — e.g., `connection_properties/my_connection.properties`.
 
-For Databricks JDBC Driver 3, copy the short URL from the SQL warehouse
-connection page and leave `USER` empty. Store the PAT only as `PASSWORD`:
-
-```properties
-CONNECTION_STRING=jdbc:databricks://workspace-host:443;HttpPath=/sql/1.0/warehouses/warehouse-id;ConnCatalog=hive_metastore;ConnSchema=my_schema
-USER=
-PASSWORD=<access-token>
-DRIVER_CLASS=com.databricks.client.jdbc.Driver
-```
-
-Engine selection supplies the driver adapter. For Databricks Driver 3, the
-runner maps the protected PAT to the driver's required `PWD` property in a
-run-local JMX. No additional UI, interactive, or CLI input is required. The
-runner does not modify source plans or place the token in the command line or
-generated report metadata.
+For third-party drivers, follow the provider's JDBC documentation and keep all
+passwords or access tokens only in the git-ignored connection profile. The
+runner does not place protected values in generated report metadata.
 
 ### Step 3: Create your queries CSV file
 
@@ -639,7 +612,7 @@ For a bounded live JDBC validation (five plans, real query load):
 - **Security**: Do not commit credentials to version control. Connection properties and data files are in `.gitignore`.
 - **JDBC drivers**: Place JARs in `jdbc_drivers/`. The setup script copies them to JMeter's lib directory.
 - JMeter uses one global classpath. Setup quarantines signed fat JARs that embed
-  Netty when they would conflict with the e6/Databricks shared classpath. The
+  conflicting dependencies. The
   original JAR remains in `jdbc_drivers/`; use an isolated JMeter installation
   when benchmarking a driver that requires the quarantined signed bundle.
 - **Start small**: Begin with 1-2 threads in a non-production environment. Monitor target database resources before scaling up.

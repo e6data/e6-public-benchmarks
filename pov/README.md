@@ -1,12 +1,12 @@
 # Benchmark POV Tool
 
-The Benchmark POV Tool is a browser UI for comparing e6data and Databricks query workloads. This directory contains only its deployment wrapper: Docker Compose starts prebuilt frontend and backend images plus MySQL; the application source is not part of this repository.
+The Benchmark POV Tool is a browser UI for comparing query-engine workloads. This directory contains only its deployment wrapper: Docker Compose starts prebuilt frontend and backend images plus a database; the application source is not part of this repository.
 
 ## Prerequisites
 
 - Docker Engine with Docker Compose support
 - An active e6data cluster, catalog, user, and personal access token
-- An active Databricks compute resource, server hostname, HTTP path, and personal access token
+- A second compatible query engine and its required connection credentials
 - Network allowlisting that lets the containers reach both engines
 
 Use comparable datasets and compute sizes on both engines if the results will be used for a performance comparison.
@@ -56,7 +56,7 @@ The images are pinned in [docker-compose.yaml](docker-compose.yaml). The first s
 
 1. Sign in to the Django administration page with the `DJANGO_SUPERUSER_*` values.
 2. Create a normal application user under `Home > User > Users`; use this account for the frontend.
-3. Under `Benchmarks > Benchmark_ips`, add the e6data and Databricks connection details. Use the same logical database/dataset for both sides.
+3. Under `Benchmarks > Benchmark_ips`, add both engines' connection details. Use the same logical database/dataset for both sides.
 4. Sign in to the frontend and select **Create Benchmark**.
 5. Enter the benchmark name, engine pair, hourly costs, and sequential/concurrent settings.
 6. Upload the query CSV using the sample offered by the UI, then run the benchmark.

@@ -2,9 +2,9 @@
 
 The repository includes the approved e6data JDBC driver used by the checked-in
 test setup. Additional JDBC JARs placed here are ignored by Git.
-`./setup_jmeter.sh` downloads the pinned Databricks, Snowflake, Trino, and
-Presto drivers from Maven Central and installs only the highest-versioned
-e6data driver into JMeter's `lib/ext/` directory.
+`./setup_jmeter.sh` downloads the supported JDBC dependencies from their
+public artifact repositories and installs only the highest-versioned e6data
+driver into JMeter's `lib/ext/` directory.
 
 ## Bundled artifact
 
@@ -16,31 +16,16 @@ The checksum verifies repository/download integrity; it does not establish prove
 
 The setup script copies JARs from this directory into `apache-jmeter-5.6.3/lib/ext/`. Obtain drivers from the database vendor and verify that their licenses permit your intended use and redistribution.
 
-## Common driver classes
+## Driver classes
 
 | Engine | Driver class |
 |---|---|
 | e6data | `io.e6.jdbc.driver.E6Driver` |
-| Snowflake 4.x | `net.snowflake.client.api.driver.SnowflakeDriver` |
-| Trino | `io.trino.jdbc.TrinoDriver` |
-| Presto | `com.facebook.presto.jdbc.PrestoDriver` |
-| Amazon Athena (Simba) | `com.simba.athena.jdbc.Driver` |
 
-For Databricks, download the current JDBC driver from Databricks and use the driver class documented for that release. Driver packaging and class names can change, so the vendor documentation is the source of truth.
-
-`setup_jmeter.sh` downloads the pinned Snowflake JDBC 4.3.3 self-contained JAR
-from Maven Central. Snowflake's older
-`net.snowflake.client.jdbc.SnowflakeDriver` class remains compatible but is
-deprecated; new profiles use the current API driver class shown above.
-
-Pinned setup-time versions (verified against Maven Central on 2026-08-26):
-
-| Engine | Version |
-|---|---:|
-| Databricks | 3.4.2 |
-| Snowflake | 4.3.3 |
-| Trino | 483 |
-| Presto | 0.298.1 |
+For another engine, obtain its current JDBC driver from the provider and use
+the driver class documented for that release. Driver packaging, class names,
+Java requirements, and licensing can change; the provider documentation is
+the source of truth.
 
 The e6data 2.0.27 artifact is repository-managed rather than published through
 Maven Central, so it is updated only from an approved e6data driver release.

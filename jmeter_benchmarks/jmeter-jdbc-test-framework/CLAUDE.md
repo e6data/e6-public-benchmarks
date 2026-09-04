@@ -138,7 +138,7 @@ finalization, while parallel legs share load-generator resources.
 ./create_connection.sh
 ```
 
-Interactive utility that creates connection properties files for JDBC (e6data, Databricks, Trino) or HTTP endpoints. Run once per cluster/engine — files are saved in `connection_properties/` for reuse.
+Interactive utility that creates connection properties files for e6data, other JDBC-compatible engines, or HTTP endpoints. Run once per cluster/engine — files are saved in `connection_properties/` for reuse.
 
 ### Interactive Mode (Recommended)
 
@@ -703,10 +703,10 @@ fallback.
 If arrivals fall short *within* the profile window, `MAX_CONCURRANCY` is too low and the
 arrivals thread group dropped them. `run_report.md` flags this as `SHORTFALL`.
 
-### Databricks: ExceptionInInitializerError on Java 9+
+### JDBC drivers using Apache Arrow: ExceptionInInitializerError on Java 9+
 
-Every query fails immediately with `java.lang.ExceptionInInitializerError`. The Databricks
-driver bundles Apache Arrow, whose off-heap memory layer reflectively accesses
+Every query fails immediately with `java.lang.ExceptionInInitializerError`. Some JDBC
+drivers bundle Apache Arrow, whose off-heap memory layer reflectively accesses
 `java.nio.DirectByteBuffer` internals. JMeter's launcher does not open `java.base/java.nio`,
 so Arrow's static initialiser fails. Either append to the connection string:
 
