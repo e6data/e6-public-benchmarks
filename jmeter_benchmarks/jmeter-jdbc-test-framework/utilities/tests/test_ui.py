@@ -446,6 +446,40 @@ class UiTests(unittest.TestCase):
             metrics = server.live_metrics(Path(temp))
         self.assertEqual(max(metrics["series"]["in_flight"]), 1)
 
+    def test_warmup_progress_combines_passes_without_measured_metrics(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            query = root / "data_files" / "warmup.csv"
+            query.parent.mkdir()
+            query.write_text('query_alias,query_string\nq1,"select 1"\nq2,"select 2"\nq3,"select 3"\n')
+            report = root / "reports" / "ui-test"
+            for name, rows in {
+                "pass-1": ["q1,true", "q2,true", "q3,true"],
+                "pass-2": ["q1,false"],
+            }.items():
+                directory = report / "_warmup" / name
+                directory.mkdir(parents=True)
+                (directory / "JmeterResultFile.csv").write_text(
+                    "timeStamp,elapsed,label,success,allThreads\n" +
+                    "".join(f"1000,10,{row},1\n" for row in rows)
+                )
+            original_root = server.ROOT
+            server.ROOT = root
+            try:
+                progress = server.warmup_progress(report, "data_files/warmup.csv", 2)
+                measured = server.live_metrics(report)
+            finally:
+                server.ROOT = original_root
+        self.assertEqual(progress["planned"], 6)
+        self.assertEqual(progress["completed"], 4)
+        self.assertEqual(progress["successful"], 3)
+        self.assertEqual(progress["failed"], 1)
+        self.assertEqual(progress["current_pass"], 2)
+        self.assertEqual(progress["progress_pct"], 66.7)
+        self.assertEqual(progress["last_completed_query"], "q1")
+        self.assertFalse(progress["complete"])
+        self.assertEqual(measured["samples"], 0)
+
     def test_path_validation_blocks_traversal(self):
         with self.assertRaises(ValueError):
             server._inside("../../etc/passwd", "connection_properties", ".properties")
@@ -580,8 +614,10 @@ class UiTests(unittest.TestCase):
 
     def test_sequential_runs_execute_in_order(self):
         calls = []
+        prepared_configs = []
 
         def fake_prepare(config, label):
+            prepared_configs.append(dict(config))
             run = server.Run(config["id"], label, config, server.REPORTS / f"ui-{config['id']}")
             return run, {"id": config["id"]}
 
@@ -594,6 +630,9 @@ class UiTests(unittest.TestCase):
             while len(calls) < 2 and time.time() < deadline:
                 time.sleep(0.01)
         self.assertEqual(calls, ["first", "second"])
+        self.assertEqual(prepared_configs[0]["launch_group"], prepared_configs[1]["launch_group"])
+        self.assertEqual([item["launch_position"] for item in prepared_configs], [0, 1])
+        self.assertEqual(prepared_configs[0]["launch_started_at"], prepared_configs[1]["launch_started_at"])
 
     def test_compact_summary_bounds_only_api_series(self):
         original = {

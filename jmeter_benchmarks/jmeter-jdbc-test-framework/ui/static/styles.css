@@ -194,6 +194,13 @@ h3 { font-size: 15px; }
 .suite-run-head small { color:var(--muted); }
 .suite-progress { height:8px; overflow:hidden; border-radius:5px; background:#ececf2; }
 .suite-progress span { display:block; height:100%; background:var(--purple-600); }
+.warmup-progress-card { margin:14px 18px; padding:13px 14px; border:1px solid #ddd2fb; border-radius:9px; background:#faf8ff; }
+.warmup-progress-card header { position:static; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; height:auto; padding:0 0 9px; border:0; background:transparent; }
+.warmup-progress-card header div { display:flex; flex-direction:column; gap:2px; }
+.warmup-progress-card header strong { color:var(--purple-700); font-size:12px; }
+.warmup-progress-card header span, .warmup-progress-card header b, .warmup-progress-card p { color:var(--muted); font-size:10px; }
+.warmup-progress-card p { margin:8px 0 0; }
+.warmup-progress-card p strong { color:var(--ink); }
 .suite-run-card > p { margin:8px 0 14px; color:var(--muted); }
 .suite-progress-summary { display:flex; justify-content:space-between; gap:16px; margin:9px 0 16px; color:var(--muted); }
 .suite-progress-summary strong { color:var(--ink); }

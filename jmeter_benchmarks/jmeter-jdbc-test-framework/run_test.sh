@@ -487,6 +487,7 @@ if [ "$WARMUP_ENABLED" = "true" ]; then
             RUN_TYPE=warmup \
             RUN_PURPOSE=warmup \
             RUN_VALIDITY=invalid \
+            E6_QUERY_HISTORY_ENABLED=false \
             COPY_TO_S3=false \
             GENERATE_DASHBOARD=false \
             PROMETHEUS_ENABLED=false \

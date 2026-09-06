@@ -140,6 +140,7 @@ PUBLIC_RUN_FIELDS = {
     "RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD", "PROMETHEUS_ENABLED",
     "PROMETHEUS_PORT", "WARMUP_ENABLED", "WARMUP_QUERY_FILE", "WARMUP_ITERATIONS", "MEASURED_ITERATIONS",
     "execution_mode", "metadata", "planned_workload", "rerun_of",
+    "launch_group", "launch_position", "launch_started_at",
 }
 METADATA_FIELDS = {
     "CLUSTER_SIZE": 80, "BENCHMARK_TYPE": 100, "DATA_SIZE": 40,
@@ -1423,6 +1424,53 @@ def live_metrics(report_root: Path) -> dict[str, Any]:
     }
 
 
+def warmup_progress(report_root: Path, warmup_file: str, iterations: int = 1) -> dict[str, Any] | None:
+    """Read excluded warm-up CSVs without mixing them into measured metrics."""
+    if not warmup_file:
+        return None
+    try:
+        info = inspect_query_file(ROOT / warmup_file)
+        per_pass = int(info.get("rows", 0))
+    except (OSError, ValueError):
+        per_pass = 0
+    iterations = max(1, int(iterations or 1))
+    files = sorted(
+        (report_root / "_warmup").glob("*/JmeterResultFile.csv"),
+        key=lambda path: path.stat().st_mtime,
+    )
+    completed = successful = failed = 0
+    last_label = ""
+    for result_file in files:
+        try:
+            with result_file.open(newline="", errors="replace") as handle:
+                for row in csv.DictReader(handle):
+                    success = row.get("success")
+                    if success not in {"true", "false"}:
+                        continue
+                    if (row.get("label") or "").startswith(("Setup-", "Control-")):
+                        continue
+                    completed += 1
+                    successful += success == "true"
+                    failed += success == "false"
+                    last_label = str(row.get("label") or last_label)
+        except (OSError, csv.Error):
+            continue
+    planned = per_pass * iterations if per_pass else None
+    percent = min(100.0, completed / planned * 100) if planned else 0.0
+    return {
+        "enabled": True,
+        "completed": completed,
+        "successful": successful,
+        "failed": failed,
+        "planned": planned,
+        "progress_pct": round(percent, 1),
+        "iterations": iterations,
+        "current_pass": min(iterations, max(1, len(files))),
+        "last_completed_query": last_label or None,
+        "complete": bool(planned is not None and completed >= planned),
+    }
+
+
 def find_summary(report_root: Path) -> dict[str, Any] | None:
     summaries = sorted(report_root.glob("*/run_summary.json"), key=lambda p: p.stat().st_mtime)
     if not summaries:
@@ -1523,6 +1571,15 @@ class Run:
                 public_config["planned_workload"] = workload_preview(self.config)
             except (OSError, ValueError):
                 pass
+        environment = self.config.get("environment") if isinstance(self.config.get("environment"), dict) else {}
+        warmup_enabled = self.config.get("WARMUP_ENABLED", environment.get("WARMUP_ENABLED", False))
+        warmup = None
+        if str(warmup_enabled).lower() == "true":
+            warmup = warmup_progress(
+                self.report_root,
+                str(self.config.get("WARMUP_QUERY_FILE") or environment.get("WARMUP_QUERY_FILE") or ""),
+                int(self.config.get("WARMUP_ITERATIONS") or environment.get("WARMUP_ITERATIONS") or 1),
+            )
         return {
             "id": self.run_id, "label": self.label, "status": self.status,
             "started_at": self.started_at, "finished_at": self.finished_at,
@@ -1531,6 +1588,7 @@ class Run:
             "logs": list(self.logs), "report_path": str(self.report_root.relative_to(ROOT)), "report_id": report_id,
             "artifact_storage": artifact_storage,
             "input_artifacts": input_artifacts,
+            "warmup_progress": warmup,
             "cancellable": self.status == "running" and (
                 RUNNER_BACKEND == "local" or bool(self.remote_command_id)
             ),
@@ -1574,15 +1632,26 @@ class SuiteExecution:
         if active_root is None:
             return None
         sequence = int(active_root.name.split("-", 1)[0])
+        raw: dict[str, Any] = {}
+        if suite:
+            items = suite.get("benchmarks") if int(suite.get("schema_version", 1)) >= 3 else suite.get("workloads")
+            if isinstance(items, list) and sequence <= len(items):
+                selected = items[sequence - 1]
+                raw = dict(selected.get("run") or {}) if int(suite.get("schema_version", 1)) >= 3 else dict(selected)
         measured_dirs = sorted(
             (path for path in active_root.iterdir()
              if path.is_dir() and path.name != "_warmup" and (path / "JmeterResultFile.csv").exists()),
             key=lambda path: path.stat().st_mtime,
         )
         if not measured_dirs:
+            warmup = warmup_progress(
+                active_root,
+                str(raw.get("WARMUP_QUERY_FILE") or raw.get("warmup_query_file") or ""),
+                int(raw.get("WARMUP_ITERATIONS", raw.get("warmup_iterations", 1)) or 1),
+            )
             return {
                 "sequence": sequence, "workload_count": 0, "planned_samples": None,
-                "progress_pct": 0, "phase": "warm-up",
+                "progress_pct": 0, "phase": "warm-up", "warmup_progress": warmup,
             }
         measured = measured_dirs[-1]
         metrics = live_metrics(active_root)
@@ -1604,12 +1673,6 @@ class SuiteExecution:
             except (OSError, csv.Error):
                 pass
 
-        raw: dict[str, Any] = {}
-        if suite:
-            items = suite.get("benchmarks") if int(suite.get("schema_version", 1)) >= 3 else suite.get("workloads")
-            if isinstance(items, list) and sequence <= len(items):
-                selected = items[sequence - 1]
-                raw = dict(selected.get("run") or {}) if int(suite.get("schema_version", 1)) >= 3 else dict(selected)
         plan = str(raw.get("plan") or "jdbc_sequential")
         settings = raw.get("settings") if isinstance(raw.get("settings"), dict) else {}
         iterations = int(raw.get("MEASURED_ITERATIONS", raw.get("measured_iterations", 1)) or 1)
@@ -1969,6 +2032,12 @@ def prepare_run(config: dict[str, Any], label: str = "Benchmark") -> tuple[Run, 
 
 
 def start_runs(configs: list[dict[str, Any]], sequential: bool = False) -> list[Run]:
+    launch_group = uuid.uuid4().hex
+    launch_started_at = time.time()
+    for position, config in enumerate(configs):
+        config["launch_group"] = launch_group
+        config["launch_position"] = position
+        config["launch_started_at"] = launch_started_at
     prepared = [prepare_run(item, str(item.get("label") or f"Engine {index + 1}")) for index, item in enumerate(configs)]
     if sequential:
         def execute_in_order() -> None:
