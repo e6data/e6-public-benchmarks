@@ -140,6 +140,7 @@ PUBLIC_RUN_FIELDS = {
     "RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD", "PROMETHEUS_ENABLED",
     "PROMETHEUS_PORT", "WARMUP_ENABLED", "WARMUP_QUERY_FILE", "WARMUP_ITERATIONS", "MEASURED_ITERATIONS",
     "execution_mode", "metadata", "planned_workload", "rerun_of",
+    "launch_group", "launch_position", "launch_started_at",
 }
 METADATA_FIELDS = {
     "CLUSTER_SIZE": 80, "BENCHMARK_TYPE": 100, "DATA_SIZE": 40,
@@ -2031,6 +2032,12 @@ def prepare_run(config: dict[str, Any], label: str = "Benchmark") -> tuple[Run, 
 
 
 def start_runs(configs: list[dict[str, Any]], sequential: bool = False) -> list[Run]:
+    launch_group = uuid.uuid4().hex
+    launch_started_at = time.time()
+    for position, config in enumerate(configs):
+        config["launch_group"] = launch_group
+        config["launch_position"] = position
+        config["launch_started_at"] = launch_started_at
     prepared = [prepare_run(item, str(item.get("label") or f"Engine {index + 1}")) for index, item in enumerate(configs)]
     if sequential:
         def execute_in_order() -> None:

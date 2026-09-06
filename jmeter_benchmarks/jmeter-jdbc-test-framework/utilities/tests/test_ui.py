@@ -614,8 +614,10 @@ class UiTests(unittest.TestCase):
 
     def test_sequential_runs_execute_in_order(self):
         calls = []
+        prepared_configs = []
 
         def fake_prepare(config, label):
+            prepared_configs.append(dict(config))
             run = server.Run(config["id"], label, config, server.REPORTS / f"ui-{config['id']}")
             return run, {"id": config["id"]}
 
@@ -628,6 +630,9 @@ class UiTests(unittest.TestCase):
             while len(calls) < 2 and time.time() < deadline:
                 time.sleep(0.01)
         self.assertEqual(calls, ["first", "second"])
+        self.assertEqual(prepared_configs[0]["launch_group"], prepared_configs[1]["launch_group"])
+        self.assertEqual([item["launch_position"] for item in prepared_configs], [0, 1])
+        self.assertEqual(prepared_configs[0]["launch_started_at"], prepared_configs[1]["launch_started_at"])
 
     def test_compact_summary_bounds_only_api_series(self):
         original = {
