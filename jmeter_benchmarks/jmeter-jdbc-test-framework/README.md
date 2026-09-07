@@ -1,26 +1,7 @@
 # JMeter JDBC Test Framework
 
-## Public repository and bring-your-own configuration
-
-This is a public, reusable benchmark framework. A fresh clone contains JMX
-plans, scripts, sample workload shapes and connection templates only. It does
-not contain credentials, a usable connection profile, or
-AWS infrastructure configuration.
-
-Users may run the CLI workflow or invoke a JMX plan directly with their own
-JMeter property files. Runtime connection profiles, query datasets, custom
-load profiles, generated reports, databases, and local environment
-files are ignored by Git. Before committing, always check `git status` and
-never force-add those files. The optional EC2 runner is disabled by default and
-operates only after an administrator supplies their own instance, private S3
-prefix and IAM permissions outside the repository.
-
-The repository secret-scan workflow checks complete Git history on pushes and
-pull requests. Repository administrators should additionally enable GitHub
-Secret Scanning and Push Protection so recognized credentials are blocked
-before they enter public history.
-
-Run **JMeter JDBC performance tests** against any database that supports JDBC connections.
+Run repeatable **JMeter JDBC performance tests** against any query engine that
+supports JDBC connections.
 
 The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
 
@@ -99,16 +80,14 @@ mkdir -p data_files
 cp my_queries.csv data_files/
 ```
 
-The repository intentionally does not bundle vendor-specific TPC-DS or TPC-H
-SQL. This is a generic JMeter framework: provide the workload you are
-authorized to use as a local CSV or an `s3://` URI. S3 inputs are downloaded
-afresh for each run. The CLI validates the two-column query CSV and records its
-source URI and resolved SHA-256.
+Provide a workload you are authorized to use as a local CSV or an `s3://` URI.
+S3 inputs are downloaded afresh for each run. The CLI validates the two-column
+query CSV and records its source URI and resolved SHA-256.
 
 For cross-engine comparisons, use stable logical aliases and equivalent data
 and execution policies. Dialect-specific files should contain the same logical
-aliases in the same order. Keep optimized or proprietary workloads outside this
-public repository.
+aliases in the same order. Keep optimized or proprietary workloads outside
+version control.
 
 ### Step 4: Run a test
 
@@ -214,9 +193,9 @@ CONCURRENT_QUERY_COUNT=1 \
 The runner executes each warm-up pass in a separate JMeter process using the
 unchanged run-once JMX at concurrency 1. Warm-up artifacts are written below
 `REPORT_PATH/_warmup/`; the measured run starts only after every pass succeeds.
-Warm-up inputs are supplied by the user and are never bundled with the public
-framework. Engine-specific cache or persisted-result behavior remains the
-responsibility of the selected connection and workload.
+Warm-up inputs remain local or in configured object storage. Engine-specific
+cache or persisted-result behavior remains the responsibility of the selected
+connection and workload.
 
 **Option B — Export variables and run:**
 
@@ -266,12 +245,11 @@ Run an ordered suite through the same CLI contract used by individual tests:
 Use `--dry-run` to validate its query files, plans, properties, and load
 profiles without starting JMeter.
 
-## Optional internal UI
+## Optional Benchmark Studio
 
-An optional Benchmark Studio wrapper is included for internal evaluation. It
-invokes the same CLI runners and reads the same JMeter artifacts. The CLI is the
-supported public interface; UI deployment and operation are intentionally not
-documented here.
+The included web interface can configure and monitor the same CLI workflows.
+It invokes the existing runners and reads the same JMeter artifacts; the CLI
+remains fully supported for local and automated execution.
 
 ### Optional e6 Query History capture
 
