@@ -89,7 +89,12 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
 S3_INPUT_DIR=""
+GENERATOR_MONITOR_PID=""
 cleanup_s3_inputs() {
+    if [ -n "$GENERATOR_MONITOR_PID" ]; then
+        kill -TERM "$GENERATOR_MONITOR_PID" 2>/dev/null || true
+        wait "$GENERATOR_MONITOR_PID" 2>/dev/null || true
+    fi
     if [ -n "$S3_INPUT_DIR" ] && [ -d "$S3_INPUT_DIR" ]; then
         rm -rf -- "$S3_INPUT_DIR"
     fi
@@ -376,6 +381,7 @@ E6_QUERY_HISTORY_WAIT_SECONDS="${E6_QUERY_HISTORY_WAIT_SECONDS:-5}"
 WARMUP_ENABLED="${WARMUP_ENABLED:-false}"
 WARMUP_ITERATIONS="${WARMUP_ITERATIONS:-1}"
 MEASURED_ITERATIONS="${MEASURED_ITERATIONS:-1}"
+GENERATOR_MONITOR_ENABLED="${GENERATOR_MONITOR_ENABLED:-true}"
 
 if [ "$WARMUP_ENABLED" != "true" ] && [ "$WARMUP_ENABLED" != "false" ]; then
     echo -e "${RED}Error: WARMUP_ENABLED must be true or false.${NC}"
@@ -490,6 +496,7 @@ if [ "$WARMUP_ENABLED" = "true" ]; then
             E6_QUERY_HISTORY_ENABLED=false \
             COPY_TO_S3=false \
             GENERATE_DASHBOARD=false \
+            GENERATOR_MONITOR_ENABLED=false \
             PROMETHEUS_ENABLED=false \
             MAX_ERROR_PCT=0 \
             "${PROJECT_ROOT}/run_test.sh"; then
@@ -714,6 +721,16 @@ if [ "$JDBC_DRIVER" = "net.snowflake.client.api.driver.SnowflakeDriver" ]; then
     echo ""
 fi
 
+# Observe the result object already materialized by the JDBC sampler. This adds
+# no database request and records only a count plus whether the configured row
+# limit was reached.
+if grep -q '</JDBCSampler>' "$TEST_PLAN" 2>/dev/null; then
+    JDBC_OBSERVER_PLAN="${REPORT_DIR}/$(basename "${TEST_PLAN%.jmx}")-observed.jmx"
+    python3 "${PROJECT_ROOT}/utilities/inject_jdbc_observer.py" \
+        "$TEST_PLAN" "$JDBC_OBSERVER_PLAN" || exit 1
+    TEST_PLAN="$JDBC_OBSERVER_PLAN"
+fi
+
 # Opt-in only: derive another run-local plan containing the upstream listener.
 # Source JMX files and the normal CLI path remain untouched when disabled.
 if [ "$PROMETHEUS_ENABLED" = "true" ]; then
@@ -789,6 +806,9 @@ JMETER_CMD+=("-JLIMIT_RESULTSET=$LIMIT_RESULTSET")
 JMETER_CMD+=("-JMAX_CONCURRANCY=$MAX_CONCURRANCY")
 JMETER_CMD+=("-JJDBC_INIT_SQL=${JDBC_INIT_SQL:-}")
 JMETER_CMD+=("-Jjmeter.save.saveservice.autoflush=$JMETER_RESULT_AUTOFLUSH")
+_sample_variables="${JMETER_SAMPLE_VARIABLES:-}"
+[ -n "$_sample_variables" ] && _sample_variables="${_sample_variables},"
+JMETER_CMD+=("-Jsample_variables=${_sample_variables}rows_materialized,row_limit_reached")
 if [ "$PROMETHEUS_ENABLED" = "true" ]; then
     JMETER_CMD+=("-Jprometheus.ip=$PROMETHEUS_IP" "-Jprometheus.port=$PROMETHEUS_PORT" "-Jprometheus.delay=$PROMETHEUS_DELAY")
     if [ "$(dirname "$PROMETHEUS_PLUGIN")" != "$JMETER_HOME/lib/ext" ]; then
@@ -811,12 +831,23 @@ fi
 echo -e "${BLUE}Running JMeter...${NC}"
 echo ""
 
+if [ "$GENERATOR_MONITOR_ENABLED" = "true" ]; then
+    python3 "${PROJECT_ROOT}/utilities/generator_monitor.py" record \
+        "${REPORT_DIR}/load_generator_metrics.csv" &
+    GENERATOR_MONITOR_PID=$!
+fi
+
 # Run JMeter. Preserve its status but continue through report capture and output
 # normalization so failed starts/runs leave useful diagnostics behind.
 set +e
 "${JMETER_CMD[@]}"
 JMETER_RC=$?
 set -e
+if [ -n "$GENERATOR_MONITOR_PID" ]; then
+    kill -TERM "$GENERATOR_MONITOR_PID" 2>/dev/null || true
+    wait "$GENERATOR_MONITOR_PID" 2>/dev/null || true
+    GENERATOR_MONITOR_PID=""
+fi
 RUN_FAILED=0
 if [ "$JMETER_RC" -ne 0 ]; then
     RUN_FAILED=1
@@ -886,6 +917,19 @@ if [ -f "${PROJECT_ROOT}/utilities/capture_run_report.py" ]; then
     fi
 fi
 
+# Add generator health only after capture_run_report has created the summary.
+# Sustained generator saturation makes the benchmark result invalid even when
+# every database query itself succeeded.
+if [ -f "${REPORT_DIR}/run_summary.json" ] && [ -f "${REPORT_DIR}/load_generator_metrics.csv" ]; then
+    python3 "${PROJECT_ROOT}/utilities/generator_monitor.py" summarize \
+        "${REPORT_DIR}/load_generator_metrics.csv" "${REPORT_DIR}/run_summary.json" || \
+        echo -e "  ${YELLOW}load-generator health summary unavailable${NC}"
+    if [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("generator_health",{}).get("status","unknown"))' "${REPORT_DIR}/run_summary.json")" = "invalid" ]; then
+        echo -e "  ${RED}load-generator saturation invalidated this benchmark result${NC}"
+        RUN_FAILED=1
+    fi
+fi
+
 # The plan stamps these with JMeter's own START_TIME, which differs from run_id by
 # a few seconds. Normalise to the names the analysis and Athena scripts expect.
 for _f in "${REPORT_DIR}"/AggregateReport_*.csv; do
@@ -929,6 +973,12 @@ if [ "$E6_QUERY_HISTORY_ENABLED" = "true" ]; then
         echo -e "${YELLOW}Warning: E6_QUERY_HISTORY_ENABLED=true ignored for a non-e6 JDBC connection.${NC}"
     fi
 fi
+
+# Seal the final local evidence set before publication. The manifest excludes
+# itself and the upload receipt to avoid circular checksums.
+MANIFEST_ARGS=(build "${REPORT_DIR}")
+[ "${S3_UPLOAD_DASHBOARD_ASSETS:-false}" != "true" ] && MANIFEST_ARGS+=(--exclude-dashboard-assets)
+python3 "${PROJECT_ROOT}/utilities/artifact_manifest.py" "${MANIFEST_ARGS[@]}" || RUN_FAILED=1
 
 echo ""
 if [ "${RUN_FAILED:-0}" -eq 1 ]; then
@@ -977,8 +1027,8 @@ if [ "${COPY_TO_S3}" = "true" ] && [ -n "${S3_UPLOAD_ROOT:-}" ]; then
             --exclude "dashboard/content/css/*" \
             --exclude "dashboard/content/js/*"
     fi
-    jq -n --arg uri "${S3_DEST}" --arg uploaded_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        '{status:"verified",uri:$uri,uploaded_at:$uploaded_at}' > "${REPORT_DIR}/s3_upload.json"
+    python3 "${PROJECT_ROOT}/utilities/artifact_manifest.py" verify-s3 \
+        "${REPORT_DIR}" "${S3_DEST}" --output "${REPORT_DIR}/s3_upload.json"
     aws s3 cp "${REPORT_DIR}/s3_upload.json" "${S3_DEST}s3_upload.json" --only-show-errors
     echo -e "  ${GREEN}Uploaded to S3${NC}"
 fi

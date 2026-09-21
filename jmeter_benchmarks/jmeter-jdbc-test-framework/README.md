@@ -245,6 +245,45 @@ Run an ordered suite through the same CLI contract used by individual tests:
 Use `--dry-run` to validate its query files, plans, properties, and load
 profiles without starting JMeter.
 
+## Baselines and CLI comparison
+
+A baseline is a completed, valid, zero-failure run selected as a trusted
+reference. Benchmark Studio and `benchmark.sh` share the same SQLite registry
+by default; set `BENCHMARK_UI_DATABASE_URL` for a shared PostgreSQL registry.
+Promoting a newer run with the same engine and exact workload configuration
+supersedes the previous active reference without deleting its history.
+
+```bash
+# Promote and inspect references
+./benchmark.sh baseline promote --run-id <run-id> \
+  --reason "Validated release reference" --promoted-by <name-or-team>
+./benchmark.sh baseline list
+./benchmark.sh baseline list --all
+
+# Compare with the active reference for the same engine and configuration
+./benchmark.sh compare --baseline active --run-id <candidate-run-id>
+
+# Compare any two runs, including sequential versus a load/concurrency run
+./benchmark.sh compare --baseline <baseline-run-id> --run-id <candidate-run-id> \
+  --warning-pct 5 --critical-pct 10
+
+# Retire an active reference while preserving its history
+./benchmark.sh baseline deactivate --run-id <baseline-run-id>
+```
+
+Comparisons report throughput, successful-query latency, errors, configuration
+differences, and threshold verdicts. Lower latency/error and higher throughput
+are treated as improvements. Direct report paths require no registry:
+
+```bash
+./benchmark.sh compare \
+  --baseline-report reports/<baseline>/run_summary.json \
+  --candidate-report reports/<candidate>/run_summary.json
+```
+
+Use `--format json` for automation. Baseline promotion stores only governance
+metadata; the original report directory or its S3 artifacts must be retained.
+
 ## Optional Benchmark Studio
 
 The included web interface can configure and monitor the same CLI workflows.
@@ -449,6 +488,7 @@ See `CLAUDE.md` for the full reference.
 | `create_connection.sh` | Create a connection properties file (interactive) |
 | `create_test_config.sh` | Create a full test config file (interactive) |
 | `run_test.sh` | Run a test (config file or env vars) |
+| `benchmark.sh` | Promote, list, deactivate, and compare reference baselines |
 | `run_benchmark_suite.sh` | Run an ordered Performance Suite through `run_test.sh` |
 | `run_jmeter_tests_interactive.sh` | Run a test (interactive prompts) |
 
@@ -474,6 +514,7 @@ cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 ├── create_connection.sh             # Create connection properties (interactive)
 ├── create_test_config.sh            # Create test config (interactive)
 ├── run_test.sh                      # Run test (config file or env vars)
+├── benchmark.sh                     # Baseline governance and comparison CLI
 ├── run_benchmark_suite.sh           # Ordered multi-benchmark runner
 ├── run_jmeter_tests_interactive.sh  # Run test (interactive)
 ├── config/
@@ -536,6 +577,15 @@ plus active-one-second-bucket completion rates. The CSV, `statistics.json`, and
 generated JMeter dashboard remain authoritative. This metadata is intended to
 make historical runs reproducible.
 
+Each measured run also records portable load-generator CPU, memory, swap, load,
+and network telemetry in `load_generator_metrics.csv`. Sustained CPU or memory
+saturation, or any swap use, marks the result invalid; detailed JVM and host
+diagnostics remain available through Prometheus/Grafana. JDBC runs record the
+number of rows already materialized by each sampler without issuing another
+database request. `artifact_manifest.json` seals the published evidence with
+file sizes and SHA-256 digests, and S3 publication verifies every uploaded
+object before writing `s3_upload.json`.
+
 For analysis and comparison tools, see [utilities/README.md](utilities/README.md).
 
 The `run_test.sh` uploader is controlled by `COPY_TO_S3` and `S3_REPORT_PATH`.
@@ -559,6 +609,18 @@ Set `S3_REPORT_PATH` to the versioned results root, such as
 profiles may independently be read from `s3://.../benchmark-workloads/...`;
 connection profiles and credentials must remain on the runner host. Existing
 metadata that defines `S3_BASE_PATH` is supported as a deprecated alias.
+
+Old reports can be reviewed safely with a dry-run cleanup. Active baselines,
+in-progress runs, recent runs, and (with `--require-s3`) unpublished runs are
+protected. `--apply` quarantines candidates below `reports/.trash`; it does not
+permanently delete them:
+
+```bash
+python3 utilities/cleanup_reports.py --keep-days 30 --keep-latest 10 \
+  --keep-per-configuration 3 --require-s3
+python3 utilities/cleanup_reports.py --keep-days 30 --keep-latest 10 \
+  --keep-per-configuration 3 --require-s3 --apply
+```
 
 When Query History enrichment is enabled, compare like-for-like fields:
 JMeter `Latency` normally aligns with Query History client/total time, while

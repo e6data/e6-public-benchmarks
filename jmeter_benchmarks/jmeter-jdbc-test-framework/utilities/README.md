@@ -18,6 +18,11 @@ The inventory below is grouped by purpose. Counts are intentionally omitted beca
 | `get_e6_query_history.py` | Export e6 Query History for the exact time window represented by a JMeter result CSV |
 | `compare_multi_concurrency_from_s3.py` | Find and compare all concurrency levels between two engines |
 | `compare_multiple_runs_from_s3.py` | Compare N runs with metadata columns, supports batch directory scanning |
+| `benchmark_cli.py` | Shared UI/CLI baseline promotion, listing, deactivation, and threshold comparison |
+| `artifact_manifest.py` | Build SHA-256 evidence manifests and verify every published S3 object |
+| `cleanup_reports.py` | Dry-run or quarantine old reports while protecting baselines, active runs, recent runs, and unpublished evidence |
+| `generator_monitor.py` | Capture and summarize portable load-generator health telemetry |
+| `inject_jdbc_observer.py` | Record materialized JDBC row counts without executing another query |
 | `compare_engines_concurrency.sh` | Compare concurrency scaling between two engines (text/markdown/json output) |
 | `post_test_analysis.sh` | End-to-end post-test workflow: sync to Athena, compare baseline, generate reports |
 
@@ -139,6 +144,7 @@ The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. T
 | Script | Purpose |
 |--------|---------|
 | `cleanup_logs.sh` | Clean up JMeter logs and temp files with configurable retention |
+| `cleanup_reports.py` | Baseline-aware report retention; dry-run by default and quarantine on `--apply` |
 | `manage_invalid_runs.sh` | Move invalid runs to INVALID/ subfolder to exclude from analysis |
 | `mark_best_run.sh` | Mark a run as "best" for comparison/baseline purposes |
 

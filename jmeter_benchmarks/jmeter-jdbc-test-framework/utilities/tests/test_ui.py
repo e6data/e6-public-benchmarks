@@ -277,10 +277,14 @@ class UiTests(unittest.TestCase):
         self.assertEqual(server.benchmark_status(1, {"error_pct": 6}, 5), "failed")
         self.assertEqual(server.benchmark_status(1, None, 5), "failed")
         self.assertEqual(server.benchmark_status(0, {"error_pct": 100}, 5), "failed")
+        self.assertEqual(server.benchmark_status(0, {"error_pct": 0, "generator_health": {"status": "invalid"}}, 5), "failed")
 
     def test_report_status_defaults_legacy_reports_to_zero_error_only(self):
         self.assertEqual(server.report_status({"failed": 0, "meta": {}}), "completed")
         self.assertEqual(server.report_status({"failed": 1, "meta": {}}), "failed")
+        self.assertEqual(server.report_status({
+            "failed": 0, "meta": {}, "generator_health": {"status": "invalid"},
+        }), "failed")
 
     def test_report_status_reuses_persisted_cancelled_state(self):
         run = server.Run("cancelled-report", "test", {}, server.REPORTS, status="cancelled")
@@ -726,6 +730,15 @@ class UiTests(unittest.TestCase):
                 }))
                 with self.assertRaisesRegex(ValueError, "zero-failure"):
                     server.promote_reference("failed", {"reason": "should fail"})
+                saturated = server.REPORTS / "saturated"
+                saturated.mkdir()
+                (saturated / "run_summary.json").write_text(json.dumps({
+                    "samples": 1, "successful": 1, "failed": 0,
+                    "generator_health": {"status": "invalid"},
+                    "meta": {"run_id": "saturated", "engine": "engine-b", "queries": "q.csv"},
+                }))
+                with self.assertRaisesRegex(ValueError, "zero-failure"):
+                    server.promote_reference("saturated", {"reason": "should fail"})
         finally:
             server.REPORTS = old_reports
 

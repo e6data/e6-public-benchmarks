@@ -23,6 +23,7 @@ import shlex
 import signal
 import shutil
 import sqlite3
+import statistics
 import subprocess
 import threading
 import time
@@ -1516,6 +1517,8 @@ def compact_summary(summary: dict[str, Any] | None, points: int = 600) -> dict[s
 def benchmark_status(return_code: int, summary: dict[str, Any] | None, max_error_pct: float) -> str:
     """Keep JMeter benchmark validity separate from optional finalization failures."""
     if summary is not None:
+        if summary.get("generator_health", {}).get("status") == "invalid":
+            return "failed"
         return "completed" if float(summary.get("error_pct", 100)) <= max_error_pct else "failed"
     return "completed" if return_code == 0 else "failed"
 
@@ -2214,6 +2217,60 @@ def promote_reference(report_id: str, body: dict[str, Any]) -> dict[str, Any]:
     return report_governance(summary)
 
 
+def reference_promotions(active_only: bool = True) -> list[dict[str, Any]]:
+    """Return auditable reference promotions for UI and CLI consumers."""
+    where = " WHERE active=true" if active_only and REGISTRY_BACKEND == "postgresql" else \
+        " WHERE active=1" if active_only else ""
+    query = (
+        "SELECT promotion_id,reference_key,run_id,report_id,engine,workload_signature,"
+        "promoted_at,promoted_by,reason,active FROM reference_promotions" + where +
+        " ORDER BY promoted_at DESC"
+    )
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as db:
+            rows = db.execute(query).fetchall()
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            rows = db.execute(query).fetchall()
+    result = []
+    for row in rows:
+        signature = row[5]
+        if isinstance(signature, str):
+            try:
+                signature = json.loads(signature)
+            except json.JSONDecodeError:
+                signature = {}
+        result.append({
+            "promotion_id": row[0], "reference_key": row[1], "run_id": row[2],
+            "report_id": row[3], "engine": row[4], "workload_signature": signature or {},
+            "promoted_at": row[6], "promoted_by": row[7], "reason": row[8],
+            "active": bool(row[9]),
+        })
+    return result
+
+
+def deactivate_reference(run_id: str) -> dict[str, Any]:
+    """Deactivate an active reference without deleting its promotion history."""
+    run_id = str(run_id or "").strip()
+    if not run_id:
+        raise ValueError("A baseline run_id is required")
+    if REGISTRY_BACKEND == "postgresql":
+        import psycopg
+        with psycopg.connect(DATABASE_URL) as db:
+            cursor = db.execute(
+                "UPDATE reference_promotions SET active=false WHERE run_id=%s AND active=true", (run_id,)
+            )
+    else:
+        with sqlite3.connect(DB_PATH) as db:
+            cursor = db.execute(
+                "UPDATE reference_promotions SET active=0 WHERE run_id=? AND active=1", (run_id,)
+            )
+    if cursor.rowcount == 0:
+        raise ValueError(f"No active baseline found for run_id: {run_id}")
+    return {"run_id": run_id, "active": False}
+
+
 def completed_reports() -> list[dict[str, Any]]:
     found = []
     catalog = governance_catalog()
@@ -2235,6 +2292,8 @@ def report_status(summary: dict[str, Any]) -> str:
         run = RUNS.get(run_id)
     if run and run.status not in {"queued", "worker_starting", "running", "finalizing"}:
         return run.status
+    if summary.get("generator_health", {}).get("status") == "invalid":
+        return "failed"
     return "completed" if int(summary.get("failed") or 0) == 0 else "failed"
 
 
@@ -2312,7 +2371,7 @@ def report_details(report_id: str) -> dict[str, Any]:
     return {"id": report_id, "summary": summary, "per_query": per_query, "per_query_source": "JmeterResultFile.csv fallback", "artifacts": sorted(artifacts), "dashboard": (directory / "dashboard" / "index.html").is_file()}
 
 
-def comparison(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+def comparison(left: dict[str, Any], right: dict[str, Any], include_noise: bool = False) -> dict[str, Any]:
     def value(data: dict[str, Any], *keys: str) -> float:
         current: Any = data
         for key in keys:
@@ -2368,7 +2427,45 @@ def comparison(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
         "left": compact_summary(left), "right": compact_summary(right), "metrics": delta,
         "compatibility": compatibility, "survivor_bias": survivor_bias,
         "failure_reasons": {"left": failures(left), "right": failures(right)},
+        "baseline_noise": historical_noise(left) if include_noise else {},
     }
+
+
+def historical_noise(reference: dict[str, Any]) -> dict[str, Any]:
+    """Estimate run-to-run variation from valid reports with the exact signature."""
+    meta = reference.get("meta", {})
+    engine, signature = str(meta.get("engine") or ""), workload_signature(reference)
+    paths = {
+        "throughput_per_s": ("throughput_per_s",), "mean_ms": ("latency_ms", "mean"),
+        "p50_ms": ("latency_ms", "p50"), "p95_ms": ("latency_ms", "p95"),
+        "p99_ms": ("latency_ms", "p99"), "error_pct": ("error_pct",),
+    }
+    values = {key: [] for key in paths}
+    catalog = governance_catalog()
+    for summary_path in REPORTS.glob("**/run_summary.json"):
+        try:
+            item = json.loads(summary_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if report_status(item) != "completed" or report_governance(item, catalog)["validity"] != "valid" \
+                or str(item.get("meta", {}).get("engine") or "") != engine \
+                or workload_signature(item) != signature:
+            continue
+        for name, path in paths.items():
+            current: Any = item
+            for key in path:
+                current = current.get(key) if isinstance(current, dict) else None
+            if isinstance(current, (int, float)):
+                values[name].append(float(current))
+    result = {}
+    for name, observed in values.items():
+        mean = statistics.mean(observed) if observed else None
+        result[name] = {
+            "runs": len(observed), "median": statistics.median(observed) if observed else None,
+            "cv_pct": round(statistics.stdev(observed) / mean * 100, 2)
+            if len(observed) >= 3 and mean else None,
+        }
+    return result
 
 
 def per_query_comparison(left_id: str, right_id: str) -> list[dict[str, Any]]:
@@ -2593,6 +2690,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(annotate_report(str(body.get("report_id", "")), body))
             elif self.path == "/api/references/promote":
                 self._json(promote_reference(str(body.get("report_id", "")), body), HTTPStatus.CREATED)
+            elif self.path == "/api/references/deactivate":
+                self._json(deactivate_reference(str(body.get("run_id", ""))))
             elif self.path.endswith("/cancel") and self.path.startswith("/api/runs/"):
                 run_id = self.path.split("/")[3]
                 with RUN_LOCK:
@@ -2626,7 +2725,7 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/compare":
                 left_id, right_id = str(body.get("left", "")), str(body.get("right", ""))
                 left, right = report_by_id(left_id), report_by_id(right_id)
-                result = comparison(left, right)
+                result = comparison(left, right, include_noise=True)
                 result["report_identity"] = {
                     "left": {"id": left_id, "status": report_status(left), "governance": report_governance(left)},
                     "right": {"id": right_id, "status": report_status(right), "governance": report_governance(right)},

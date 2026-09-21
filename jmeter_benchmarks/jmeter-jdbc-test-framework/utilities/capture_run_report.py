@@ -100,6 +100,10 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
     has_jmeter_latency = bool(ok) and all((r.get("Latency") or "").isdigit() for r in ok)
     latency_field = "Latency" if has_jmeter_latency else "elapsed"
     lat = sorted(int(r[latency_field]) for r in ok)
+    materialized = [int(r["rows_materialized"]) for r in ok
+                    if (r.get("rows_materialized") or "").lstrip("-").isdigit()
+                    and int(r["rows_materialized"]) >= 0]
+    row_limit_reached = sum(1 for r in ok if r.get("row_limit_reached") == "true")
     starts = [int(r["timeStamp"]) for r in rows]
     ends = [int(r["timeStamp"]) + int(r["elapsed"]) for r in rows]
     t0, tend = min(starts), max(ends)
@@ -177,6 +181,14 @@ def analyse(rows, profile_steps=None, profile_kind="arrivals"):
         "successful_completions_per_s": successful_comp,
         "in_flight_per_s": inflight,
         "failure_breakdown": failure_breakdown,
+        "result_rows": {
+            "observed_samples": len(materialized),
+            "coverage_pct": round(100 * len(materialized) / len(ok), 1) if ok else None,
+            "min_materialized": min(materialized) if materialized else None,
+            "max_materialized": max(materialized) if materialized else None,
+            "row_limit_reached_samples": row_limit_reached,
+            "meaning": "client rows already materialized by the measured JDBC sampler; no extra query",
+        },
     }
 
     if profile_steps and profile_kind == "arrivals":
@@ -253,6 +265,13 @@ def markdown(run_id, s, meta):
     if s.get("ignored_control_samples"):
         L += [f"_Excluded {s['ignored_control_samples']} framework control sample(s) "
               f"from {s['raw_samples']} raw samples._", ""]
+    rows = s.get("result_rows", {})
+    if rows.get("observed_samples"):
+        L += ["## Materialized result rows", "",
+              f"Observed for {rows['observed_samples']} successful samples ({rows['coverage_pct']}% coverage); "
+              f"range {rows['min_materialized']}–{rows['max_materialized']}; "
+              f"row limit reached by {rows['row_limit_reached_samples']} samples.", "",
+              "_These are client-materialized rows from the existing JDBC response, not a second query or a full-result correctness checksum._", ""]
     lt = s["latency_ms"]
     if lt["min"] is None:
         L += ["## Latency", "",
