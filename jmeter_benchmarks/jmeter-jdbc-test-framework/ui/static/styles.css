@@ -85,6 +85,55 @@ nav {
 .nav-note strong, .nav-note small { display: block; }
 .nav-note small { margin-top: 5px; color: var(--muted); font-size: 11px; }
 
+.help-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  margin-left: 5px;
+  border: 1px solid #bda7e8;
+  border-radius: 50%;
+  color: var(--purple-700);
+  background: var(--purple-50);
+  font: 800 11px/1 ui-sans-serif, sans-serif;
+  cursor: help;
+  vertical-align: text-bottom;
+}
+.help-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  width: min(330px, 75vw);
+  padding: 9px 11px;
+  border-radius: 6px;
+  background: #251348;
+  color: #fff;
+  box-shadow: 0 5px 18px rgba(24, 17, 48, .2);
+  font: 500 12px/1.45 Inter, ui-sans-serif, sans-serif;
+  text-align: left;
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.help-tip:hover::after, .help-tip:focus::after { opacity: 1; visibility: visible; }
+.help-tip:focus { outline: 2px solid var(--purple-500); outline-offset: 2px; }
+
+.input-format-help { margin: 16px 0 20px; border: 1px solid #d9c9f7; border-radius: 7px; background: var(--purple-50); }
+.input-format-help > summary { display: flex; gap: 10px; align-items: baseline; padding: 12px 14px; cursor: pointer; color: var(--purple-800); }
+.input-format-help > summary span { color: var(--muted); font-size: 12px; font-weight: 500; }
+.format-help-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 14px 14px; }
+.format-help-grid section { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.format-help-grid h4 { margin: 0 0 6px; }
+.format-help-grid p, .format-help-grid small { color: var(--muted); font-size: 12px; }
+.format-help-grid pre { overflow-x: auto; margin: 10px 0; padding: 10px; border-radius: 5px; background: #21143a; color: #f8f3ff; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.format-help-note { margin: 0; padding: 0 14px 14px; color: var(--muted); font-size: 12px; }
+@media (max-width: 1050px) { .format-help-grid { grid-template-columns: 1fr; } }
+
 main { margin-left: 224px; padding: 110px 42px 75px; max-width: 1500px; }
 .panel { display: none; }
 .panel.active { display: block; }

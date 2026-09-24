@@ -48,13 +48,42 @@
             <div class="fields">
               <label>Test plan <small>JMeter TEST_PLAN (.jmx)</small><select id="plan"></select></label>
               <label>Default test properties <small>automatic TEST_PROPERTIES_FILE</small><input id="testPropertiesDisplay" type="text" readonly></label>
-              <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
+              <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><span class="help-tip" tabindex="0" aria-label="Load profile format help" data-tip="Variable arrivals use StartValue, EndValue, Duration. Variable concurrency uses Threads, StartTime, StartupTime, HoldTime, ShutdownTime. Open Input file format help below for examples.">?</span><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
               <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
               <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>
               <label class="param qpm">QPM <small>queries / minute</small><input id="QPM" type="number" value="60" min="1"></label>
               <label class="duration-field">HOLD_PERIOD <small id="durationUnit">seconds</small><input id="HOLD_PERIOD" type="number" value="60" min="1"></label>
               <label class="measured-iterations">Measured iterations <small>Run Once passes included in JMeter results</small><input id="MEASURED_ITERATIONS" type="number" value="1" min="1" max="20"></label>
             </div>
+            <details class="input-format-help">
+              <summary><strong>Input file format help</strong><span>Query and load-profile CSV examples</span></summary>
+              <div class="format-help-grid">
+                <section>
+                  <h4>Query and warm-up CSV</h4>
+                  <p>Exactly two columns and one query per row. Aliases must be unique. Quote SQL containing commas or line breaks.</p>
+                  <pre>query_alias,query_string
+Q01,"SELECT COUNT(*) FROM catalog.schema.table"
+Q02,"SELECT col1, col2 FROM catalog.schema.table"</pre>
+                  <small>Accepted header names: <code>query_alias</code>, <code>query_alias_name</code>, or <code>alias</code>; and <code>query</code>, <code>query_string</code>, or <code>sql</code>.</small>
+                </section>
+                <section>
+                  <h4>Variable arrival-rate profile</h4>
+                  <p>Each row ramps from the starting QPS to the ending QPS for the specified duration in seconds.</p>
+                  <pre>StartValue,EndValue,Duration
+1,4,60
+4,4,120
+4,1,60</pre>
+                </section>
+                <section>
+                  <h4>Variable-concurrency profile</h4>
+                  <p>Each row defines a thread group. All time values are seconds; <code>StartTime</code> delays that group.</p>
+                  <pre>Threads,StartTime,StartupTime,HoldTime,ShutdownTime
+2,0,10,60,10
+4,80,20,60,10</pre>
+                </section>
+              </div>
+              <p class="format-help-note">Files must be UTF-8 CSV. The UI and runner validate the selected format before starting JMeter.</p>
+            </details>
             <div id="plannedWorkload" class="planned-workload"><div class="chart-empty">Select a workload to preview its planned shape.</div></div>
           </section>
           <details class="execution-preset-manager">
