@@ -662,7 +662,7 @@ For single test runs:
 ### Adding New Query Set
 
 1. Place CSV file in `data_files/` directory
-2. Ensure CSV has no header row or uses optional header comment format
+2. Ensure the CSV begins with recognized alias and SQL headers, for example `query_alias,query_string`
 3. For multi-line queries, use `utilities/convert_queries_for_json_api.py` to convert
 4. Reference in test properties: `QUERY_PATH=data_files/my_queries.csv`
 

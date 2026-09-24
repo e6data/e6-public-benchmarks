@@ -232,10 +232,15 @@ class RunnerIntegrationTests(unittest.TestCase):
             WARMUP_QUERY_FILE=str(warmup),
             WARMUP_ITERATIONS="1",
             MEASURED_ITERATIONS="3",
+            E6_QUERY_HISTORY_ENABLED="true",
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("Benchmark warm-up (excluded)", completed.stdout)
         self.assertIn("Warm-up complete; starting measured run", completed.stdout)
+        self.assertEqual(
+            completed.stdout.count("E6_QUERY_HISTORY_ENABLED=true ignored for a non-e6 JDBC connection"),
+            1,
+        )
         warmup_summaries = list((self.reports / "_warmup").glob("*/run_summary.json"))
         measured_summaries = list(self.reports.glob("*/run_summary.json"))
         self.assertEqual(len(warmup_summaries), 1)
