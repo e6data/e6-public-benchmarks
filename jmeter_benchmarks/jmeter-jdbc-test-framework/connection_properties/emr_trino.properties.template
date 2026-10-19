@@ -1,0 +1,8 @@
+# Copy to connection_properties/emr_trino_connection.properties and replace placeholders.
+# Install the driver and authentication dependencies first; see docs/jdbc-engines.md.
+ENGINE=emr_trino
+DRIVER_CLASS=io.trino.jdbc.TrinoDriver
+CONNECTION_STRING=jdbc:trino://YOUR_COORDINATOR:8443/YOUR_CATALOG/YOUR_SCHEMA?SSL=true
+USER=YOUR_USER
+PASSWORD=YOUR_PASSWORD
+JDBC_INIT_SQL=

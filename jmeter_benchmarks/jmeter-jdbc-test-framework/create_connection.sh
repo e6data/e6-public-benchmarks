@@ -59,16 +59,28 @@ case "$conn_type" in
         echo "  2) Databricks"
         echo "  3) Snowflake"
         echo "  4) Trino"
-        echo "  5) Other"
+        echo "  5) Microsoft Fabric"
+        echo "  6) Starburst Galaxy"
+        echo "  7) Amazon Athena"
+        echo "  8) Amazon EMR Trino"
+        echo "  9) Amazon Redshift"
+        echo "  10) ClickHouse"
+        echo "  11) Other"
         echo ""
-        read -p "Enter choice [1-5]: " engine_choice
+        read -p "Enter choice [1-11]: " engine_choice
 
         case "$engine_choice" in
             1) ENGINE="e6data"; DRIVER_CLASS="io.e6.jdbc.driver.E6Driver" ;;
-            2) ENGINE="dbr"; DRIVER_CLASS="com.databricks.client.jdbc.Driver" ;;
+            2) ENGINE="databricks"; DRIVER_CLASS="com.databricks.client.jdbc.Driver" ;;
             3) ENGINE="snowflake"; DRIVER_CLASS="net.snowflake.client.api.driver.SnowflakeDriver"; JDBC_INIT_SQL="ALTER SESSION SET USE_CACHED_RESULT = FALSE" ;;
             4) ENGINE="trino"; DRIVER_CLASS="io.trino.jdbc.TrinoDriver" ;;
-            5)
+            5) ENGINE="fabric"; DRIVER_CLASS="com.microsoft.sqlserver.jdbc.SQLServerDriver" ;;
+            6) ENGINE="starburst_galaxy"; DRIVER_CLASS="io.trino.jdbc.TrinoDriver" ;;
+            7) ENGINE="athena"; DRIVER_CLASS="com.amazon.athena.jdbc.AthenaDriver" ;;
+            8) ENGINE="emr_trino"; DRIVER_CLASS="io.trino.jdbc.TrinoDriver" ;;
+            9) ENGINE="redshift"; DRIVER_CLASS="com.amazon.redshift.jdbc.Driver"; JDBC_INIT_SQL="SET enable_result_cache_for_session TO OFF" ;;
+            10) ENGINE="clickhouse"; DRIVER_CLASS="com.clickhouse.jdbc.ClickHouseDriver" ;;
+            11)
                 read -p "Engine name (for filename): " ENGINE
                 read -p "JDBC Driver class: " DRIVER_CLASS
                 ;;
@@ -147,6 +159,7 @@ case "$conn_type" in
         cat > "$FILEPATH" << EOF
 # JDBC Connection Properties
 # Engine: ${ENGINE}
+ENGINE=${ENGINE}
 # Created: $(date +%Y-%m-%d)
 
 HOSTNAME=${HOSTNAME}

@@ -1,0 +1,8 @@
+# Copy to connection_properties/clickhouse_connection.properties and replace placeholders.
+# Install the driver and authentication dependencies first; see docs/jdbc-engines.md.
+ENGINE=clickhouse
+DRIVER_CLASS=com.clickhouse.jdbc.ClickHouseDriver
+CONNECTION_STRING=jdbc:clickhouse:https://YOUR_ENDPOINT:8443/YOUR_DATABASE
+USER=YOUR_USER
+PASSWORD=YOUR_PASSWORD
+JDBC_INIT_SQL=

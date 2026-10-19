@@ -597,6 +597,8 @@ RUN_TYPE=$(printf '%s' "$RUN_TYPE" | tr -cs 'A-Za-z0-9._-' '_')
 # Extract connection details for display
 CONN_HOST=$(grep -E "^HOSTNAME=|^mainhost=" "$CONNECTION_FILE" 2>/dev/null | head -1 | cut -d= -f2)
 CONN_ENGINE=$(grep -E "^# Engine:" "$CONNECTION_FILE" 2>/dev/null | cut -d: -f2 | tr -d ' ')
+PROFILE_ENGINE=$(grep -E '^ENGINE=' "$CONNECTION_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+ENGINE="${ENGINE:-$PROFILE_ENGINE}"
 
 echo ""
 echo -e "${BLUE}=========================================="
@@ -777,6 +779,12 @@ JMETER_CMD=("$JMETER_HOME/bin/jmeter" -n)
 JMETER_CMD+=(-t "$TEST_PLAN")
 JMETER_CMD+=(-q "$CONNECTION_FILE")
 JMETER_CMD+=(-q "$TEST_PROPERTIES_FILE")
+# Opt-in bundles are selected by driver, including shared Trino aliases.
+# No network downloads occur during a benchmark or warm-up.
+MANAGED_JDBC_CLASSPATH=$(python3 utilities/install_jdbc_drivers.py --classpath "${JDBC_DRIVER:-}") || exit 1
+if [ -n "$MANAGED_JDBC_CLASSPATH" ]; then
+    JMETER_CMD+=("-Juser.classpath=$MANAGED_JDBC_CLASSPATH")
+fi
 JMETER_CMD+=(-l "${REPORT_DIR}/JmeterResultFile.csv")
 # HTML dashboard is ~3.5MB of vendored assets per run. CLAUDE.md documents
 # GENERATE_DASHBOARD=false to skip it; honour that here.

@@ -18,6 +18,10 @@ The setup script copies JARs from this directory into `apache-jmeter-5.6.3/lib/e
 
 ## Driver classes
 
+For additional engine presets, connection templates and authentication prerequisites,
+see [JDBC engine setup](../docs/jdbc-engines.md). These presets require live
+validation against your service before using them for published comparisons.
+
 | Engine | Driver class |
 |---|---|
 | e6data | `io.e6.jdbc.driver.E6Driver` |
@@ -31,6 +35,13 @@ The e6data 2.0.27 artifact is repository-managed rather than published through
 Maven Central, so it is updated only from an approved e6data driver release.
 
 ## Add or update a driver
+
+For a named preset, use `python3 utilities/install_jdbc_drivers.py ENGINE`
+from the framework directory. This installs its pinned driver and dependencies
+into an engine-specific managed bundle and verifies Java class loading. See
+[engine setup](../docs/jdbc-engines.md#optional-driver-installer).
+
+For custom drivers not covered by the installer:
 
 1. Download the JAR from the vendor.
 2. Place it in this directory.
