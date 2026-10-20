@@ -91,6 +91,14 @@ class RunnerIntegrationTests(unittest.TestCase):
             self.queries.read_text(),
         )
 
+    def test_connection_engine_is_recorded_in_cli_report(self):
+        self.connection.write_text("CONNECTION_STRING=jdbc:test\nENGINE=emr_trino\n")
+        completed = self.run_runner(ENGINE="")
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        run_dir = next(self.reports.iterdir())
+        summary = json.loads((run_dir / "run_summary.json").read_text())
+        self.assertEqual(summary["meta"]["engine"], "emr_trino")
+
     def test_shared_system_settings_supply_cli_defaults_and_env_wins(self):
         settings = Path(self.temp.name) / "system_settings.json"
         settings.write_text(json.dumps({

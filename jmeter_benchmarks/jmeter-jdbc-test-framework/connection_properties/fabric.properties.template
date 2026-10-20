@@ -1,0 +1,8 @@
+# Copy to connection_properties/fabric_connection.properties and replace placeholders.
+# Install the driver and authentication dependencies first; see docs/jdbc-engines.md.
+ENGINE=fabric
+DRIVER_CLASS=com.microsoft.sqlserver.jdbc.SQLServerDriver
+CONNECTION_STRING=jdbc:sqlserver://YOUR_ENDPOINT.datawarehouse.fabric.microsoft.com:1433;databaseName=YOUR_WAREHOUSE;encrypt=true;trustServerCertificate=false;authentication=ActiveDirectoryServicePrincipal
+USER=YOUR_APPLICATION_CLIENT_ID
+PASSWORD=YOUR_CLIENT_SECRET
+JDBC_INIT_SQL=

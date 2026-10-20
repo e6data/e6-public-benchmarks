@@ -6,6 +6,11 @@ from __future__ import annotations
 import argparse, csv, json, os, re, shutil, signal, socket, subprocess, sys, time, uuid
 from pathlib import Path
 
+if __package__:
+    from .jdbc_engines import connection_engine as resolve_connection_engine
+else:
+    from jdbc_engines import connection_engine as resolve_connection_engine
+
 ROOT = Path(__file__).resolve().parents[1]
 PLAN_DEFAULTS = {
     "jdbc_sequential": ("Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx", "test_properties/run_once.properties"),
@@ -19,7 +24,6 @@ PLAN_DEFAULTS = {
     "http_concurrency": ("Test-Plans/Test-Plan-Maintain-static-concurrency-http-endpoint.jmx", "test_properties/fixed_concurrency.properties"),
     "http_arrivals": ("Test-Plans/Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx", "test_properties/variable_arrivals.properties"),
 }
-DRIVER_ENGINES = {"io.e6.jdbc.driver.E6Driver": "e6data", "com.databricks.client.jdbc.Driver": "databricks", "net.snowflake.client.api.driver.SnowflakeDriver": "snowflake", "io.trino.jdbc.TrinoDriver": "trino"}
 SETTING_DEFAULTS = {"CONCURRENT_QUERY_COUNT": 1, "QPS": 1, "QPM": 60, "HOLD_PERIOD": 300, "RAMP_UP_TIME": 0, "RAMP_UP_STEPS": 1, "MAX_CONCURRANCY": 900, "QUERY_TIMEOUT": 300, "LIMIT_RESULTSET": 1000, "MAX_ERROR_PCT": 5}
 BOOL_SETTINGS = {"RECYCLE_ON_EOF", "RANDOM_ORDER", "GENERATE_DASHBOARD", "PROMETHEUS_ENABLED"}
 METADATA_KEYS = {
@@ -98,12 +102,15 @@ def validate_csv(path: Path) -> int:
     with path.open(newline="", encoding="utf-8-sig") as handle: return sum(1 for _ in csv.reader(handle)) - 1
 
 def connection_engine(path: Path) -> str:
-    return DRIVER_ENGINES.get(properties(path).get("DRIVER_CLASS", ""), "")
+    return resolve_connection_engine(properties(path))
 
 def network_preflight(path: Path) -> None:
     values = properties(path); host = values.get("HOSTNAME", "")
+    if values.get("DRIVER_CLASS") == "com.amazon.athena.jdbc.AthenaDriver":
+        print("Network preflight: Athena endpoint and credentials are resolved by the AWS JDBC driver")
+        return
     if not host:
-        match = re.search(r"jdbc:[^:]+://([^:/;]+)", values.get("CONNECTION_STRING", "")); host = match.group(1) if match else ""
+        match = re.search(r"jdbc:[^:]+(?::https?)?://([^:/;?]+)", values.get("CONNECTION_STRING", "")); host = match.group(1) if match else ""
     if not host: raise ValueError("Unable to determine JDBC hostname from connection profile")
     socket.getaddrinfo(host, None); print(f"Network preflight: resolved {host}")
 

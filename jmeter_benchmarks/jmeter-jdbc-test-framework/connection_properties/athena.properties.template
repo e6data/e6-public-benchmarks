@@ -1,0 +1,8 @@
+# Copy to connection_properties/athena_connection.properties and replace placeholders.
+# Install the driver and authentication dependencies first; see docs/jdbc-engines.md.
+ENGINE=athena
+DRIVER_CLASS=com.amazon.athena.jdbc.AthenaDriver
+CONNECTION_STRING=jdbc:athena://Region=us-east-1;Catalog=AwsDataCatalog;Database=YOUR_DATABASE;WorkGroup=YOUR_WORKGROUP;OutputLocation=s3://YOUR_BUCKET/results/
+USER=
+PASSWORD=
+JDBC_INIT_SQL=

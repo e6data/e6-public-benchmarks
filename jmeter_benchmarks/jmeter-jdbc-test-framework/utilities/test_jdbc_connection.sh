@@ -54,6 +54,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Set Java classpath with all JDBC drivers
 CLASSPATH="$SCRIPT_DIR:$PROJECT_ROOT/apache-jmeter-5.6.3/lib/ext/*"
+DRIVER_CLASS=$(grep -E '^DRIVER_CLASS=' "$PROPERTIES_FILE" | tail -1 | cut -d= -f2-)
+MANAGED_JDBC_CLASSPATH=$(python3 "$SCRIPT_DIR/install_jdbc_drivers.py" --classpath "$DRIVER_CLASS") || exit 1
+if [ -n "$MANAGED_JDBC_CLASSPATH" ]; then
+    CLASSPATH="$MANAGED_JDBC_CLASSPATH/*:$CLASSPATH"
+fi
 
 echo -e "${YELLOW}🔧 Compiling TestDriver.java...${NC}"
 javac -cp "$CLASSPATH" "$SCRIPT_DIR/TestDriver.java"

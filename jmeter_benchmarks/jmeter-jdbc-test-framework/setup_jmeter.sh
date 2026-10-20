@@ -24,17 +24,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WITH_POSTGRES=false
 WITH_OBSERVABILITY=false
 INSTALL_UI=true
+OPTIONAL_JDBC_ENGINES=""
 for arg in "$@"; do
     case "$arg" in
         --with-postgres) WITH_POSTGRES=true ;;
         --with-observability) WITH_OBSERVABILITY=true ;;
         --without-ui) INSTALL_UI=false ;;
+        --jdbc-engines=*) OPTIONAL_JDBC_ENGINES="${arg#*=}" ;;
         -h|--help)
             echo "Usage: ./setup_jmeter.sh [--with-postgres] [--with-observability] [--without-ui]"
             echo "  Installs JMeter, plugins, JDBC drivers, and Benchmark Studio."
             echo "  --with-postgres also starts the supplied local PostgreSQL container."
             echo "  --with-observability also starts supplied local Prometheus and Grafana containers."
             echo "  --without-ui installs only the CLI/remote-worker runtime."
+            echo "  --jdbc-engines=fabric,athena,redshift,clickhouse installs optional engine bundles."
             exit 0
             ;;
         *) echo "Unknown option: $arg"; exit 2 ;;
@@ -636,6 +639,11 @@ fi
 
 echo ""
 echo "Step 7: Configuring minimal logging..."
+
+if [ -n "$OPTIONAL_JDBC_ENGINES" ]; then
+    IFS=',' read -r -a selected_jdbc_engines <<< "$OPTIONAL_JDBC_ENGINES"
+    python3 "${SCRIPT_DIR}/utilities/install_jdbc_drivers.py" "${selected_jdbc_engines[@]}"
+fi
 
 # Configure log4j2 to reduce logging verbosity
 LOG4J_CONFIG="${JMETER_DIR}/bin/log4j2.xml"

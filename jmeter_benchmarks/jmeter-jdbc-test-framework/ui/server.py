@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from utilities.jdbc_engines import JDBC_DRIVERS, ENGINE_LABELS, connection_engine
 from utilities.query_file_info import inspect as inspect_query_file
 from utilities.load_profile import (
     expected_arrivals_per_second, expected_concurrency_per_second,
@@ -128,12 +129,6 @@ NUMERIC_LIMITS = {
 
 PROFILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 CSV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.csv$", re.IGNORECASE)
-JDBC_DRIVERS = {
-    "e6data": "io.e6.jdbc.driver.E6Driver",
-    "databricks": "com.databricks.client.jdbc.Driver",
-    "snowflake": "net.snowflake.client.api.driver.SnowflakeDriver",
-    "trino": "io.trino.jdbc.TrinoDriver",
-}
 PUBLIC_RUN_FIELDS = {
     "plan", "engine", "connection", "query_file", "load_profile", "test_properties_file", "CONCURRENT_QUERY_COUNT",
     "QPS", "QPM", "HOLD_PERIOD", "RAMP_UP_TIME", "RAMP_UP_STEPS",
@@ -922,8 +917,7 @@ def create_suite_manifest(config: dict[str, Any], overwrite: bool = False) -> st
     default_connection_value = str(config.get("default_connection") or "")
     default_connection = _inside(default_connection_value, "connection_properties", ".properties") if default_connection_value else ""
     if default_connection:
-        driver = next((line.split("=", 1)[1].strip() for line in (ROOT / default_connection).read_text(errors="ignore").splitlines() if line.startswith("DRIVER_CLASS=")), "")
-        profile_engine = {value: key for key, value in JDBC_DRIVERS.items()}.get(driver)
+        profile_engine = connection_engine(dict(line.split("=", 1) for line in (ROOT / default_connection).read_text().splitlines() if "=" in line and not line.startswith("#")))
         if profile_engine and profile_engine != engine:
             raise ValueError(f"Default connection belongs to {profile_engine}, not {engine}")
     metadata = config.get("metadata") or {}
@@ -1030,13 +1024,15 @@ def create_connection_profile(config: dict[str, Any]) -> str:
         engine = _property_value(config.get("engine"), "Engine").lower() or "e6data"
         driver = _property_value(config.get("driver_class"), "DRIVER_CLASS") or JDBC_DRIVERS.get(engine, "")
         values = {
+            "ENGINE": engine,
             "CONNECTION_STRING": _property_value(config.get("connection_string"), "CONNECTION_STRING", required=True),
             "USER": _property_value(config.get("user"), "USER"),
             "PASSWORD": _property_value(config.get("password"), "PASSWORD"),
             "DRIVER_CLASS": _property_value(driver, "DRIVER_CLASS", required=True),
             "JDBC_INIT_SQL": (
                 "ALTER SESSION SET USE_CACHED_RESULT = FALSE"
-                if engine == "snowflake" else ""
+                if engine == "snowflake" else
+                "SET enable_result_cache_for_session TO OFF" if engine == "redshift" else ""
             ),
         }
         heading = "# JDBC Connection Properties"
@@ -1227,13 +1223,10 @@ def build_environment(config: dict[str, Any], run_id: str) -> dict[str, str]:
             raise ValueError("WARMUP_ITERATIONS must be between 1 and 20")
         env["WARMUP_ITERATIONS"] = str(warmup_iterations)
     configured_engine = _property_value(config.get("engine"), "ENGINE") or "unknown"
-    driver = next((line.split("=", 1)[1].strip() for line in connection_lines
-                   if line.startswith("DRIVER_CLASS=")), "")
-    driver_engines = {value: key for key, value in JDBC_DRIVERS.items()}
     # Existing-profile selection is authoritative. This prevents a manually
     # edited run label or stale engine dropdown from calling a Databricks
     # connection "e6data" (or vice versa) in reports and comparisons.
-    engine = driver_engines.get(driver, configured_engine)
+    engine = connection_engine(dict(line.split("=", 1) for line in connection_lines if "=" in line and not line.startswith("#")), configured_engine)
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", engine):
         raise ValueError("ENGINE contains invalid characters")
     env["ENGINE"] = engine
@@ -2574,7 +2567,7 @@ class Handler(SimpleHTTPRequestHandler):
                 connections = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "connection_properties").glob("*.properties"))
                 queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").rglob("*.csv"))
                 profiles = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "test_properties").glob("*.csv"))
-                self._json({"plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2], "test_properties": PLAN_TEST_PROPERTIES[k]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "query_history": {"enabled": E6_QUERY_HISTORY_ENABLED, "client_id": E6_MACHINE_CLIENT_ID, "secret_configured": bool(E6_MACHINE_CLIENT_SECRET), "email": E6_QUERY_HISTORY_EMAIL, "wait_seconds": int(E6_QUERY_HISTORY_WAIT_SECONDS)}, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
+                self._json({"engines": ENGINE_LABELS, "plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2], "test_properties": PLAN_TEST_PROPERTIES[k]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "query_history": {"enabled": E6_QUERY_HISTORY_ENABLED, "client_id": E6_MACHINE_CLIENT_ID, "secret_configured": bool(E6_MACHINE_CLIENT_SECRET), "email": E6_QUERY_HISTORY_EMAIL, "wait_seconds": int(E6_QUERY_HISTORY_WAIT_SECONDS)}, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
             elif parsed.path == "/api/runs":
                 with RUN_LOCK:
                     self._json([run.public() for run in RUNS.values()])

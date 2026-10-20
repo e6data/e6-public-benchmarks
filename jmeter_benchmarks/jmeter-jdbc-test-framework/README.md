@@ -14,6 +14,9 @@ export HOLD_PERIOD=600    # change duration from 300 to 600
 
 Helper scripts (`create_connection.sh`, `create_test_config.sh`) interactively create the `.properties` and `.env` config files you need.
 
+See [JDBC engine setup](docs/jdbc-engines.md) for additional engine presets,
+connection templates, driver installation and authentication requirements.
+
 ## What this framework measures
 
 This is a **JMeter-based benchmark framework and orchestration wrapper**. JMeter supplies scheduling, threads, timers, JDBC/HTTP samplers, and raw client timings; the repository adds reusable plans, configuration precedence, load-profile injection, result packaging, failure thresholds, and comparison/reporting utilities.

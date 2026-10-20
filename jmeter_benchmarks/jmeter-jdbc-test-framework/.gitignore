@@ -87,6 +87,7 @@ compare_runs/
 /comparison_*.md
 
 # JDBC driver backups
+jdbc_drivers/managed/
 apache-jmeter-5.6.3/lib/ext/*.jar.old
 
 
