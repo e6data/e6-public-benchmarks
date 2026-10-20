@@ -176,10 +176,17 @@ def install(engine, store=STORE):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("engines", nargs="*", choices=sorted(set(SPECS) | set(ALIASES)))
+    supported = sorted(set(SPECS) | set(ALIASES))
+    # Python 3.11 argparse validates an empty nargs="*" list against choices,
+    # rejecting lookup-only calls. Validate individual engine names below.
+    parser.add_argument("engines", nargs="*", metavar="ENGINE",
+                        help="Engine(s) to install: " + ", ".join(supported))
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--classpath", metavar="DRIVER_CLASS", help="Print installed bundle path; no downloads")
     args = parser.parse_args()
+    for engine in args.engines:
+        if engine not in supported:
+            parser.error(f"Unknown engine {engine!r}; choose from: {', '.join(supported)}")
     if args.list:
         print("\n".join(sorted(set(SPECS) | set(ALIASES))))
         return
