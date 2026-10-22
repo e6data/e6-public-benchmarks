@@ -5,11 +5,89 @@ supports JDBC connections.
 
 The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
 
-**Runner scripts** (`run_test.sh`, `run_jmeter_tests_interactive.sh`) handle JMeter invocation for you. All test settings — connection file, test plan, query file, concurrency, duration — can be passed as environment variables using `export`. This means you can change any parameter and re-run without editing files:
+## First benchmark: a small sequential run
+
+Use a Linux or macOS terminal with Git installed. Setup installs/checks runner
+dependencies; Java 17 and Python 3.11 are recommended. You need a reachable JDBC
+endpoint and credentials. For TPC-DS, TPC-H or ClickBench, provision the dataset
+and supply SQL appropriate to your engine; setup does not load benchmark data.
+
+1. Clone and set up the runner:
+
+   ```bash
+   git clone https://github.com/e6data/e6-public-benchmarks.git
+   cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
+   ./setup_jmeter.sh
+   ```
+
+2. Create a connection profile and note its saved path:
+
+   ```bash
+   ./create_connection.sh
+   ```
+
+   For additional engines, install the selected driver first, for example
+   `python3 utilities/install_jdbc_drivers.py athena`. See
+   [engine setup](docs/jdbc-engines.md) for authentication prerequisites.
+
+3. Create `data_files/my_queries.csv` in a text editor (create the directory
+   with `mkdir -p data_files` if needed). Start with this connection smoke test:
+
+   ```csv
+   query_alias,query_string
+   smoke_test,"SELECT 1"
+   ```
+
+   Replace it with your workload after the connection works. Quote SQL containing
+   commas and escape embedded double quotes as `""`. Query files are not bundled
+   in this framework's Git-ignored `data_files/` directory.
+
+4. Create one reusable configuration:
+
+   ```bash
+   cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
+   ```
+
+   Edit `CONNECTION_FILE` to the path saved in step 2 and set
+   `QUERY_FILE=data_files/my_queries.csv`. Then run:
+
+   ```bash
+   TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
+   CONCURRENT_QUERY_COUNT=1 RECYCLE_ON_EOF=false \
+   MEASURED_ITERATIONS=1 GENERATE_DASHBOARD=true COPY_TO_S3=false \
+   ./run_test.sh test_configs/my_benchmark.env
+   ```
+
+5. Use the report directory printed by the runner under `reports/`. Inspect
+   `JmeterResultFile.csv` and open `dashboard/index.html` for the JMeter report.
+   A successful `SELECT 1` validates connectivity, not benchmark performance.
+
+No S3 account, monitoring service or UI is required for this first run. To test
+another engine, create its connection profile and equivalent query CSV, then
+reuse the same load settings. See [baseline comparisons](#baselines-and-cli-comparison).
+
+## Choose a load model
+
+Start with sequential, fixed QPS or an arrival-rate profile. Keep concurrency
+tests for questions about a fixed number of simultaneous clients.
+
+| Model | What you control | When to use it |
+| --- | --- | --- |
+| Sequential | One query at a time; finite query passes | First connection test and unloaded query timings |
+| Fixed QPS | Queries submitted per second for a duration | Latency and errors at a known offered load |
+| Arrival-rate profile | QPS changing over time in a CSV | Ramps, peaks and recovery |
+| Fixed concurrency | Number of active query workers | Throughput at a fixed number of clients; each worker waits for its query |
+| Variable concurrency | Worker counts changing over time in a CSV | Increasing or decreasing concurrent-client pressure |
+| Run once concurrently / fixed QPM | Finite parallel passes / submissions per minute | Specialized cases; not needed for a first benchmark |
+
+Concurrency is not QPS: slower queries reduce the submission rate of a fixed
+worker pool. An arrival-rate test attempts to maintain the requested submissions,
+so in-flight work can increase until engine or runner limits are reached.
+
+**Runner scripts** (`run_test.sh`, `run_jmeter_tests_interactive.sh`) handle JMeter invocation for you. After configuring a run, parameters can be overridden without editing JMX files:
 
 ```bash
-export HOLD_PERIOD=600    # change duration from 300 to 600
-./run_test.sh             # re-run with new value, everything else stays the same
+HOLD_PERIOD=600 ./run_test.sh test_configs/my_benchmark.env
 ```
 
 Helper scripts (`create_connection.sh`, `create_test_config.sh`) interactively create the `.properties` and `.env` config files you need.
@@ -110,7 +188,8 @@ For example, this uses `fixed_concurrency.properties` but runs at concurrency
 ```bash
 export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
 export CONCURRENT_QUERY_COUNT=5
-./run_test.sh test_configs/my_benchmark.env
+CONNECTION_FILE=connection_properties/my_connection.properties \
+QUERY_FILE=data_files/my_queries.csv ./run_test.sh
 ```
 
 The equivalent raw JMeter shape is:
@@ -178,6 +257,67 @@ been consumed for the configured `MEASURED_ITERATIONS` (default `1`). For
 example, `MEASURED_ITERATIONS=3` produces three samples per query label in one
 standard JMeter result. The JMeter Aggregate Report and per-query view then
 provide count, average, median, and percentiles across those three samples.
+
+### Load-profile files: path, columns and duration
+
+`LOAD_PROFILE` is a schedule CSV, not the query CSV. The selected plan determines
+which of the following two formats to use. Use integer values and the shown header.
+
+For an **arrival-rate profile**, save a file such as
+`test_properties/my_arrivals.csv`:
+
+```csv
+StartValue,EndValue,Duration
+1,1,60
+1,4,60
+4,4,120
+4,1,60
+```
+
+- `StartValue`: starting submission rate in queries/second.
+- `EndValue`: ending submission rate; a different value creates a linear ramp.
+- `Duration`: length of that row in seconds, greater than zero.
+
+Rows run one after another. This example schedules 300 seconds (five minutes),
+starting at 1 QPS, ramping to 4 QPS, holding there, then ramping down.
+
+```bash
+TEST_PLAN=Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx \
+LOAD_PROFILE=test_properties/my_arrivals.csv \
+RECYCLE_ON_EOF=true ./run_test.sh test_configs/my_benchmark.env
+```
+
+For a **variable-concurrency profile**, use a separate file such as
+`test_properties/my_concurrency.csv`:
+
+```csv
+Threads,StartTime,StartupTime,HoldTime,ShutdownTime
+4,0,30,120,30
+```
+
+- `Threads`: workers added by this row, greater than zero; not QPS.
+- `StartTime`: delay from test start, in seconds.
+- `StartupTime`: seconds to ramp up this row's workers.
+- `HoldTime`: seconds to hold those workers, greater than zero.
+- `ShutdownTime`: seconds to ramp them down.
+
+Rows are independent waves; overlapping rows add their workers together. The
+example ramps to four workers over 30 seconds, holds for 120, then ramps down
+over 30: a 180-second schedule. Select the variable-concurrency plan for this format.
+
+**Which path do I use?** CLI paths refer to files on the runner; relative paths
+are resolved from the framework directory. `LOAD_PROFILE` can also be an `s3://`
+URI if the runner has permission to download it. In the optional UI, select a
+runner file, use **Local CSV** to upload a file from your computer, or use
+**S3 URI** to import one. A path on your laptop is not a path on a remote runner.
+
+**What about Hold duration?** For both profile-driven plans, the CSV defines the
+schedule. The separate `HOLD_PERIOD` setting does not extend or truncate it,
+and the UI shows the calculated schedule duration instead. For fixed QPS and fixed concurrency it
+controls the hold interval in seconds; fixed QPM uses minutes. Sequential and
+run-once plans stop after their configured query passes, not a hold interval.
+Actual wall-clock duration can include startup and completion of in-flight work.
+Keep query recycling enabled for sustained-load tests so the input does not run out.
 
 #### Optional excluded warm-up
 
@@ -452,34 +592,16 @@ export CONCURRENT_QUERY_COUNT=8
 
 ### Load profile CSV
 
-The two load-profile plans control different things, so they take different CSV formats.
-The format is picked from the plan automatically — set `LOAD_PROFILE` to any CSV.
+See [load-profile files](#load-profile-files-path-columns-and-duration) for
+copyable examples, column meanings, units and duration rules. The format must
+match the selected plan. Do not put inline comments in numeric CSV cells.
 Both `QUERY_FILE` and `LOAD_PROFILE` may be local paths or complete `s3://`
 URIs. CLI runs download a fresh, private temporary copy for every invocation,
 validate it, record the source URI and SHA-256 in run metadata, and remove the
 temporary copy on exit.
 
-**Arrival rate** — `Test-Plan-Fire-QPS-with-load-profile.jmx`, default
-`test_properties/load_profile.csv`. Controls how fast queries are *submitted*:
-
-```csv
-StartValue,EndValue,Duration
-1,1,5        # 1 QPS for 5s
-2,2,10       # 2 QPS for 10s
-1,10,5       # ramp 1 -> 10 QPS over 5s
-```
-
-**Concurrency** — `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx`, default
-`test_properties/utg_load_profile.csv`. Controls how many run *at once*. Rows stack:
-
-```csv
-Threads,StartTime,StartupTime,HoldTime,ShutdownTime
-10,0,30,60,10     # ramp to 10 over 30s, hold 60s, wind down over 10s
-20,90,30,60,10    # +20 more from t=90 -> 30 concurrent
-```
-
-Use `StartupTime=0` and `ShutdownTime=0` for a flat step with no ramp. All times in seconds.
-See `CLAUDE.md` for the full reference.
+The bundled examples are `test_properties/load_profile.csv` (arrivals) and
+`test_properties/utg_load_profile.csv` (concurrency).
 
 ## Configuration Reference
 
