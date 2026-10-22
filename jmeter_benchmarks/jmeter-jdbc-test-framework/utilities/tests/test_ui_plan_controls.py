@@ -31,6 +31,27 @@ assert.equal(profileDurationText({duration_s:90}),'90 seconds (1.5 min)');
 assert.equal(profileDurationText({duration_s:null}),'Select a valid load profile');
 assert(source.includes("classList.toggle('hidden',runOnce||isProfilePlan(p))"));
 assert(source.includes("$('profileDuration').textContent='Cannot calculate duration: '+e.message"));
+const isRunOncePlan=id=>['jdbc_sequential','jdbc_run_once','http_run_once'].includes(id);
+const env={HOLD_PERIOD:300,QPS:2,QPM:60,MAX_CONCURRANCY:100,CONCURRENT_QUERY_COUNT:4,MEASURED_ITERATIONS:1,RAMP_UP_TIME:10,RAMP_UP_STEPS:2,RECYCLE_ON_EOF:true,QUERY_TIMEOUT:300};
+const arrival=relevantEnvironment(env,'jdbc_arrivals');
+assert(!('HOLD_PERIOD' in arrival));assert(!('QPS' in arrival));
+assert(!('CONCURRENT_QUERY_COUNT' in arrival));assert.equal(arrival.MAX_CONCURRANCY,100);
+assert.equal(relevantEnvironment(env,'jdbc_qps').HOLD_PERIOD,300);
+assert.equal(relevantEnvironment(env,'jdbc_concurrency').CONCURRENT_QUERY_COUNT,4);
+assert(!('MAX_CONCURRANCY' in relevantEnvironment(env,'jdbc_concurrency')));
+assert(!('RECYCLE_ON_EOF' in relevantEnvironment(env,'jdbc_sequential')));
+assert.equal(env.HOLD_PERIOD,300); // filtering must not mutate execution inputs
+const group={children:[{},{}]},select={value:'jdbc_sequential',querySelector:()=>group},toggle={checked:false};
+const $=id=>id==='plan'?select:toggle;
+let defaults=0;const applyPlanDefault=()=>defaults++;
+syncPlanVisibility();assert(group.hidden);assert(group.children.every(o=>o.hidden));
+toggle.checked=true;syncPlanVisibility();assert(!group.hidden);
+select.value='jdbc_variable_concurrency';toggle.checked=false;
+syncPlanVisibility(true);assert(toggle.checked);assert(!group.hidden);
+toggle.checked=false;syncPlanVisibility();assert.equal(select.value,'jdbc_sequential');assert.equal(defaults,1);
+const page=fs.readFileSync(process.argv[1].replace('app.js','index.html'),'utf8');
+assert(page.includes('Reuse or save settings'));assert(page.includes('CLI configuration'));
+assert(!/<details[^>]*class="card (?:advanced-card|preview-card)"[^>]*\sopen/.test(page));
 '''
         result = subprocess.run(['node', '-e', script, str(app)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
