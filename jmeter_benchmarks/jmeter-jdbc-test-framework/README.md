@@ -214,41 +214,68 @@ cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
 # Edit CONNECTION_FILE and QUERY_FILE once in my_benchmark.env.
 ```
 
-The following commands reuse that file and change only the plan plus its controlling parameters:
+#### Three common CLI plans
+
+The following commands reuse that file. Environment values override the config,
+so no JMX editing or separate config per load level is required.
+
+**1. Sequential — run every query once, one at a time.**
 
 ```bash
-# Run every query once at concurrency 1
 TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
-  CONCURRENT_QUERY_COUNT=1 RECYCLE_ON_EOF=false \
+  CONCURRENT_QUERY_COUNT=1 RECYCLE_ON_EOF=false MEASURED_ITERATIONS=1 \
   ./run_test.sh test_configs/my_benchmark.env
+```
 
-# Hold four queries in flight for five minutes
-TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
-  CONCURRENT_QUERY_COUNT=4 HOLD_PERIOD=300 \
-  ./run_test.sh test_configs/my_benchmark.env
+**2. Fixed QPS — target 2 query submissions/second for a 300-second hold.**
 
-# Submit five queries per second for five minutes
+```bash
 TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx \
-  QPS=5 HOLD_PERIOD=300 \
+  QPS=2 HOLD_PERIOD=300 RAMP_UP_TIME=0 RECYCLE_ON_EOF=true \
   ./run_test.sh test_configs/my_benchmark.env
+```
 
-# Submit 60 queries per minute; this plan interprets HOLD_PERIOD as minutes
-TEST_PLAN=Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx \
-  QPM=60 HOLD_PERIOD=5 \
-  ./run_test.sh test_configs/my_benchmark.env
+**3. Arrival-rate profile — follow the QPS schedule in a CSV.**
 
-# Vary arrivals/QPS using a 3-column CSV
+```bash
 TEST_PLAN=Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx \
   LOAD_PROFILE=test_properties/load_profile.csv \
+  RECYCLE_ON_EOF=true \
+  ./run_test.sh test_configs/my_benchmark.env
+```
+
+Start with the bundled profile above or replace the path with your own CSV.
+The CSV determines the schedule duration; `HOLD_PERIOD` does not apply. See
+[load-profile formats and column meanings](#load-profile-files-path-columns-and-duration).
+QPS is an offered load, not a guarantee of completed throughput.
+
+#### Advanced CLI examples
+
+Use these when you specifically need worker-count control, finite parallel
+passes or a per-minute arrival rate. All existing plans remain available.
+
+```bash
+# Hold four query workers for five minutes
+TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
+  CONCURRENT_QUERY_COUNT=4 HOLD_PERIOD=300 RECYCLE_ON_EOF=true \
+  ./run_test.sh test_configs/my_benchmark.env
+
+# Run every query once, using up to four workers
+TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
+  CONCURRENT_QUERY_COUNT=4 RECYCLE_ON_EOF=false MEASURED_ITERATIONS=1 \
+  ./run_test.sh test_configs/my_benchmark.env
+
+# Submit 60 queries per minute; HOLD_PERIOD is in minutes for this plan
+TEST_PLAN=Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx \
+  QPM=60 HOLD_PERIOD=5 RECYCLE_ON_EOF=true \
   ./run_test.sh test_configs/my_benchmark.env
 
 # Vary concurrent queries using a 5-column CSV
 TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx \
   LOAD_PROFILE=test_properties/utg_load_profile.csv \
+  RECYCLE_ON_EOF=true \
   ./run_test.sh test_configs/my_benchmark.env
 ```
-
-Environment values override the config file, so no JMX editing or separate config per load level is required.
 
 **Sequential** and **Run once (concurrent)** both reuse the same run-once JMX. Sequential forces
 concurrency to 1, while concurrent Run Once lets threads consume the query CSV
