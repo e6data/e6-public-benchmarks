@@ -48,7 +48,8 @@ and supply SQL appropriate to your engine; setup does not load benchmark data.
    ./create_test_config.sh
    ```
 
-   Select your connection, **1) Sequential**, and `my_queries.csv`. Skip optional
+   Select your connection, **1) Sequential**, and `my_queries.csv`. Accept one
+   measured iteration and leave warm-up disabled for this smoke test. Skip optional
    metadata and name the configuration `my_benchmark`. The wizard saves
    `test_configs/my_benchmark.env` and prints the run command. The main choices
    match the UI: Sequential, Fixed QPS and Arrival-rate profile; other plans
@@ -59,6 +60,15 @@ and supply SQL appropriate to your engine; setup does not load benchmark data.
    GENERATE_DASHBOARD=true \
    ./run_test.sh test_configs/my_benchmark.env
    ```
+
+   The wizard reads the same bundled plan defaults as the UI. Query selection
+   accepts a listed number, a nested/local file path, or an `s3://` URI. Query
+   and load-profile CSVs are validated before saving; profile schedules show
+   their calculated duration. S3 validation requires AWS CLI credentials and
+   downloads a temporary copy; execution downloads the input again.
+   Optional warm-up is sequential and excluded from measured results.
+   Timeout, result-row limits, ramps and other advanced defaults can be changed
+   in the saved `.env` or via environment overrides, without another properties file.
 
 5. Use the report directory printed by the runner under `reports/`. Inspect
    `JmeterResultFile.csv` and open `dashboard/index.html` for the JMeter report.
@@ -405,6 +415,13 @@ vi test_configs/my_test.env
 ```bash
 ./run_jmeter_tests_interactive.sh
 ```
+
+This compatibility entry point uses the same configuration wizard, saves a
+reusable `.env`, and asks for confirmation before calling `run_test.sh`.
+It no longer maintains a separate plan menu or JMeter execution path. Old
+scripted numeric menu answers must be updated; for automation use a saved
+configuration with `run_test.sh` instead. To use custom local test defaults,
+set `TEST_PROPERTIES_FILE=path/to/custom.properties` before starting the wizard.
 
 Guides you through selecting a connection, test plan, query file, optional metadata,
 and the workload values relevant to the selected plan. The plan automatically selects
