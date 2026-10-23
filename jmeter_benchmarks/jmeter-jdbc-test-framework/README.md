@@ -5,133 +5,129 @@ supports JDBC connections.
 
 The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
 
-## Run or reproduce this benchmark
+## First benchmark: a small sequential run
 
-**Get the code — choose one:**
+### Before you start on EC2
 
-- **Git clone (recommended):**
+- Use a Linux runner (for example, Amazon Linux 2023 or Ubuntu) with Bash, disk
+  space for dependencies/results, and permission to install packages with
+  `sudo` if dependencies are missing. Java 17 and Python 3.11 are recommended.
+  Setup checks/installs dependencies; it does not replace the system Python.
+- Allow outbound access to GitHub and dependency repositories. The runner must
+  resolve and reach the supplied e6 cluster endpoint/port through your VPC,
+  firewall, or VPN. CLI-only use needs no inbound UI port.
+- Obtain the **JDBC URL, username, token/password, catalog/schema, and network
+  access requirements** from your e6 contact. Use the supplied endpoint and TLS
+  settings rather than guessing them.
+- Obtain an authorized query CSV and ensure its dataset/tables are available
+  to your user. Setup does not create clusters or load TPC-DS, TPC-H, or
+  ClickBench data. Start with a dedicated test cluster and a small workload.
 
-  ```bash
-  git clone https://github.com/e6data/e6-public-benchmarks.git
-  cd e6-public-benchmarks
-  # For published results, check out the exact commit supplied with them:
-  # git checkout <published-commit>
-  cd jmeter_benchmarks/jmeter-jdbc-test-framework
-  ```
+### 1. Get the code
 
-- **Download ZIP:** on the [repository page](https://github.com/e6data/e6-public-benchmarks),
-  choose **Code → Download ZIP**, extract it, and open a terminal in
-  `jmeter_benchmarks/jmeter-jdbc-test-framework` inside the extracted directory.
-  For reproduction, use the publisher's commit-specific archive rather than the
-  latest `main` ZIP: `https://github.com/e6data/e6-public-benchmarks/archive/<published-commit>.zip`.
-  Git is not needed to download/extract the archive; setup may still install Git
-  as a runner dependency.
+**Git clone (recommended):**
 
-**Run from CLI:**
+```bash
+git clone https://github.com/e6data/e6-public-benchmarks.git
+cd e6-public-benchmarks
+# To reproduce published results, use the supplied commit:
+# git checkout <published-commit>
+cd jmeter_benchmarks/jmeter-jdbc-test-framework
+```
+
+If Git is not installed, install it using your OS package manager or use
+**Code → Download ZIP** on the [repository page](https://github.com/e6data/e6-public-benchmarks).
+Extract the ZIP and open a terminal in its
+`jmeter_benchmarks/jmeter-jdbc-test-framework` directory.
+For reproduction, download the publisher's commit-specific archive:
+`https://github.com/e6data/e6-public-benchmarks/archive/<published-commit>.zip`.
+Git is not required to extract the ZIP; setup may install it as a dependency.
+
+### 2. Set up and create your connection
 
 ```bash
 ./setup_jmeter.sh
-# If needed, install your engine's optional driver; see engine setup below.
 ./create_connection.sh
-# Add your query CSV (and load-profile CSV, if applicable) before the next step.
+```
+
+In the connection wizard select **JDBC → e6data**, name the connection, and
+enter the supplied JDBC URL, username, and token/password at the password
+prompt. Note the saved `connection_properties/...` path. Keep this file local;
+never include credentials in shared configurations or result bundles.
+
+For another engine, see [engine setup](docs/jdbc-engines.md) for optional
+driver installation and authentication prerequisites.
+
+### 3. Create a small query CSV
+
+```bash
+mkdir -p data_files
+```
+
+Create `data_files/my_queries.csv` in a text editor:
+
+```csv
+query_alias,query_string
+smoke_test,"SELECT 1"
+```
+
+Quote SQL containing commas and escape embedded double quotes as `""`.
+The framework's `data_files/` directory is Git-ignored; supply your own files.
+
+### 4. Configure and run
+
+```bash
 ./create_test_config.sh
-# Name the saved configuration my_benchmark, or substitute its actual name:
+```
+
+Select your connection, **1) Sequential**, and `my_queries.csv`. Accept one
+measured iteration, leave warm-up disabled, skip optional metadata, and name
+the configuration `my_benchmark`.
+
+```bash
 GENERATE_DASHBOARD=true ./run_test.sh test_configs/my_benchmark.env
 ```
 
-The wizard offers **Sequential, Fixed QPS, and Arrival-rate profile** first;
-other plans are under Advanced. It uses bundled test properties, so you do not
-need to create another properties file. See the [first benchmark](#first-benchmark-a-small-sequential-run)
-for CSV format and guided choices, and [engine setup](docs/jdbc-engines.md) for
-driver installation and authentication. No UI is required. Results are saved in
-the printed `reports/` directory, including `JmeterResultFile.csv` and, when
-requested, `dashboard/index.html`.
+The wizard selects bundled test properties; no extra properties file is needed.
+Its main choices match the UI: **Sequential, Fixed QPS, and Arrival-rate profile**.
+Other plans are under Advanced. For a profile plan, choose a CSV using the
+[documented format](#load-profile-files-path-columns-and-duration); duration comes
+from that schedule, not a separate hold duration.
 
-**When sharing published results**, include the repository commit, authorized
-query CSVs, load profile, sanitized test configuration, engine/driver versions,
-dataset and cluster details, warm-up/cache policy, and result artifacts. Recipients
-create their own connection profiles and adjust local paths. Never share credentials,
-tokens, or an unreviewed ZIP of your working directory. Matching scripts alone does
-not guarantee matching performance; data, hardware, region, and settings matter too.
+### 5. Check results, then run your workload
 
-## First benchmark: a small sequential run
+Use the report directory printed under `reports/`. Confirm the smoke test
+succeeded in `JmeterResultFile.csv` and open `dashboard/index.html`.
+A successful `SELECT 1` validates connectivity, not benchmark performance.
 
-Use a Linux or macOS terminal with Git installed. Setup installs/checks runner
-dependencies; Java 17 and Python 3.11 are recommended. You need a reachable JDBC
-endpoint and credentials. For TPC-DS, TPC-H or ClickBench, provision the dataset
-and supply SQL appropriate to your engine; setup does not load benchmark data.
+Replace the smoke query with your workload and run sequentially first. Then
+use the wizard to create a Fixed QPS or Arrival-rate profile configuration,
+starting with a low load. Optional warm-up runs sequentially and is excluded
+from measured results. Keep the load-generator EC2 instance free from unrelated
+heavy workloads.
 
-1. Clone and set up the runner:
+No UI, S3 account, or monitoring service is required. See the
+[CLI reference](#cli-reference) for repeatable commands and overrides.
 
-   ```bash
-   git clone https://github.com/e6data/e6-public-benchmarks.git
-   cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
-   ./setup_jmeter.sh
-   ```
+### Troubleshooting
 
-2. Create a connection profile and note its saved path:
+| Symptom | Check |
+| --- | --- |
+| Setup/download fails | Check outbound internet/proxy access, package-manager permissions, and the failing setup command. Install missing dependencies before retrying. |
+| Connection timeout or unknown host | Check endpoint/port, DNS, VPC routing, security groups, firewall/VPN, and cluster availability from the runner EC2 instance. |
+| Authentication or permission error | Verify username and token/password, token expiry, and catalog/table permissions. Do not paste secrets into shared logs. |
+| Missing catalog/table or SQL error | Check the connection's default catalog/schema, fully qualified table names, dataset availability, and SQL dialect. |
+| Driver class not found | Rerun setup for the standard drivers or install the optional engine driver on this runner; see engine setup above. |
+| Run fails or results are missing | Read the runner's error and files in its printed report directory. A successful process start alone does not establish a successful benchmark. |
 
-   ```bash
-   ./create_connection.sh
-   ```
+### Sharing a reproducible benchmark
 
-   For additional engines, install the selected driver first, for example
-   `python3 utilities/install_jdbc_drivers.py athena`. See
-   [engine setup](docs/jdbc-engines.md) for authentication prerequisites.
-
-3. Create `data_files/my_queries.csv` in a text editor (create the directory
-   with `mkdir -p data_files` if needed). Start with this connection smoke test:
-
-   ```csv
-   query_alias,query_string
-   smoke_test,"SELECT 1"
-   ```
-
-   Replace it with your workload after the connection works. Quote SQL containing
-   commas and escape embedded double quotes as `""`. Query files are not bundled
-   in this framework's Git-ignored `data_files/` directory.
-
-4. Create one reusable configuration with the guided wizard:
-
-   ```bash
-   ./create_test_config.sh
-   ```
-
-   Select your connection, **1) Sequential**, and `my_queries.csv`. Accept one
-   measured iteration and leave warm-up disabled for this smoke test. Skip optional
-   metadata and name the configuration `my_benchmark`. The wizard saves
-   `test_configs/my_benchmark.env` and prints the run command. The main choices
-   match the UI: Sequential, Fixed QPS and Arrival-rate profile; other plans
-   are under Advanced. No additional test-properties file needs to be created.
-   Run the saved configuration (the dashboard override below requests HTML output):
-
-   ```bash
-   GENERATE_DASHBOARD=true \
-   ./run_test.sh test_configs/my_benchmark.env
-   ```
-
-   The wizard reads the same bundled plan defaults as the UI. Query selection
-   accepts a listed number, a nested/local file path, or an `s3://` URI. Query
-   and load-profile CSVs are validated before saving; profile schedules show
-   their calculated duration. S3 validation requires AWS CLI credentials and
-   downloads a temporary copy; execution downloads the input again.
-   Optional warm-up is sequential and excluded from measured results.
-   Timeout, result-row limits, ramps and other advanced defaults can be changed
-   in the saved `.env` or via environment overrides, without another properties file.
-
-5. Use the report directory printed by the runner under `reports/`. Inspect
-   `JmeterResultFile.csv` and open `dashboard/index.html` for the JMeter report.
-   A successful `SELECT 1` validates connectivity, not benchmark performance.
-
-For non-interactive setup, instead copy `test_configs/sample_benchmark.env` to
-`test_configs/my_benchmark.env` and edit the connection, query path and load
-settings; use the three CLI examples below. Copy/edit and the wizard are
-alternatives, not consecutive steps. The `.env` belongs to the runner; JMeter
-uses the selected `.jmx` plus connection and bundled test `.properties` files.
-
-No S3 account, monitoring service or UI is required for this first run. To test
-another engine, create its connection profile and equivalent query CSV, then
-reuse the same load settings. See [baseline comparisons](#baselines-and-cli-comparison).
+Share the repository commit, authorized query CSVs, load profile, sanitized test
+configuration, engine/driver versions, dataset/cluster details, warm-up/cache
+policy, and result artifacts. Recipients create their own connection profile
+and adjust local paths. Do not send credentials or an unreviewed ZIP of your
+working directory. Matching scripts alone does not guarantee matching performance:
+hardware, data, region, and settings also matter.
 
 ## Choose a load model
 
@@ -179,65 +175,10 @@ JDBC. `elapsed` also includes the remaining network/result fetch, JDBC decoding,
 and client processing. For engine-only analysis, correlate samples with engine
 execution, planning, queue, scan, spill, and cache metrics.
 
-## Steps to Run
+## CLI reference
 
-### Step 1: Install JMeter and dependencies
-
-```bash
-git clone https://github.com/e6data/e6-public-benchmarks.git
-cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
-
-# Installs Java 17, JMeter 5.6.3, plugins, JDBC drivers, and runner dependencies.
-./setup_jmeter.sh
-```
-
-Setup is safe to rerun and does not replace the system Python.
-
-If any dependency fails to install automatically, install it manually: Java 17+, jq 1.5+, git 2.x+.
-
-### Step 2: Create a connection properties file
-
-```bash
-./create_connection.sh
-```
-
-Interactive prompts collect the JDBC URL, credentials, and driver class. The
-generated connection profile remains local and is ignored by Git. Supply the
-driver class and connection properties documented by the target JDBC provider.
-The setup script installs the repository-supported dependencies and removes
-superseded downloaded driver versions from JMeter's classpath.
-
-This creates a file in `connection_properties/` — e.g., `connection_properties/my_connection.properties`.
-
-For third-party drivers, follow the provider's JDBC documentation and keep all
-passwords or access tokens only in the git-ignored connection profile. The
-runner does not place protected values in generated report metadata.
-
-### Step 3: Create your queries CSV file
-
-Create `data_files/` (it is intentionally ignored because workloads may be sensitive), then add a CSV with one query per row:
-
-```csv
-query_alias,query_string
-q1,"SELECT COUNT(*) FROM my_table"
-q2,"SELECT col1, col2 FROM my_table WHERE col1 > 100"
-```
-
-```bash
-mkdir -p data_files
-cp my_queries.csv data_files/
-```
-
-Provide a workload you are authorized to use as a local CSV or an `s3://` URI.
-S3 inputs are downloaded afresh for each run. The CLI validates the two-column
-query CSV and records its source URI and resolved SHA-256.
-
-For cross-engine comparisons, use stable logical aliases and equivalent data
-and execution policies. Dialect-specific files should contain the same logical
-aliases in the same order. Keep optimized or proprietary workloads outside
-version control.
-
-### Step 4: Run a test
+Complete the quick start above first. The following sections describe overrides
+and advanced options; they are not additional setup steps.
 
 Every bundled plan family has one canonical file under `test_properties/`:
 `run_once.properties`, `fixed_concurrency.properties`,
@@ -274,14 +215,11 @@ The equivalent raw JMeter shape is:
 JVM startup options such as `HEAP` and `JVM_ARGS` must remain environment
 variables because Java has already started before JMeter reads `-q` files.
 
-**Option A — One reusable config, choose the load model at runtime (recommended):**
+Reuse the configuration saved by the wizard. For non-interactive configuration,
+copy `test_configs/sample_benchmark.env` instead and edit `CONNECTION_FILE` and
+`QUERY_FILE`. These are alternatives, not consecutive setup steps.
 
-```bash
-cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
-# Edit CONNECTION_FILE and QUERY_FILE once in my_benchmark.env.
-```
-
-#### Three common CLI plans
+### Three common CLI plans
 
 The following commands reuse that file. Environment values override the config,
 so no JMX editing or separate config per load level is required.
@@ -316,7 +254,7 @@ The CSV determines the schedule duration; `HOLD_PERIOD` does not apply. See
 [load-profile formats and column meanings](#load-profile-files-path-columns-and-duration).
 QPS is an offered load, not a guarantee of completed throughput.
 
-#### Advanced CLI examples
+### Advanced CLI examples
 
 Use these when you specifically need worker-count control, finite parallel
 passes or a per-minute arrival rate. All existing plans remain available.
@@ -434,7 +372,7 @@ Warm-up inputs remain local or in configured object storage. Engine-specific
 cache or persisted-result behavior remains the responsibility of the selected
 connection and workload.
 
-**Option B — Export variables and run:**
+**Advanced: export variables instead of using a saved configuration:**
 
 ```bash
 export CONNECTION_FILE=connection_properties/my_connection.properties

@@ -14,47 +14,30 @@ The toolsets do not share a common runtime or configuration. Enter the selected 
 
 ## JMeter quick start
 
-The JMeter framework is the recommended entry point for repeatable query-engine load tests. After cloning the repository:
+The JMeter framework is the recommended starting point for query-engine load tests.
+Use the [customer quick start](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md#first-benchmark-a-small-sequential-run)
+for EC2 prerequisites, Git clone or Download ZIP, and a first connection test.
+
+After getting the code, run these commands from the framework directory:
 
 ```bash
-cd jmeter_benchmarks/jmeter-jdbc-test-framework
 ./setup_jmeter.sh
 ./create_connection.sh
-mkdir -p data_files
-cp /path/to/my_queries.csv data_files/my_queries.csv
-cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
+# Create data_files/my_queries.csv using the format in the quick start.
+./create_test_config.sh
+# Name the configuration my_benchmark in the wizard:
+GENERATE_DASHBOARD=true ./run_test.sh test_configs/my_benchmark.env
 ```
 
-`setup_jmeter.sh` installs JMeter, required plugins and JDBC drivers, plus the
-isolated Benchmark Studio Python environment. It uses SQLite by default. For a
-local PostgreSQL registry, use `./setup_jmeter.sh --with-postgres` instead.
-For a self-contained runner with PostgreSQL plus local Prometheus and Grafana,
-use `./setup_jmeter.sh --with-postgres --with-observability`. These services are
-optional; CLI execution remains available without them.
+The guided wizard offers **Sequential, Fixed QPS, and Arrival-rate profile**;
+specialized concurrency and other plans are under Advanced. Start with
+`SELECT 1`, then your real workload sequentially, before increasing load.
+It selects the bundled test properties for you. No UI, S3, or monitoring
+service is required.
 
-Edit only `CONNECTION_FILE` and `QUERY_FILE` in `my_benchmark.env`, then choose a load model with command-line overrides:
-
-```bash
-# Fixed concurrency
-CONCURRENT_QUERY_COUNT=4 HOLD_PERIOD=300 \
-  ./run_test.sh test_configs/my_benchmark.env
-
-# Constant arrival rate
-TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx \
-  QPS=5 HOLD_PERIOD=300 ./run_test.sh test_configs/my_benchmark.env
-
-# Variable arrival rate from CSV
-TEST_PLAN=Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx \
-  LOAD_PROFILE=test_properties/load_profile.csv \
-  ./run_test.sh test_configs/my_benchmark.env
-
-# Variable concurrency from CSV
-TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx \
-  LOAD_PROFILE=test_properties/utg_load_profile.csv \
-  ./run_test.sh test_configs/my_benchmark.env
-```
-
-See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) for run-once, QPM, HTTP, custom profiles, reports, S3/Athena analysis, and metric definitions.
+See the [CLI examples and reference](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md#cli-reference)
+for repeat runs and overrides. Results are saved under the report directory
+printed by the runner.
 
 To apply the same S3, observability, retention, and optional e6 Query History
 defaults to CLI, interactive, suite, and UI launches, copy
