@@ -472,6 +472,25 @@ The included web interface can configure and monitor the same CLI workflows.
 It invokes the existing runners and reads the same JMeter artifacts; the CLI
 remains fully supported for local and automated execution.
 
+After setup, start it in the background with one command (no `nohup` needed):
+
+```bash
+./start_ui.sh --background
+# Stop before restarting:
+./stop_ui.sh
+```
+
+The launcher loads `.benchmark-ui.env`, appends `logs/ui-console.log`, and checks
+local health before reporting success. It defaults to `127.0.0.1:8765`, suitable
+for an on-host reverse proxy or SSH tunnel. Use `--host 0.0.0.0 --port 8765` only
+when remote binding is intentional and authentication/network access is secured.
+An existing live PID is left untouched. This survives logout, but does not
+provide automatic reboot startup or crash recovery. `start_ui.sh` remains the
+foreground entry point for service managers when `--background` is omitted.
+For a systemd-managed instance, use `systemctl start/stop/restart e6-benchmark-ui`
+instead of launching or stopping a second instance manually; the existing service
+template requires foreground startup and remains unchanged.
+
 ### Optional e6 Query History capture
 
 An e6 run can export the matching workspace Query History after JMeter
