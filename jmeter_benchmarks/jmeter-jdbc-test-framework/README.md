@@ -42,25 +42,33 @@ and supply SQL appropriate to your engine; setup does not load benchmark data.
    commas and escape embedded double quotes as `""`. Query files are not bundled
    in this framework's Git-ignored `data_files/` directory.
 
-4. Create one reusable configuration:
+4. Create one reusable configuration with the guided wizard:
 
    ```bash
-   cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
+   ./create_test_config.sh
    ```
 
-   Edit `CONNECTION_FILE` to the path saved in step 2 and set
-   `QUERY_FILE=data_files/my_queries.csv`. Then run:
+   Select your connection, **1) Sequential**, and `my_queries.csv`. Skip optional
+   metadata and name the configuration `my_benchmark`. The wizard saves
+   `test_configs/my_benchmark.env` and prints the run command. The main choices
+   match the UI: Sequential, Fixed QPS and Arrival-rate profile; other plans
+   are under Advanced. No additional test-properties file needs to be created.
+   Run the saved configuration (the dashboard override below requests HTML output):
 
    ```bash
-   TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
-   CONCURRENT_QUERY_COUNT=1 RECYCLE_ON_EOF=false \
-   MEASURED_ITERATIONS=1 GENERATE_DASHBOARD=true COPY_TO_S3=false \
+   GENERATE_DASHBOARD=true \
    ./run_test.sh test_configs/my_benchmark.env
    ```
 
 5. Use the report directory printed by the runner under `reports/`. Inspect
    `JmeterResultFile.csv` and open `dashboard/index.html` for the JMeter report.
    A successful `SELECT 1` validates connectivity, not benchmark performance.
+
+For non-interactive setup, instead copy `test_configs/sample_benchmark.env` to
+`test_configs/my_benchmark.env` and edit the connection, query path and load
+settings; use the three CLI examples below. Copy/edit and the wizard are
+alternatives, not consecutive steps. The `.env` belongs to the runner; JMeter
+uses the selected `.jmx` plus connection and bundled test `.properties` files.
 
 No S3 account, monitoring service or UI is required for this first run. To test
 another engine, create its connection profile and equivalent query CSV, then

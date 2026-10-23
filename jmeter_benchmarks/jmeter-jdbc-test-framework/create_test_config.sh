@@ -92,27 +92,36 @@ echo -e "${BOLD}Step 2: Select test plan${NC}"
 echo ""
 
 # Show common test plans based on connection type, plus "Other" for all remaining
+SEQUENTIAL=false
 if [ "$CONN_TYPE" = "jdbc" ]; then
     echo "  JDBC test plans:"
     echo ""
-    echo "  1) Static Concurrency        — fixed number of concurrent queries"
-    echo "  2) Run Once                   — each query runs exactly once"
-    echo "  3) Constant QPS              — maintain steady queries per second"
-    echo "  4) Constant QPM              — maintain steady queries per minute"
-    echo "  5) QPS with Load Profile     — QPS varies over time (CSV schedule)"
-    echo "  6) Variable Concurrency      — concurrency varies over time (CSV schedule)"
-    echo "  7) Other                     — show all available test plans"
+    echo "  1) Sequential                — every query once, one at a time"
+    echo "  2) Fixed QPS                 — steady query submissions per second"
+    echo "  3) Arrival-rate profile      — QPS varies over time (CSV schedule)"
+    echo "  4) Advanced                  — concurrency, QPM and other plans"
     echo ""
-    read -p "Select test type [1-7]: " plan_choice
+    read -p "Select test type [1-4]: " plan_choice
 
     case "$plan_choice" in
-        1) TEST_PLAN="Test-Plans/Test-Plan-Maintain-static-concurrency.jmx" ;;
-        2) TEST_PLAN="Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx" ;;
-        3) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx" ;;
-        4) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx" ;;
-        5) TEST_PLAN="Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx" ;;
-        6) TEST_PLAN="Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx" ;;
-        7) ;; # handled below
+        1) TEST_PLAN="Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx"; SEQUENTIAL=true ;;
+        2) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx" ;;
+        3) TEST_PLAN="Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx" ;;
+        4)
+            echo "  1) Fixed concurrency"
+            echo "  2) Run once concurrently"
+            echo "  3) Variable concurrency profile"
+            echo "  4) Fixed QPM"
+            echo "  5) All available plans"
+            read -p "Select advanced plan [1-5]: " advanced_choice
+            case "$advanced_choice" in
+                1) TEST_PLAN="Test-Plans/Test-Plan-Maintain-static-concurrency.jmx" ;;
+                2) TEST_PLAN="Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx" ;;
+                3) TEST_PLAN="Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx" ;;
+                4) TEST_PLAN="Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx" ;;
+                5) plan_choice=7 ;;
+                *) echo "Invalid choice"; exit 1 ;;
+            esac ;;
         *) echo -e "${RED}Invalid choice${NC}"; exit 1 ;;
     esac
 else
@@ -192,7 +201,7 @@ fi
 for i in "${!QUERY_FILES[@]}"; do
     # Show line count as hint
     lines=$(wc -l < "${QUERY_FILES[$i]}" | tr -d ' ')
-    echo "  $((i+1))) $(basename "${QUERY_FILES[$i]}") (${lines} queries)"
+    echo "  $((i+1))) $(basename "${QUERY_FILES[$i]}") (${lines} file lines, including header)"
 done
 echo ""
 read -p "Select query file [1-${#QUERY_FILES[@]}]: " query_idx
@@ -225,8 +234,13 @@ case "$PLAN_TYPE" in
         RECYCLE_ON_EOF=${RECYCLE_ON_EOF:-true}
         ;;
     run_once)
+        if [ "${SEQUENTIAL:-false}" = true ]; then
+            CONCURRENT_QUERY_COUNT=1
+            echo "Sequential: one query at a time, one measured pass."
+        else
         read -p "Concurrent queries [1]: " CONCURRENT_QUERY_COUNT
         CONCURRENT_QUERY_COUNT=${CONCURRENT_QUERY_COUNT:-1}
+        fi
         HOLD_PERIOD=0
         RANDOM_ORDER=false
         RECYCLE_ON_EOF=false
@@ -244,33 +258,35 @@ case "$PLAN_TYPE" in
     qpm)
         read -p "Queries per minute [10]: " QPM
         QPM=${QPM:-10}
-        read -p "Hold period in seconds [300]: " HOLD_PERIOD
-        HOLD_PERIOD=${HOLD_PERIOD:-300}
+        read -p "Hold period in minutes [5]: " HOLD_PERIOD
+        HOLD_PERIOD=${HOLD_PERIOD:-5}
         read -p "Random query order (true/false) [false]: " RANDOM_ORDER
         RANDOM_ORDER=${RANDOM_ORDER:-false}
         read -p "Recycle queries on EOF (true/false) [true]: " RECYCLE_ON_EOF
         RECYCLE_ON_EOF=${RECYCLE_ON_EOF:-true}
         ;;
     qps_profile|qpm_profile)
+        echo "CSV columns: StartValue,EndValue,Duration (QPS, QPS, seconds)."
+        echo "Use a file on this runner; relative paths start at the framework directory."
         read -p "Load profile CSV [test_properties/load_profile.csv]: " LOAD_PROFILE
         LOAD_PROFILE=${LOAD_PROFILE:-test_properties/load_profile.csv}
         if [ ! -f "$LOAD_PROFILE" ]; then
             echo -e "${YELLOW}Warning: Load profile not found: ${LOAD_PROFILE}${NC}"
         fi
-        read -p "Hold period in seconds [300]: " HOLD_PERIOD
-        HOLD_PERIOD=${HOLD_PERIOD:-300}
+        echo "Schedule duration comes from the CSV; Hold period does not apply."
         read -p "Random query order (true/false) [false]: " RANDOM_ORDER
         RANDOM_ORDER=${RANDOM_ORDER:-false}
         RECYCLE_ON_EOF=true
         ;;
     var_concurrency)
-        read -p "Load profile CSV [test_properties/load_profile.csv]: " LOAD_PROFILE
-        LOAD_PROFILE=${LOAD_PROFILE:-test_properties/load_profile.csv}
+        echo "CSV columns: Threads,StartTime,StartupTime,HoldTime,ShutdownTime."
+        echo "Times are seconds; overlapping rows add workers. Use a runner-local file."
+        read -p "Load profile CSV [test_properties/utg_load_profile.csv]: " LOAD_PROFILE
+        LOAD_PROFILE=${LOAD_PROFILE:-test_properties/utg_load_profile.csv}
         if [ ! -f "$LOAD_PROFILE" ]; then
             echo -e "${YELLOW}Warning: Load profile not found: ${LOAD_PROFILE}${NC}"
         fi
-        read -p "Hold period in seconds [300]: " HOLD_PERIOD
-        HOLD_PERIOD=${HOLD_PERIOD:-300}
+        echo "Schedule duration comes from the CSV; Hold period does not apply."
         read -p "Random query order (true/false) [false]: " RANDOM_ORDER
         RANDOM_ORDER=${RANDOM_ORDER:-false}
         RECYCLE_ON_EOF=true
@@ -365,6 +381,7 @@ fi
             ;;
         run_once)
             echo "CONCURRENT_QUERY_COUNT=${CONCURRENT_QUERY_COUNT}"
+            echo "MEASURED_ITERATIONS=1"
             echo "RANDOM_ORDER=${RANDOM_ORDER}"
             echo "RECYCLE_ON_EOF=false"
             ;;
@@ -382,7 +399,6 @@ fi
             ;;
         qps_profile|qpm_profile|var_concurrency)
             echo "LOAD_PROFILE=${LOAD_PROFILE}"
-            echo "HOLD_PERIOD=${HOLD_PERIOD}"
             echo "RANDOM_ORDER=${RANDOM_ORDER}"
             echo "RECYCLE_ON_EOF=${RECYCLE_ON_EOF}"
             ;;
@@ -404,29 +420,13 @@ echo -e "${BOLD}To run this test:${NC}"
 echo "  ./run_test.sh ${CONFIG_FILE}"
 echo ""
 echo -e "${BOLD}To re-run with different parameters:${NC}"
-echo "  CONCURRENT_QUERY_COUNT=8 ./run_test.sh ${CONFIG_FILE}"
-echo ""
-echo -e "${BOLD}Or use env vars directly (copy-paste):${NC}"
-echo "  export CONNECTION_FILE=${CONNECTION_FILE}"
-echo "  export TEST_PLAN=${TEST_PLAN}"
-echo "  export QUERY_FILE=${QUERY_FILE}"
 case "$PLAN_TYPE" in
-    concurrency)
-        echo "  export CONCURRENT_QUERY_COUNT=${CONCURRENT_QUERY_COUNT}"
-        ;;
-    run_once)
-        echo "  export CONCURRENT_QUERY_COUNT=${CONCURRENT_QUERY_COUNT}"
-        ;;
-    qps)
-        echo "  export QPS=${QPS}"
-        ;;
-    qpm)
-        echo "  export QPM=${QPM}"
-        ;;
-    qps_profile|qpm_profile|var_concurrency)
-        echo "  export LOAD_PROFILE=${LOAD_PROFILE}"
-        ;;
+    qps) echo "  QPS=2 ./run_test.sh ${CONFIG_FILE}" ;;
+    qpm) echo "  QPM=60 ./run_test.sh ${CONFIG_FILE}" ;;
+    qps_profile|qpm_profile|var_concurrency) echo "  LOAD_PROFILE=path/to/schedule.csv ./run_test.sh ${CONFIG_FILE}" ;;
+    run_once) echo "  MEASURED_ITERATIONS=3 ./run_test.sh ${CONFIG_FILE}" ;;
+    *) echo "  CONCURRENT_QUERY_COUNT=8 ./run_test.sh ${CONFIG_FILE}" ;;
 esac
-[ "${HOLD_PERIOD:-0}" != "0" ] && echo "  export HOLD_PERIOD=${HOLD_PERIOD}"
-echo "  ./run_test.sh"
 echo ""
+echo -e "${BOLD}The saved .env is read by run_test.sh, not directly by JMeter.${NC}"
+echo "The runner selects the bundled test_properties file automatically."
