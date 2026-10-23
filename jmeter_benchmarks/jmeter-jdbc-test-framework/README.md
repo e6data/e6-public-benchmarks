@@ -5,6 +5,55 @@ supports JDBC connections.
 
 The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
 
+## Run or reproduce this benchmark
+
+**Get the code — choose one:**
+
+- **Git clone (recommended):**
+
+  ```bash
+  git clone https://github.com/e6data/e6-public-benchmarks.git
+  cd e6-public-benchmarks
+  # For published results, check out the exact commit supplied with them:
+  # git checkout <published-commit>
+  cd jmeter_benchmarks/jmeter-jdbc-test-framework
+  ```
+
+- **Download ZIP:** on the [repository page](https://github.com/e6data/e6-public-benchmarks),
+  choose **Code → Download ZIP**, extract it, and open a terminal in
+  `jmeter_benchmarks/jmeter-jdbc-test-framework` inside the extracted directory.
+  For reproduction, use the publisher's commit-specific archive rather than the
+  latest `main` ZIP: `https://github.com/e6data/e6-public-benchmarks/archive/<published-commit>.zip`.
+  Git is not needed to download/extract the archive; setup may still install Git
+  as a runner dependency.
+
+**Run from CLI:**
+
+```bash
+./setup_jmeter.sh
+# If needed, install your engine's optional driver; see engine setup below.
+./create_connection.sh
+# Add your query CSV (and load-profile CSV, if applicable) before the next step.
+./create_test_config.sh
+# Name the saved configuration my_benchmark, or substitute its actual name:
+GENERATE_DASHBOARD=true ./run_test.sh test_configs/my_benchmark.env
+```
+
+The wizard offers **Sequential, Fixed QPS, and Arrival-rate profile** first;
+other plans are under Advanced. It uses bundled test properties, so you do not
+need to create another properties file. See the [first benchmark](#first-benchmark-a-small-sequential-run)
+for CSV format and guided choices, and [engine setup](docs/jdbc-engines.md) for
+driver installation and authentication. No UI is required. Results are saved in
+the printed `reports/` directory, including `JmeterResultFile.csv` and, when
+requested, `dashboard/index.html`.
+
+**When sharing published results**, include the repository commit, authorized
+query CSVs, load profile, sanitized test configuration, engine/driver versions,
+dataset and cluster details, warm-up/cache policy, and result artifacts. Recipients
+create their own connection profiles and adjust local paths. Never share credentials,
+tokens, or an unreviewed ZIP of your working directory. Matching scripts alone does
+not guarantee matching performance; data, hardware, region, and settings matter too.
+
 ## First benchmark: a small sequential run
 
 Use a Linux or macOS terminal with Git installed. Setup installs/checks runner
