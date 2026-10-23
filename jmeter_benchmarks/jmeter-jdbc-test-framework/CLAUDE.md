@@ -329,7 +329,7 @@ See `utilities/README.md` for more comparison examples and detailed documentatio
 - `run_test.sh`: Non-interactive runner — reads from config file (`test_configs/*.env`) or env vars
 - `utilities/test_jdbc_connection.sh`: Test JDBC connectivity before running full test
 - `utilities/generate_concurrency_test_configs.sh`: Auto-generate test property files for different concurrency levels
-- `utilities/cleanup_logs.sh`: Clean up old test logs from `/tmp/jmeter_test_logs/`
+- `utilities/cleanup_reports.py`: Preview report retention candidates; use `--apply` to quarantine eligible reports while protecting registered baselines and recent runs
 
 **Query Management:**
 - `utilities/convert_queries_for_json_api.py`: Convert queries for JSON API format
@@ -339,7 +339,7 @@ See `utilities/README.md` for more comparison examples and detailed documentatio
 - `utilities/test_queries_http.py`: Test queries against HTTP/REST API endpoints directly (bypasses JMeter)
 
 **Load Profile Management:**
-- `utilities/update_load_profile.sh`: Update load profile CSV for variable load test plans
+- `utilities/apply_load_profile.py`: Generate a per-run JMX from a load profile CSV (automatically called by `run_test.sh`)
 
 **Analysis & Comparison:**
 - `utilities/analyze_single_run_from_s3.py`: Analyze individual test runs from S3

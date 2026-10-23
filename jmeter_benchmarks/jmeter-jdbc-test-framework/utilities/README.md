@@ -6,7 +6,7 @@ Comprehensive guide to all utility scripts for analyzing, comparing, and managin
 
 The inventory below is grouped by purpose. Counts are intentionally omitted because this directory evolves frequently; use `find utilities -type f` for the current file list.
 
-### Analysis & Comparison (9)
+### Analysis & Comparison
 
 | Script | Purpose |
 |--------|---------|
@@ -23,18 +23,16 @@ The inventory below is grouped by purpose. Counts are intentionally omitted beca
 | `cleanup_reports.py` | Dry-run or quarantine old reports while protecting baselines, active runs, recent runs, and unpublished evidence |
 | `generator_monitor.py` | Capture and summarize portable load-generator health telemetry |
 | `inject_jdbc_observer.py` | Record materialized JDBC row counts without executing another query |
-| `compare_engines_concurrency.sh` | Compare concurrency scaling between two engines (text/markdown/json output) |
 | `post_test_analysis.sh` | End-to-end post-test workflow: sync to Athena, compare baseline, generate reports |
 
-### Runner & Config (3)
+### Runner & Config
 
 | Script | Purpose |
 |--------|---------|
 | `run_all_concurrency.sh` | Run all concurrency levels (1, 2, 4, 8, 12, 16) for a given engine/cluster/benchmark |
 | `generate_concurrency_test_configs.sh` | Generate metadata + test property files for concurrency testing |
-| `update_load_profile.sh` | Update JMX test plan with load profile from CSV file |
 
-### Query Conversion (2)
+### Query Conversion
 
 | Script | Purpose |
 |--------|---------|
@@ -50,7 +48,7 @@ The inventory below is grouped by purpose. Counts are intentionally omitted beca
 | `verify_load_profile.py` | Confirm arrivals matched the profile, per second |
 | `analyze_queue_buildup.py` | Queue depth / drain reconstruction for arrivals runs |
 
-Called automatically by `run_jmeter_tests_interactive.sh` and `run_test.sh` whenever the
+`apply_load_profile.py` is called automatically by `run_test.sh` (also used by the interactive wizard) whenever the
 selected plan contains a `FreeFormArrivalsThreadGroup` or an `UltimateThreadGroup`. Point
 `LOAD_PROFILE` at any CSV — no per-profile test plan is needed.
 
@@ -68,17 +66,16 @@ ramp linearly over `StartupTime` / `ShutdownTime`. Set both to `0` for a flat st
 LOAD_PROFILE=test_properties/my_profile.csv
 RECYCLE_ON_EOF=true      # required for both: without it threads hit EOF and vanish
 MAX_CONCURRANCY=200      # arrivals plan only; must exceed peak_qps x avg_latency_sec
-HOLD_PERIOD=60           # arrivals plan only; >= the profile's total duration
 ```
 
-The concurrency plan ignores `MAX_CONCURRANCY` and `HOLD_PERIOD` — its CSV sets both the
-concurrency and the run length.
+Both profile plans derive their schedule duration from the CSV; `HOLD_PERIOD` does not
+control their duration. In-flight queries may finish after the schedule ends.
+The concurrency plan also ignores `MAX_CONCURRANCY` — its CSV sets concurrency.
 
 **You do not need a properties file per profile.** Environment values override the file, so one
 config serves every profile:
 
 ```bash
-LOAD_PROFILE=test_properties/spike.csv ./run_jmeter_tests_interactive.sh
 LOAD_PROFILE=test_properties/spike.csv ./run_test.sh test_configs/my.env
 ```
 
@@ -139,22 +136,31 @@ Check with `find apache-jmeter-5.6.3 -name "e6-jdbc-driver-*.jar"` — more than
 
 The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. Those are informational because removing individual classes from a signed/vendor artifact is unsafe; prefer a vendor-approved thin or correctly shaded driver when one becomes available.
 
-### Housekeeping (3)
+### Housekeeping
 
 | Script | Purpose |
 |--------|---------|
-| `cleanup_logs.sh` | Clean up JMeter logs and temp files with configurable retention |
 | `cleanup_reports.py` | Baseline-aware report retention; dry-run by default and quarantine on `--apply` |
 | `manage_invalid_runs.sh` | Move invalid runs to INVALID/ subfolder to exclude from analysis |
 | `mark_best_run.sh` | Mark a run as "best" for comparison/baseline purposes |
 
-### Shared Library (1)
+For report cleanup, run `python3 utilities/cleanup_reports.py` from the framework
+directory to preview candidates. Add `--apply` only after reviewing the output;
+eligible reports are moved to `reports/.trash`, not permanently deleted. Use the
+same registry configuration as the UI so registered baselines and active runs are
+protected. This does not rotate standalone console logs or truncate running logs.
+
+Use `compare_multi_concurrency_from_s3.py` for cross-engine concurrency analysis,
+and `test_jdbc_connection.sh` for JDBC connection checks. Profile injection is
+automatic; do not edit the source JMX to install a load schedule.
+
+### Shared Library
 
 | Script | Purpose |
 |--------|---------|
 | `jmeter_s3_utils.py` | Reusable functions for S3 path parsing, file downloading, statistics loading |
 
-### Athena — Setup & DDL (7)
+### Athena — Setup & DDL
 
 | Script | Purpose |
 |--------|---------|
@@ -166,7 +172,7 @@ The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. T
 | `athena/setup/setup_tables.sh` | Setup metadata + query_results tables (hybrid approach) |
 | `athena/setup/repair_partitions.sh` | Run MSCK REPAIR TABLE to discover S3 partitions |
 
-### Athena — Data Upload & Sync (5)
+### Athena — Data Upload & Sync
 
 | Script | Purpose |
 |--------|---------|
@@ -176,7 +182,7 @@ The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. T
 | `athena/generate_runs_index.py` | Generate consolidated runs index from S3 test results |
 | `athena/generate_metadata_index.py` | Generate metadata JSONL index from test_result.json files |
 
-### Athena — Querying & Reports (5)
+### Athena — Querying & Reports
 
 | Script | Purpose |
 |--------|---------|
@@ -186,14 +192,14 @@ The checker also reports embedded SLF4J and Netty classes in fat JDBC drivers. T
 | `athena/run_athena_reports.sh` | Execute predefined Athena queries and save as CSV |
 | `athena/generate_report_queries.sh` | Generate parameterized SQL files from WORKING_QUERIES.sql |
 
-### Athena — Baseline Management (2)
+### Athena — Baseline Management
 
 | Script | Purpose |
 |--------|---------|
 | `athena/manage_baseline.py` | Mark/unmark baseline runs and compare against baselines |
 | `athena/verify_baseline_sync.py` | Verify S3 metadata and Athena baseline info are in sync |
 
-### Athena — Maintenance (2)
+### Athena — Maintenance
 
 | Script | Purpose |
 |--------|---------|
