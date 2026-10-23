@@ -10,7 +10,7 @@ driver into JMeter's `lib/ext/` directory.
 
 | File | SHA-256 |
 |---|---|
-| `e6-jdbc-driver-2.0.27-with-dependencies.jar` | `9dc81088a0604616ec32676ee5146ee717dc511d48cd0583da68e41097a6a10b` |
+| `e6-jdbc-driver-2.1.51-with-dependencies.jar` | `dd3856807af96a6907d67b795742e013a5dd171428d76026e4f2fb07ac5906f3` |
 
 The checksum verifies repository/download integrity; it does not establish provenance. Maintainers should verify the binary against the approved internal or vendor release source before publishing a release. When upgrading it, update this checksum and record the source release in the pull request.
 
@@ -31,8 +31,12 @@ the driver class documented for that release. Driver packaging, class names,
 Java requirements, and licensing can change; the provider documentation is
 the source of truth.
 
-The e6data 2.0.27 artifact is repository-managed rather than published through
-Maven Central, so it is updated only from an approved e6data driver release.
+The bundled e6data 2.1.51 dependency-inclusive artifact comes from
+[Maven Central](https://repo.maven.apache.org/maven2/com/e6data/e6-jdbc-driver/2.1.51/).
+Its SHA-1 matches the published checksum; the SHA-256 above pins the bundled bytes.
+The release POM declares Apache License 2.0. After pulling an upgrade, rerun
+`./setup_jmeter.sh` while benchmarks are stopped to replace older e6 drivers in
+JMeter's classpath. Pulling the repository alone does not update installed copies.
 
 ## Add or update a driver
 
