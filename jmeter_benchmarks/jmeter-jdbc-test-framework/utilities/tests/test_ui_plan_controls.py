@@ -51,6 +51,11 @@ syncPlanVisibility(true);assert(toggle.checked);assert(!group.hidden);
 toggle.checked=false;syncPlanVisibility();assert.equal(select.value,'jdbc_sequential');assert.equal(defaults,1);
 const page=fs.readFileSync(process.argv[1].replace('app.js','index.html'),'utf8');
 assert(page.includes('Reuse or save settings'));assert(page.includes('CLI configuration'));
+const engineCardSource=source.slice(source.lastIndexOf('function engineCard('),source.indexOf('function metadataFromCard'));
+assert(engineCardSource.includes('connection-dataset-hint'));
+assert(engineCardSource.includes('catalog/schema defaults'));
+assert(engineCardSource.includes('fully qualified table names (FQN)'));
+assert(engineCardSource.includes('warm-up queries'));
 assert(!/<details[^>]*class="card (?:advanced-card|preview-card)"[^>]*\sopen/.test(page));
 '''
         result = subprocess.run(['node', '-e', script, str(app)], capture_output=True, text=True)

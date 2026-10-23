@@ -74,6 +74,20 @@ smoke_test,"SELECT 1"
 Quote SQL containing commas and escape embedded double quotes as `""`.
 The framework's `data_files/` directory is Git-ignored; supply your own files.
 
+**Match the connection to the dataset.** Unqualified table names (for example,
+`FROM hits`) use the connection's default catalog/schema. Select a profile
+configured for that workload, or use fully qualified names (FQN), such as
+`catalog.schema.table` where supported. FQN queries can reuse a connection
+across datasets if it has access; SQL dialects and naming conventions still
+vary by engine. Apply this to both measured and warm-up queries, and choose
+the appropriate profile/query file separately for each comparison engine.
+
+In the UI, a new profile's JDBC URL is visible in the `CONNECTION_STRING`
+input. Selecting an existing profile shows its filename, not its saved URL;
+the CLI configuration preview also shows the profile path. Verify that
+profile's JDBC URL on the runner before launching. Do not share URLs containing
+credentials or tokens.
+
 ### 4. Configure and run
 
 ```bash
