@@ -26,10 +26,9 @@ validation against your service before using them for published comparisons.
 |---|---|
 | e6data | `io.e6.jdbc.driver.E6Driver` |
 
-For another engine, obtain its current JDBC driver from the provider and use
-the driver class documented for that release. Driver packaging, class names,
-Java requirements, and licensing can change; the provider documentation is
-the source of truth.
+For another named engine, use the optional installer below and its pinned driver
+class. For custom engines, verify packaging, class name, Java requirements and
+licensing against the provider's documentation before installing a JAR.
 
 The bundled e6data 2.1.51 dependency-inclusive artifact comes from
 [Maven Central](https://repo.maven.apache.org/maven2/com/e6data/e6-jdbc-driver/2.1.51/).
@@ -40,7 +39,8 @@ JMeter's classpath. Pulling the repository alone does not update installed copie
 
 ## Add or update a driver
 
-For a named preset, use `python3 utilities/install_jdbc_drivers.py ENGINE`
+For an additional named preset (not the bundled e6data driver), use
+`python3 utilities/install_jdbc_drivers.py ENGINE`
 from the framework directory. This installs its pinned driver and dependencies
 into an engine-specific managed bundle and verifies Java class loading. See
 [engine setup](../docs/jdbc-engines.md#optional-driver-installer).
@@ -50,6 +50,7 @@ For custom drivers not covered by the installer:
 1. Download the JAR from the vendor.
 2. Place it in this directory.
 3. Run `./setup_jmeter.sh`.
-4. Run `utilities/test_jdbc_connection.sh` before starting a load test.
+4. Run `./utilities/test_jdbc_connection.sh connection_properties/my_connection.properties`
+   using your actual profile, then a small sequential workload before a load test.
 
 Do not commit credentials or additional driver binaries without an explicit licensing and provenance review. If multiple versions of the same driver are installed, use `utilities/fix_jmeter_jar_conflicts.sh --dry-run` to identify classpath conflicts before making changes.

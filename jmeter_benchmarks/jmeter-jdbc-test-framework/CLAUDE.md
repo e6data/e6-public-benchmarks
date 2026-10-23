@@ -1,741 +1,111 @@
-# CLAUDE.md
+# Maintainer guidance
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file describes the framework's current entry points and invariants. Use the
+[README](README.md) as the single source for customer setup, examples, load-profile
+formats, and troubleshooting; do not duplicate those walkthroughs here.
 
-## Overview
+## Entry points
 
-This is a JMeter-based JDBC performance testing framework for benchmarking database query execution across different database engines. The framework uses a property-file-driven architecture to enable reusable, automation-friendly load testing.
+- `setup_jmeter.sh`: installs/checks JMeter, plugins, standard JDBC drivers and,
+  by default, the optional UI runtime. `--without-ui` skips the UI runtime.
+- `create_connection.sh`: writes a local connection profile.
+- `create_test_config.sh`: saves a reusable `.env`. Primary JDBC choices are
+  Sequential, Fixed QPS, and Arrival-rate profile; other plans are Advanced.
+- `run_test.sh`: executes saved configuration or environment values.
+- `run_jmeter_tests_interactive.sh`: compatibility wrapper around
+  `create_test_config.sh --run`; saves configuration and asks before launching.
+  Do not add a second runner or a separate menu here.
+- `run_benchmark_suite.sh` / `utilities/run_benchmark_suite.py`: ordered suites
+  using the same runner. Use `--dry-run` for input validation without execution.
+- `benchmark.sh` / `utilities/benchmark_cli.py`: current registry-based baseline
+  promotion, listing, deactivation and comparison. Baselines are optional.
+- `start_ui.sh`: foreground by default for systemd; `--background` provides
+  detached manual startup, log append and a health check. `stop_ui.sh` stops a
+  manually started UI. Use systemctl for systemd-managed installations.
 
-## Core Architecture
+## Configuration and input contracts
 
-### Three-File Configuration System
+Connection profiles are local `connection_properties/*.properties`; never commit
+credentials. Workload inputs normally live under ignored `data_files/`. Use
+recognized alias/SQL headers, preferably `query_alias,query_string`. JDBC CSVs
+support quoted multiline SQL; HTTP conversion helpers are not required for JDBC.
 
-The framework separates concerns into three distinct configuration layers:
+Saved `.env` files belong to the runner, not JMeter. The runner selects canonical
+test properties from `test_properties/` according to the plan. Explicit overrides
+can select another local or S3 properties file. Check `run_test.sh` for precedence;
+keep wizard and UI defaults aligned with those bundled properties.
 
-1. **Connection Properties** (`connection_properties/*.properties`)
-   - JDBC connection settings (hostname, port, driver class, connection string)
-   - Database credentials and catalog configuration
-   - Driver-specific parameters for E6Data, Trino, etc.
+The current fixed-QPS choice is
+`Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx`. Other existing JMX files
+remain available for advanced/manual use.
 
-2. **Test Properties** (`test_properties/*.properties`)
-   - Load characteristics (concurrency levels, QPS, QPM)
-   - Test duration (ramp-up time, hold period)
-   - Query behavior (random order, recycling)
-   - Report output settings (S3 upload, dashboard generation)
-   - References query CSV file path
+- Run Once: query passes control duration; `MEASURED_ITERATIONS` repeats the input
+  with unchanged aliases. Sequential uses one worker.
+- Fixed QPS/concurrency: hold duration is seconds. Fixed QPM's legacy plan uses
+  minutes. Do not describe every plan as having a fixed hold period.
+- Profile plans: CSV defines duration; `HOLD_PERIOD` does not control it.
+  `utilities/load_profile.py` is the shared parser, and
+  `utilities/apply_load_profile.py` creates a per-run JMX before JMeter starts.
+  Do not mutate source plans or re-enable old schedule preprocessors.
+- Use recycling for sustained load. At EOF with recycling disabled, workers can
+  stop; do not promise that every test always runs for the full hold interval.
+- Arrival shortfall is not proof of an engine bottleneck. Check the concurrency
+  cap, load-generator health, startup, errors and actual offered load.
+- Random query order does not disable result caching. Record cache policy
+  separately when comparing engines.
 
-3. **Query Data Files** (`data_files/*.csv`)
-   - CSV files containing SQL queries to execute
-   - Each row represents one query to be executed during the test
-   - Can contain single-line or multi-line queries
+Warm-up runs sequentially in separate JMeter processes and is excluded from
+measured results. Warm-up explicitly disables Query History capture and dashboard
+generation. Optional measured e6 Query History capture waits for ingestion before
+S3 finalization; it can delay the next sequential comparison leg. Parallel legs
+share load-generator resources.
 
-### JMeter Test Plans (`Test-Plans/*.jmx`)
+## Metrics and artifacts
 
-Pre-configured JMeter test plans support different load patterns:
+UI and `run_summary.json` use successful-query JMeter `Latency` when available,
+with an identified elapsed fallback for older files. This is client-observed
+JDBC latency, not pure server execution time. Duration, throughput and in-flight
+reconstruction use elapsed completion timestamps. Standard JMeter dashboard
+statistics use elapsed/sample time; do not label them as the UI's latency metrics.
 
-**JDBC Test Plans (most common):**
-- **`Test-Plan-Maintain-static-concurrency.jmx`**: Maintains fixed concurrent query count (most common for concurrency testing)
-- **`Test-Plan-Run-Once-static-concurrency.jmx`**: Run all queries once at fixed concurrency then complete
-- **`Test-Plan-Constant-QPS-On-Arrivals.jmx`**: Fires queries at constant queries-per-second rate
-- **`Test-Plan-Constant-QPM-On-Arrivals.jmx`**: Fires queries at constant queries-per-minute rate
-- **`Test-Plan-Fire-QPS-with-load-profile.jmx`**: Variable QPS using load profile CSV
-- **`Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx`**: Variable concurrency using load profile
+`AggregateReport.csv` and `SummaryReport.csv` are listener-named sample exports
+in the current plans, not pre-aggregated tables. With dashboard generation enabled,
+JMeter produces `dashboard/statistics.json`, copied to the report root.
+The runner also generates `run_summary.json` and `run_report.md`.
 
-**HTTP Endpoint Test Plans:**
-- **`Test-Plan-Run-Once-http-endpoint.jmx`**: Run all queries once against HTTP/REST API endpoint
-- **`Test-Plan-Maintain-static-concurrency-http-endpoint.jmx`**: Maintain fixed concurrency against HTTP endpoint
-- **`Test-Plan-Maintain-static-concurrency-http-endpoint-v2.jmx`**: Updated version with enhanced HTTP endpoint support
-- **`Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx`**: Variable QPS against HTTP endpoint
-- Use `utilities/test_queries_http.py` to test HTTP endpoints directly
-- Use `utilities/convert_queries_for_jmeter_http.py` to format queries for HTTP test plans
+Measured runs snapshot query/warm-up/profile inputs under `inputs/`. These can
+contain sensitive SQL; review before sharing. Connection and test-property files
+are excluded because they can contain credentials. The evidence manifest and
+verified S3 upload metadata are separate artifacts.
 
-### Metadata Files (`metadata_files/*.txt`)
+Current S3 partitions are:
+`engine/benchmark/data_size/cluster_size/run_type/run_date/run_id` (each component
+is a `key=value` directory). Older S3/Athena utilities use legacy layouts and
+schemas; see [utilities](utilities/README.md). Do not assume they consume current
+artifacts or share the Studio baseline registry. Reporting migration is separate
+work; retain existing tools unless explicitly authorized to retire them.
 
-Contain cluster-specific metadata for organizing test results:
+Report cleanup uses `utilities/cleanup_reports.py`: dry-run first, then explicit
+`--apply` quarantines candidates. Supply the actual registry configuration to
+protect baselines/active runs; `--require-s3` also protects unpublished reports.
 
-- Engine type (e.g., e6data)
-- Cluster configuration (size, cores, instance types)
-- S3 storage settings for results
-- Used by batch testing scripts and S3 upload functionality
+## Drivers and development checks
 
-### Test Config Files (`test_configs/`)
+See [driver provenance](jdbc_drivers/README.md) and
+[engine setup](docs/jdbc-engines.md). Standard setup installs the newest bundled
+e6 JAR into JMeter's `lib/ext/` and removes older installed e6 copies. Optional
+managed bundles live under `jdbc_drivers/managed/` and are selected at runtime.
+Do not manually copy every driver into a shared classpath.
 
-The `test_configs/` directory contains two types of files:
-
-1. **`.env` config files** — complete test configurations for `run_test.sh` (connection + plan + queries + params)
-2. **`*_template.txt` files** — template files for batch testing with `run_all_concurrency.sh`
-
-#### Template Files
-
-Template files use a **template system** to eliminate redundancy and enable batch testing. Each template contains 5 lines with placeholders that are substituted at runtime:
-
-**Template Structure:**
-```
-{ENGINE}_{CLUSTER_SIZE}_metadata.txt
-Test-Plan-Maintain-static-concurrency.jmx
-fixed_concurrency.properties
-{ENGINE}_{CLUSTER}_connection.properties
-E6Data_TPCDS_queries_29_1TB.csv
-```
-
-**Supported Placeholders:**
-- `{ENGINE}` - Engine name (e.g., e6data)
-- `{CLUSTER_SIZE}` - Normalized cluster size (xs-1x1, s-2x2, m-4x4, s-4x4, s-1x1)
-- `{CLUSTER}` - Cluster identifier for connection file (default, demo-graviton, etc.)
-- The concurrency level is supplied to `run_test.sh` as
-  `CONCURRENT_QUERY_COUNT`; it is not encoded in a separate properties file.
-- `{BENCHMARK}` - Benchmark identifier (tpcds_29_1tb, tpcds_51_1tb)
-
-**Template File Naming Convention:**
-```
-test_configs/{engine}_{cluster_size}_{benchmark}_template.txt
-```
-
-**Examples:**
-- `test_configs/e6data_s-2x2_tpcds_29_1tb_template.txt`
-- `test_configs/e6data_xs-1x1_tpcds_29_1tb_template.txt`
-
-**Non-Template Files (Sequential Tests):**
-
-For tests that don't loop through concurrency levels (e.g., run-once sequential tests), use non-template files:
-- `test_configs/e6data_xs_tpcds_29_1tb_sequential.txt`
-
-These files enable automated batch testing without needing separate input files for each concurrency level.
-
-## Running Tests
-
-### Prerequisites Setup
+Use Java 17 for the supported setup and Python 3.11 for development checks.
+The UI requires Python 3.10+; runner-only helpers have separate compatibility tests.
 
 ```bash
-# Install JMeter 5.6.3, Java 17, plugins, JDBC drivers, and Benchmark Studio
-./setup_jmeter.sh
+./utilities/run_premerge_checks.sh
 ```
 
-The default UI registry is SQLite. To provision the supplied local PostgreSQL
-container during setup, use `./setup_jmeter.sh --with-postgres`. Start and stop
-the optional UI with `./start_ui.sh` and `./stop_ui.sh`; the CLI runner remains
-independent of the UI.
-
-Benchmark Studio reports JMeter `Latency` as the primary query-engine metric
-(request start to first JDBC response). Do not replace it with `elapsed` in UI
-cards: elapsed additionally includes result iteration/materialization and
-client processing. Duration, throughput, and in-flight reconstruction still
-use elapsed completion timestamps. The standard JMeter HTML report remains
-unchanged and uses its normal elapsed/sample-time statistics.
-
-Completed measured runs snapshot non-secret reproducibility inputs under
-`inputs/` before recursive S3 upload. Never add connection properties or test
-property files to that snapshot because they may contain credentials. e6 Query
-History capture occurs before S3 upload and may intentionally wait several
-minutes for ingestion; sequential comparison legs wait for this full
-finalization, while parallel legs share load-generator resources.
-
-**Critical**: Java 17 is required. The interactive script validates this before running.
-
-### Create Connection Properties (First Time Setup)
-
-```bash
-./create_connection.sh
-```
-
-Interactive utility that creates connection properties files for e6data, other JDBC-compatible engines, or HTTP endpoints. Run once per cluster/engine — files are saved in `connection_properties/` for reuse.
-
-### Interactive Mode (Recommended)
-
-```bash
-./run_jmeter_tests_interactive.sh
-```
-
-Prompts accept a **filename as well as a list number**. Prefer filenames when scripting:
-the list is rebuilt from the directory each run and numbered by sort position, so adding a
-connection file shifts every index after it and a piped number then selects a
-different file silently.
-
-This script:
-1. Lists existing connection properties files for selection (if none exist, directs to `create_connection.sh`)
-2. Prompts for test plan type (concurrency, QPS, QPM, load profile, variable concurrency; JDBC or HTTP variants)
-3. Selects the canonical test-properties file for that plan automatically and prompts only for relevant per-run overrides
-4. Prompts for query CSV data file
-5. Optionally selects metadata file (for S3 upload)
-6. Shows configuration summary and runs the JMeter test
-7. Delegates the resolved configuration to `run_test.sh`; it does not create another test-properties file
-
-### Create Test Config
-
-```bash
-./create_test_config.sh
-```
-
-Interactive utility that creates a `.env` config file in `test_configs/`. Walks through selecting connection, test plan, query file, and parameters. Config files are reusable and can be overridden at runtime.
-
-### Non-Interactive Mode (Recommended for Repeat Runs)
-
-```bash
-# Using a config file
-./run_test.sh test_configs/my_test.env
-
-# Override specific values for re-runs
-CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_configs/my_test.env
-
-# Using env vars directly
-export CONNECTION_FILE=connection_properties/e6data_default_connection.properties
-export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
-export QUERY_FILE=data_files/E6Data_TPCDS_queries_29_1TB.csv
-export CONCURRENT_QUERY_COUNT=4
-./run_test.sh
-```
-
-Reads all configuration from a `.env` config file or env vars. No prompts. Change one variable and re-run. Sample config files in `test_configs/`.
-
-### Verifying Test Configuration (GUI Mode)
-
-**⚠️ IMPORTANT**: Before running load tests, verify your configuration in JMeter GUI mode:
-
-```bash
-# Open JMeter GUI with your configuration
-./apache-jmeter-5.6.3/bin/jmeter \
-  -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
-  -q connection_properties/sample_connection.properties \
-  -q test_properties/fixed_concurrency.properties \
-  -JQUERY_PATH=data_files/sample_queries.csv
-```
-
-**In GUI mode, verify:**
-- JDBC connection works (test with 1 thread first)
-- Queries load from CSV correctly
-- Test plan parameters are correct
-- View Results Tree shows successful query execution
-
-**Note:** GUI mode is ONLY for verification. Always use non-GUI mode (CLI) for actual load testing.
-
-### Manual JMeter Command (Non-GUI Mode)
-
-```bash
-# Non-GUI mode for actual performance testing
-./apache-jmeter-5.6.3/bin/jmeter -n \
-  -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
-  -q connection_properties/sample_connection.properties \
-  -q test_properties/fixed_concurrency.properties \
-  -JQUERY_PATH=data_files/sample_queries.csv \
-  -l reports/results.jtl
-```
-
-**Key flags:** `-n` (non-GUI mode), `-t` (test plan), `-q` (properties file), `-l` (log file)
-
-### Batch Testing (Automated Concurrency Sweeps)
-
-Run all concurrency levels (1, 2, 4, 8, 12, 16) sequentially using the unified script:
-
-```bash
-# Usage: ./utilities/run_all_concurrency.sh <engine> <cluster_size> <benchmark> [cluster] [test_plan_file]
-
-# E6Data cluster testing (uses default connection)
-./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb
-./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_51_1tb
-
-# With custom cluster connection
-./utilities/run_all_concurrency.sh e6data S-2x2 tpcds_29_1tb demo-graviton
-
-# With custom test plan
-./utilities/run_all_concurrency.sh e6data M-4x4 tpcds_29_1tb default Test-Plan-Sequential.jmx
-```
-
-**Parameters:**
-- `engine` (required): Database engine (e.g., e6data)
-- `cluster_size` (required): Cluster size (e.g., S-2x2, M-4x4, XS-1x1)
-- `benchmark` (required): Benchmark name (tpcds_29_1tb, tpcds_51_1tb)
-- `cluster` (optional): Cluster identifier for connection properties (default: "default")
-  - Connection file: `connection_properties/{engine}_{cluster}_connection.properties`
-- `test_plan_file` (optional): Override test plan file (default: uses template's test plan)
-
-This script:
-- Uses template system with runtime placeholder substitution
-- Automatically looks up test input templates from `test_configs/` directory
-- Validates all required files exist before starting
-- Runs all concurrency levels sequentially with 30-second pauses between tests
-- Logs each test to `/tmp/jmeter_test_logs/` with descriptive filenames
-- Arguments map directly to S3 path structure: `engine=<ARG1>/cluster_size=<ARG2>/benchmark=<ARG3>/`
-
-## S3 Results Structure
-
-Results are uploaded to S3 in a 5-level partitioned hierarchy:
-
-```
-s3://bucket/jmeter-results/
-  engine=e6data/
-    cluster_size=S-2x2/
-      benchmark=tpcds_29_1tb/
-        run_type=concurrency_4/
-          run_id=20251101-123456/
-            statistics.json
-            JmeterResultFile.csv
-            AggregateReport.csv
-            test_result.json
-```
-
-Key points:
-- `run_id` folders contain all files for a single test execution
-- `latest.json` at the `run_type` level points to most recent run
-- Structure enables Athena partitioning for querying results
-- See `utilities/README.md` for S3 path structure details
-
-## Analysis and Comparison Scripts
-
-All Python scripts are in `utilities/` directory:
-
-### Single Run Analysis
-
-```bash
-# Analyze latest run for a benchmark
-python utilities/analyze_single_run_from_s3.py \
-  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-2x2/benchmark=tpcds_29_1tb/
-
-# Analyze specific run
-python utilities/analyze_single_run_from_s3.py \
-  s3://path/to/benchmark/ --run-id 20251101-123456
-```
-
-### Comparison Between Engines
-
-```bash
-# Compare all matching concurrency levels (RECOMMENDED - most comprehensive)
-python utilities/compare_multi_concurrency_from_s3.py \
-  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=M/benchmark=tpcds_29_1tb/ \
-  s3://your-s3-bucket/jmeter-results/engine=e6data/cluster_size=S-4x4/benchmark=tpcds_29_1tb/
-
-# Compare single concurrency level
-python utilities/compare_jmeter_runs_from_s3.py \
-  s3://path/to/engine1/.../run_type=concurrency_4/ \
-  s3://path/to/engine2/.../run_type=concurrency_4/
-```
-
-**Understanding Results:**
-- **Positive % (e.g., +50.5%)**: First engine is FASTER
-- **Negative % (e.g., -35.2%)**: Second engine is FASTER
-- **~0%**: Both engines perform comparably
-
-**Output Files:** Generated in `reports/` directory:
-- `{engine1}_{cluster1}_vs_{engine2}_{cluster2}_MultiConcurrency_{timestamp}.csv` - Detailed comparison data
-- `{engine1}_{cluster1}_vs_{engine2}_{cluster2}_MultiConcurrency_{timestamp}_SUMMARY.md` - Human-readable summary
-
-See `utilities/README.md` for more comparison examples and detailed documentation.
-
-### Utility Scripts
-
-**Test Setup & Configuration:**
-- `create_connection.sh`: Interactive connection properties creator (JDBC and HTTP endpoint)
-- `run_jmeter_tests_interactive.sh`: Interactive test runner (select connection, plan, properties, data file)
-- `create_test_config.sh`: Interactive test config creator — saves `.env` files to `test_configs/`
-- `run_test.sh`: Non-interactive runner — reads from config file (`test_configs/*.env`) or env vars
-- `utilities/test_jdbc_connection.sh`: Test JDBC connectivity before running full test
-- `utilities/generate_concurrency_test_configs.sh`: Auto-generate test property files for different concurrency levels
-- `utilities/cleanup_reports.py`: Preview report retention candidates; use `--apply` to quarantine eligible reports while protecting registered baselines and recent runs
-
-**Query Management:**
-- `utilities/convert_queries_for_json_api.py`: Convert queries for JSON API format
-- `utilities/convert_queries_for_jmeter_http.py`: Format queries for HTTP test plans
-
-**HTTP Endpoint Testing:**
-- `utilities/test_queries_http.py`: Test queries against HTTP/REST API endpoints directly (bypasses JMeter)
-
-**Load Profile Management:**
-- `utilities/apply_load_profile.py`: Generate a per-run JMX from a load profile CSV (automatically called by `run_test.sh`)
-
-**Analysis & Comparison:**
-- `utilities/analyze_single_run_from_s3.py`: Analyze individual test runs from S3
-- `utilities/analyze_concurrency_scaling_from_s3.py`: Analyze how performance scales with concurrency
-- `utilities/compare_consecutive_runs_from_s3.py`: Compare two consecutive runs to detect regressions
-- `utilities/compare_jmeter_runs_from_s3.py`: Compare two specific test runs
-- `utilities/compare_multi_concurrency_from_s3.py`: Compare all concurrency levels between two engines (most comprehensive)
-
-**Athena Integration:**
-- `utilities/athena/upload_runs_index_to_athena.py`: Upload runs index with baseline tracking to Athena
-- `utilities/athena/upload_metadata.py`: Upload cluster metadata to Athena
-- `utilities/athena/run_athena_reports.sh`: Run all standard Athena reports
-- `utilities/athena/export_all_fields.sh`: Export all 62 fields to CSV for spreadsheet analysis
-- `utilities/athena/setup_all_athena_tables.sh`: Setup all Athena tables at once
-- `utilities/athena/recreate_athena_table.sh`: Recreate Athena table with updated schema
-
-**Baseline Management (Dual-Sync System):**
-
-The framework provides automated baseline tracking using a dual-sync approach (S3 metadata + Athena columns):
-
-- **Best Run (`is_best`)**: Automatically identified as the run with lowest `avg_latency_sec` for each configuration
-- **Baseline Run (`is_baseline`)**: Manually set reference point for comparing new runs (user-controlled)
-
-**Key Scripts:**
-- `utilities/post_test_analysis.sh`: **RECOMMENDED** - Automated post-test workflow that syncs to Athena, compares against baselines, and generates comprehensive reports
-- `utilities/athena/manage_baseline.py`: Mark/unmark baselines and compare runs against baseline
-- `utilities/athena/verify_baseline_sync.py`: Verify S3 and Athena baseline data are synchronized
-- `utilities/athena/query_athena_runs.py`: Query Athena for runs with flexible filtering options
-
-**Quick Usage:**
-```bash
-# Automated analysis (recommended)
-./utilities/post_test_analysis.sh e6data S-2x2 tpcds_29_1tb george
-
-# Manual workflow
-# 1. Sync to Athena (auto-detects best run)
-python3 utilities/athena/upload_runs_index_to_athena.py --from-s3 <s3_path>
-
-# 2. Compare new run against baseline
-python3 utilities/athena/manage_baseline.py compare --run-id <new_run_id> ...
-
-# 3. Mark new baseline (if improved)
-python3 utilities/athena/manage_baseline.py mark --run-id <new_run_id> --user <name> ...
-
-# 4. Verify sync
-python3 utilities/athena/verify_baseline_sync.py --engine e6data --verify-all
-```
-
-**See:** `utilities/README.md` (Athena Integration section) for complete documentation including setup, report generation, and baseline workflow.
-
-**Data Management:**
-- `utilities/manage_invalid_runs.sh`: Mark invalid test runs with metadata flag for filtering in analysis
-- `utilities/mark_best_run.sh`: Mark the best run for a given run_type for quick identification (legacy - use baseline system instead)
-
-## Key Test Properties
-
-### Concurrency Testing
-
-```properties
-# Target number of concurrent queries to maintain
-CONCURRENT_QUERY_COUNT=4
-
-# Time to reach target concurrency (minutes)
-RAMP_UP_TIME=1
-RAMP_UP_STEPS=1
-
-# Duration to hold load after ramp-up (SECONDS not minutes!)
-HOLD_PERIOD=300
-
-# Whether queries should repeat until test ends
-RECYCLE_ON_EOF=false
-```
-
-### CRITICAL: HOLD_PERIOD and RECYCLE_ON_EOF Behavior
-
-**IMPORTANT:** The test **ALWAYS runs for the full HOLD_PERIOD duration**, regardless of RECYCLE_ON_EOF setting or when queries finish.
-
-**HOLD_PERIOD is in SECONDS** on every plan except one:
-- `HOLD_PERIOD=300` = 5 minutes (not 5 hours!)
-- Test duration = `RAMP_UP_TIME` + `HOLD_PERIOD` (in seconds)
-- **Exception:** `Test-Plan-Constant-QPM-On-Arrivals.jmx` runs on `Unit=M`, which
-  governs both the rate denominator and the hold duration, so there `HOLD_PERIOD`
-  is in **MINUTES** — `HOLD_PERIOD=5` means 5 minutes. This cannot be normalized
-  without breaking the queries-per-minute rate; the runners print a warning.
-- Not used at all by `Run-Once` (bounded by query count) or the two load-profile
-  plans (bounded by the profile).
-
-**When `RECYCLE_ON_EOF=false` (run queries once):**
-- Queries from CSV are read once
-- When all queries complete, threads become **idle** but remain active
-- Test **waits for full HOLD_PERIOD** before stopping
-- Example: 29 queries finish in 2 minutes, but HOLD_PERIOD=300 means test runs full 5 minutes
-
-**When `RECYCLE_ON_EOF=true` (repeat queries):**
-- Queries from CSV are read repeatedly in a loop
-- When EOF is reached, CSV reader restarts from beginning
-- Threads continuously execute queries for full HOLD_PERIOD
-- Example: 29 queries repeat ~60 times over 5 minutes (HOLD_PERIOD=300)
-
-**Common Misconception:** RECYCLE_ON_EOF does NOT override or stop HOLD_PERIOD early. The hold period is always respected.
-
-### Other Important Notes
-
-- `RANDOM_ORDER=true`: Queries execute in random order (reduces caching effects)
-
-## JDBC Driver Management
-
-JDBC drivers are stored in `jdbc_drivers/` directory:
-
-- E6Data driver: `e6data-jdbc-<version>.jar`
-- Drivers must be copied to `apache-jmeter-5.6.3/lib/` for JMeter to load
-
-The `setup_jmeter.sh` script handles this automatically.
-
-## Load Profile Tests
-
-Two plans vary their load over time from a CSV. They control **different things**, so they
-take **different CSV formats** — the format is chosen from the plan, not from a flag.
-
-| Plan | Thread group | Controls | CSV |
-|---|---|---|---|
-| `Test-Plan-Fire-QPS-with-load-profile.jmx` | `FreeFormArrivalsThreadGroup` | arrival rate | 3 columns |
-| `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx` | `UltimateThreadGroup` | concurrency | 5 columns |
-
-Point `LOAD_PROFILE` at any CSV — no per-profile test plan is needed:
-
-```bash
-LOAD_PROFILE=test_properties/my_profile.csv ./run_jmeter_tests_interactive.sh
-```
-
-If `LOAD_PROFILE` is unset, the default follows the plan: `test_properties/load_profile.csv`
-for the QPS plan, `test_properties/utg_load_profile.csv` for the concurrency plan.
-
-### Arrival-rate CSV (3 columns)
-
-Controls how fast queries are *submitted*, regardless of whether earlier ones finished.
-Durations in seconds; header optional.
-
-```
-StartValue,EndValue,Duration
-3,3,1        # 3 QPS for 1s
-5,5,2        # 5 QPS for 2s
-1,10,5       # ramp 1 -> 10 QPS over 5s
-```
-
-| Setting | Why |
-|---|---|
-| `RECYCLE_ON_EOF=true` | without it threads hit EOF and vanish before the profile finishes |
-| `MAX_CONCURRANCY` | must exceed `peak_qps x latency_seconds`, or arrivals are silently dropped |
-| `HOLD_PERIOD` | at least the profile's total duration, plus time for the backlog to drain |
-
-### Concurrency CSV (5 columns)
-
-Controls how many queries run *at once*. Rows **stack** — each adds its threads on top of
-any wave still running — and ramp linearly over `StartupTime` / `ShutdownTime`.
-
-```
-Threads,StartTime,StartupTime,HoldTime,ShutdownTime
-10,0,30,60,10     # ramp to 10 over 30s, hold 60s, wind down over 10s
-20,90,30,60,10    # +20 more from t=90  -> 30 concurrent at the plateau
-```
-
-For a flat step with no ramp, set `StartupTime=0` and `ShutdownTime=0`:
-
-```
-Threads,StartTime,StartupTime,HoldTime,ShutdownTime
-2,0,0,45,0
-3,45,0,45,0
-```
-
-`RECYCLE_ON_EOF=true` is needed here too. `MAX_CONCURRANCY` and `HOLD_PERIOD` are not used
-by this plan — the CSV alone sets both the concurrency and the run length.
-
-### Verifying it took effect
-
-Every run prints what was applied — its absence means the profile did not take effect:
-
-```
-load profile applied (arrival rate): 15 steps, 17s, peak 56/s, ~482 expected samples
-load profile applied (concurrency): 2 waves, 90s, peak 3 concurrent, levels [2, 3]
-```
-
-Afterwards `run_report.md` scores the run against the profile:
-
-- **arrival rate** — delivered vs expected arrivals. `SHORTFALL` means `MAX_CONCURRANCY`
-  was too low.
-- **concurrency** — how many seconds peak query-in-flight stayed within the documented tolerance of the profile. A brief
-  overshoot at a wave boundary is expected: a thread finishes its current query before
-  stopping, so the outgoing and incoming waves overlap for a few seconds.
-
-```bash
-python3 utilities/verify_load_profile.py reports/<run_id>/JmeterResultFile.csv <profile>.csv
-python3 utilities/analyze_queue_buildup.py reports/<run_id>/JmeterResultFile.csv --bucket 5
-```
-
-**Implementation note:** the schedule is injected into a copy of the plan by
-`utilities/apply_load_profile.py` before JMeter starts — into `Schedule` for the arrivals
-plan, `ultimatethreadgroupdata` for the concurrency plan. Both plans also contain JSR223
-PreProcessors that appear to do this, but cannot — a PreProcessor runs when a sampler
-fires, after the thread group has already read its schedule and started threads. Those
-elements ship `enabled="false"`; leave them that way.
-
-## Exit Codes
-
-Both runners exit non-zero when a run did not produce a usable result. This matters
-because JMeter itself returns 0 even when every sample failed — a run against an
-unreachable cluster used to print "Test Complete!" and exit 0, so any script or CI
-wrapped around it reported success on numbers that meant nothing.
-
-| Code | Meaning |
-|---|---|
-| 0 | Run completed, error rate within `MAX_ERROR_PCT` |
-| 1 | Not a usable result — no samples recorded, or error rate above the threshold |
-
-`MAX_ERROR_PCT` defaults to **5**. The results directory is still written on failure
-so the run can be diagnosed, and the banner reads `Test FAILED` instead of
-`Test Complete!`. The report prints the top failure messages:
-
-```
-  run report: 25 samples, 100.0% errors, 2.18/s, peak 2 in flight
-  [FAIL] error rate 100.0% exceeds the 5.0% threshold - this run is not a usable result
-         25x java.sql.SQLException: UNIMPLEMENTED: No cluster-name header or unknown cluster
-```
-
-Set `MAX_ERROR_PCT=100` when errors are expected (fault-injection, capacity limits).
-`utilities/capture_run_report.py` uses exit code 2 for this so callers can tell a
-failed *run* from a failed *script*; the runners translate it to 1.
-
-## Report Output
-
-Each run writes a self-contained directory, `reports/<run_id>/`:
-
-```
-reports/20260807-180031/
-  JmeterResultFile.csv                 # raw per-sample results
-  AggregateReport.csv                  # per-query statistics
-  SummaryReport.csv                    # summary statistics
-  statistics.json                      # JMeter aggregate stats
-  run_report.md                        # human-readable summary (auto-generated)
-  run_summary.json                     # machine-readable metrics (auto-generated)
-  <plan>-generated.jmx                 # the exact plan that ran (load-profile runs)
-  dashboard/                           # HTML dashboard (unless disabled)
-```
-
-`run_report.md` and `run_summary.json` are produced automatically by
-`utilities/capture_run_report.py` after every run — throughput, percentiles, drain time,
-queue build-up, and, for load-profile runs, delivered-vs-expected arrivals with a
-`SHORTFALL` verdict when arrivals were dropped.
-
-Set `GENERATE_DASHBOARD=false` to skip HTML generation — roughly 3.5 MB of vendored
-assets per run:
-
-```bash
-GENERATE_DASHBOARD=false ./run_jmeter_tests_interactive.sh
-```
-
-The S3 upload always omits those vendored assets (9 objects instead of 129); set
-`S3_UPLOAD_DASHBOARD_ASSETS=true` to include them.
-
-## Common Development Tasks
-
-### Creating New Test Template for Batch Testing
-
-To enable batch testing for a new engine/cluster/benchmark combination:
-
-1. **Create metadata file** (if not exists):
-   ```bash
-   cp metadata_files/e6data_s-2x2_metadata.txt metadata_files/my_engine_my-cluster_metadata.txt
-   ```
-   Edit cluster configuration JSON, S3 settings, and `S3_REPORT_PATH` (`S3_BASE_PATH` is a legacy metadata alias)
-
-2. **Create connection properties** (if not exists):
-   ```bash
-   cp connection_properties/sample_connection.properties connection_properties/my_engine_my-cluster_connection.properties
-   ```
-   Edit JDBC connection string, credentials, driver class
-
-3. **Use the fixed-concurrency plan defaults and override the level per run**:
-   ```bash
-   TEST_PROPERTIES_FILE=test_properties/fixed_concurrency.properties \
-   CONCURRENT_QUERY_COUNT=24 ./run_test.sh test_configs/my_test.env
-   ```
-
-4. **Add query CSV file** (if not exists):
-   ```bash
-   cp data_files/sample_queries.csv data_files/My_Benchmark_queries.csv
-   ```
-
-5. **Create template file**:
-   ```bash
-   cat > test_configs/my_engine_my-cluster_my_benchmark_template.txt << 'EOF'
-   {ENGINE}_{CLUSTER_SIZE}_metadata.txt
-   Test-Plan-Maintain-static-concurrency.jmx
-   fixed_concurrency.properties
-   {ENGINE}_{CLUSTER}_connection.properties
-   My_Benchmark_queries.csv
-   EOF
-   ```
-
-6. **Run batch tests**:
-   ```bash
-   ./utilities/run_all_concurrency.sh my_engine my-cluster my_benchmark
-   ```
-
-### Creating New Test Configuration (Single Run)
-
-For single test runs:
-
-1. Create connection (if not exists): `./create_connection.sh`
-2. Add query CSV file to `data_files/`
-3. Create test config: `./create_test_config.sh`
-   - Select your connection file
-   - Choose test plan type
-   - Select query file
-   - Set parameters (concurrency, QPS, hold period, etc.)
-   - Saves `.env` config to `test_configs/`
-4. Run test: `./run_test.sh test_configs/<your_config>.env`
-   - Override params inline: `CONCURRENT_QUERY_COUNT=8 ./run_test.sh test_configs/<your_config>.env`
-
-### Adding New Query Set
-
-1. Place CSV file in `data_files/` directory
-2. Ensure the CSV begins with recognized alias and SQL headers, for example `query_alias,query_string`
-3. For multi-line queries, use `utilities/convert_queries_for_json_api.py` to convert
-4. Reference in test properties: `QUERY_PATH=data_files/my_queries.csv`
-
-### Testing Against New Database
-
-1. Add JDBC driver JAR to `jdbc_drivers/` and copy to `apache-jmeter-5.6.3/lib/`
-2. Create connection properties file with appropriate `DRIVER_CLASS` and `CONNECTION_STRING`
-3. Test connectivity: `./utilities/test_jdbc_connection.sh your_connection.properties`
-4. Run test normally
-
-## Troubleshooting
-
-### Java Version Issues
-
-The framework requires Java 17. If you see version errors:
-
-```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17  # macOS
-export PATH=$JAVA_HOME/bin:$PATH
-java -version  # Verify
-```
-
-### JDBC Connection Failures
-
-1. Verify driver is in `apache-jmeter-5.6.3/lib/`
-2. Check connection string format for your database
-3. Use test script: `./utilities/test_jdbc_connection.sh connection.properties`
-4. Check JMeter logs in `apache-jmeter-5.6.3/bin/jmeter.log`
-
-### Load Profile Not Applied
-
-If a load-profile run produces far fewer samples than expected (classically exactly the
-number of queries in your CSV), check for the `load profile applied:` line at the start of
-the run. Without it the plan fell back to its built-in schedule. Confirm `LOAD_PROFILE`
-points at an existing file — a missing file is now a hard error rather than a silent
-fallback.
-
-If arrivals fall short *within* the profile window, `MAX_CONCURRANCY` is too low and the
-arrivals thread group dropped them. `run_report.md` flags this as `SHORTFALL`.
-
-### JDBC drivers using Apache Arrow: ExceptionInInitializerError on Java 9+
-
-Every query fails immediately with `java.lang.ExceptionInInitializerError`. Some JDBC
-drivers bundle Apache Arrow, whose off-heap memory layer reflectively accesses
-`java.nio.DirectByteBuffer` internals. JMeter's launcher does not open `java.base/java.nio`,
-so Arrow's static initialiser fails. Either append to the connection string:
-
-```
-;EnableArrow=0
-```
-
-or keep Arrow and grant the module access on every run:
-
-```bash
-export JVM_ARGS="--add-opens=java.base/java.nio=ALL-UNNAMED"
-```
-
-### UNIMPLEMENTED: No cluster-name header or unknown cluster
-
-More than one `e6-jdbc-driver-*.jar` is on the classpath and an older one is winning. Load
-order depends on the filesystem, so this can reproduce on Linux but not macOS:
-
-```bash
-find apache-jmeter-5.6.3 -name "e6-jdbc-driver-*.jar"   # expect exactly one
-./utilities/fix_jmeter_jar_conflicts.sh
-```
-
-The same message also appears when the cluster is suspended — a suspended e6data cluster
-auto-resumes on first contact, and the first run afterwards can fail while it comes up.
-
-### S3 Upload Failures
-
-1. Ensure AWS credentials configured: `aws s3 ls s3://your-bucket/`
-2. Check `S3_REPORT_PATH` in the runner configuration (or legacy `S3_BASE_PATH` in metadata)
-3. Verify `COPY_TO_S3=true` in test properties
-4. Check logs in `/tmp/jmeter_test_logs/`
+This checks tests, public-artifact safety, shell/Python syntax, JMX and profile
+injection. It does not validate a fresh host or real engine authentication.
+Only run `utilities/run_smoke_suite.sh` against a live cluster when authorized;
+it generates real load. Keep customer quick-start steps synchronized with setup
+completion messages and retain documentation regression checks.

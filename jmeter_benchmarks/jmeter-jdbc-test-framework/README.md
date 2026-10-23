@@ -386,18 +386,7 @@ export HOLD_PERIOD=300
 
 Change any variable and re-run — no prompts, no file editing.
 
-**Option C — Use a dedicated config file:**
-
-```bash
-# Copy sample and edit
-cp test_configs/sample_concurrency_test.env test_configs/my_test.env
-vi test_configs/my_test.env
-
-# Run
-./run_test.sh test_configs/my_test.env
-```
-
-**Option D — Fully interactive:**
+**Compatibility entry point — configure, save, then optionally launch:**
 
 ```bash
 ./run_jmeter_tests_interactive.sh
@@ -437,20 +426,20 @@ supersedes the previous active reference without deleting its history.
 
 ```bash
 # Promote and inspect references
-./benchmark.sh baseline promote --run-id <run-id> \
-  --reason "Validated release reference" --promoted-by <name-or-team>
+./benchmark.sh baseline promote --run-id '<run-id>' \
+  --reason "Validated release reference" --promoted-by '<name-or-team>'
 ./benchmark.sh baseline list
 ./benchmark.sh baseline list --all
 
 # Compare with the active reference for the same engine and configuration
-./benchmark.sh compare --baseline active --run-id <candidate-run-id>
+./benchmark.sh compare --baseline active --run-id '<candidate-run-id>'
 
 # Compare any two runs, including sequential versus a load/concurrency run
-./benchmark.sh compare --baseline <baseline-run-id> --run-id <candidate-run-id> \
+./benchmark.sh compare --baseline '<baseline-run-id>' --run-id '<candidate-run-id>' \
   --warning-pct 5 --critical-pct 10
 
 # Retire an active reference while preserving its history
-./benchmark.sh baseline deactivate --run-id <baseline-run-id>
+./benchmark.sh baseline deactivate --run-id '<baseline-run-id>'
 ```
 
 Comparisons report throughput, successful-query latency, errors, configuration
@@ -459,8 +448,8 @@ are treated as improvements. Direct report paths require no registry:
 
 ```bash
 ./benchmark.sh compare \
-  --baseline-report reports/<baseline>/run_summary.json \
-  --candidate-report reports/<candidate>/run_summary.json
+  --baseline-report 'reports/<baseline>/run_summary.json' \
+  --candidate-report 'reports/<candidate>/run_summary.json'
 ```
 
 Use `--format json` for automation. Baseline promotion stores only governance
@@ -491,7 +480,7 @@ For a systemd-managed instance, use `systemctl start/stop/restart e6-benchmark-u
 instead of launching or stopping a second instance manually; the existing service
 template requires foreground startup and remains unchanged.
 
-### Optional e6 Query History capture
+## Optional e6 Query History capture
 
 An e6 run can export the matching workspace Query History after JMeter
 finishes. The capture window is derived from the first sample start and last
@@ -499,6 +488,7 @@ sample end in `JmeterResultFile.csv`; the workspace and cluster are derived
 from the selected e6 JDBC URL. It writes `e6_query_history.csv` and
 `e6_query_history_capture.json` into the run report directory before the normal
 S3 upload. Capture failure is reported but never changes the JMeter result.
+Warm-up skips Query History capture and its ingestion wait.
 
 Configure the OAuth2 machine client through environment variables, not in a
 JDBC connection properties file:
@@ -516,7 +506,7 @@ Deployments whose Query History is eventually consistent should increase it;
 `300` seconds is a practical value when history can take several minutes to
 publish completed queries.
 
-### Optional Prometheus and Grafana observability
+## Optional Prometheus and Grafana observability
 
 Prometheus support is opt-in and does not change the normal CLI execution
 path. When enabled, the runner creates a run-local copy of the selected JMX,
@@ -568,7 +558,7 @@ One process owns one metrics port. Sequential comparison runs can reuse port
 targets. Prometheus collection is intended for live observability; the raw JTL,
 JMeter dashboard, and generated summary remain the benchmark evidence.
 
-### Run metadata
+## Run metadata
 
 Optional descriptive metadata can be added through environment variables. It is
 recorded in `run_summary.json` and `run_report.md` but does not affect JMeter
@@ -588,10 +578,11 @@ ENGINE_BUILD=2026.08.18 BENCHMARK_TYPE=tpcds_25_1tb \
 |-----------|-------------|----------------|
 | `Test-Plan-Run-Once-static-concurrency.jmx` | Run all queries once at fixed concurrency, then stop | `CONCURRENT_QUERY_COUNT` |
 | `Test-Plan-Maintain-static-concurrency.jmx` | Maintain fixed concurrency for the hold period | `CONCURRENT_QUERY_COUNT`, `HOLD_PERIOD` |
-| `Test-Plan-Constant-QPS-On-Arrivals.jmx` | Fire queries at constant queries-per-second | `QPS`, `HOLD_PERIOD` |
+| `Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx` | Primary fixed-QPS plan used by the wizard/UI | `QPS`, `HOLD_PERIOD` |
+| `Test-Plan-Constant-QPS-On-Arrivals.jmx` | Alternative fixed-QPS plan for advanced/manual use | `QPS`, `HOLD_PERIOD` |
 | `Test-Plan-Constant-QPM-On-Arrivals.jmx` | Fire queries at constant queries-per-minute | `QPM`, `HOLD_PERIOD` |
-| `Test-Plan-Fire-QPS-with-load-profile.jmx` | Variable QPS rate from load profile CSV | `load_profile.csv`, `HOLD_PERIOD` |
-| `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx` | Variable concurrency from load profile CSV | `load_profile.csv`, `HOLD_PERIOD` |
+| `Test-Plan-Fire-QPS-with-load-profile.jmx` | Variable QPS rate from a three-column schedule | `LOAD_PROFILE` (e.g. `test_properties/load_profile.csv`) |
+| `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx` | Variable concurrency from a five-column schedule | `LOAD_PROFILE` (e.g. `test_properties/utg_load_profile.csv`) |
 
 ### HTTP Endpoint Test Plans
 
@@ -607,7 +598,7 @@ Just change the relevant `export` and re-run:
 
 ```bash
 # Switch to a QPS test plan with different parameters
-export TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals.jmx
+export TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx
 export QPS=10
 export HOLD_PERIOD=300
 ./run_test.sh
@@ -616,7 +607,8 @@ export HOLD_PERIOD=300
 export CONNECTION_FILE=connection_properties/another_connection.properties
 ./run_test.sh
 
-# Same test plan, just change concurrency
+# Switch to fixed concurrency (worker count does not set the fixed-QPS rate)
+export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
 export CONCURRENT_QUERY_COUNT=8
 ./run_test.sh
 ```
@@ -628,7 +620,7 @@ export CONCURRENT_QUERY_COUNT=8
 | `CONCURRENT_QUERY_COUNT` | Number of simultaneous queries | Concurrency-based plans |
 | `QPS` | Queries per second | QPS-based plans |
 | `QPM` | Queries per minute | QPM-based plans |
-| `HOLD_PERIOD` | Test duration in seconds; the QPM arrivals plan interprets it as minutes | All plans except Run-Once |
+| `HOLD_PERIOD` | Hold interval in seconds; the QPM arrivals plan interprets it as minutes | Fixed concurrency/QPS/QPM; not Run Once or profile plans |
 | `RECYCLE_ON_EOF` | Repeat queries when CSV ends (`true`/`false`); forced `false` for Run Once | Duration/profile plans |
 | `RANDOM_ORDER` | Shuffle query execution order (`true`/`false`) | Plans whose JMX contains the shuffle preprocessor; not Run Once |
 | `WARMUP_ENABLED` | Run excluded sequential warm-up pass(es) before measurement; default `false` | All JDBC plans |
@@ -667,13 +659,13 @@ The bundled examples are `test_properties/load_profile.csv` (arrivals) and
 |--------|-------------|
 | `setup_jmeter.sh` | Install JMeter, plugins, Groovy, drivers, and UI runtime |
 | `setup_ui.sh` | Install only the UI runtime; optionally start local PostgreSQL |
-| `start_ui.sh` / `stop_ui.sh` | Start or stop the optional Benchmark Studio UI |
+| `start_ui.sh` / `stop_ui.sh` | Foreground startup by default; `--background` for manual detached startup; stop manually started UI |
 | `create_connection.sh` | Create a connection properties file (interactive) |
 | `create_test_config.sh` | Create a full test config file (interactive) |
 | `run_test.sh` | Run a test (config file or env vars) |
 | `benchmark.sh` | Promote, list, deactivate, and compare reference baselines |
 | `run_benchmark_suite.sh` | Run an ordered Performance Suite through `run_test.sh` |
-| `run_jmeter_tests_interactive.sh` | Run a test (interactive prompts) |
+| `run_jmeter_tests_interactive.sh` | Compatibility wrapper: run the config wizard, save, and ask before launching |
 
 ### Sample configs
 
@@ -726,8 +718,6 @@ cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 
 ## Test Output
 
-Each test run generates results in the `reports/` directory:
-
 Each run gets its own directory, `reports/<run_id>/`, containing:
 
 - **`JmeterResultFile.csv`** — raw CSV with per-query timing (timestamp, elapsed ms, label, success)
@@ -736,8 +726,8 @@ Each run gets its own directory, `reports/<run_id>/`, containing:
   sample rows rather than pre-aggregated tables
 - **`run_report.md`** — human-readable summary, generated automatically after every run
 - **`run_summary.json`** — the same metrics in machine-readable form
-- **`statistics.json`** and **`dashboard/`** — JMeter's authoritative per-label
-  aggregate statistics and HTML dashboard
+- **`statistics.json`** and **`dashboard/`** — per-label elapsed-time aggregate
+  statistics and HTML dashboard, when dashboard generation is enabled
 - **`e6_query_history.csv`** and **`e6_query_history_capture.json`** — optional
   e6 workspace Query History export and capture metadata
 - **`s3_upload.json`** — verified immutable S3 destination when upload succeeds
@@ -747,7 +737,10 @@ Each run gets its own directory, `reports/<run_id>/`, containing:
   uploads. Connection and test-property files are
   deliberately excluded because they may contain credentials.
 
-Set `GENERATE_DASHBOARD=false` to skip the HTML dashboard (~3.5 MB per run).
+Set `GENERATE_DASHBOARD=false` to skip HTML generation and its `statistics.json`.
+`run_summary.json` and `run_report.md` are still generated from samples.
+S3 uploads omit dashboard static assets by default; set
+`S3_UPLOAD_DASHBOARD_ASSETS=true` if the remote HTML must be self-contained.
 
 These can be opened in spreadsheet tools or processed with the scripts in `utilities/`.
 
@@ -806,9 +799,10 @@ python3 utilities/cleanup_reports.py --keep-days 30 --keep-latest 10 \
 ```
 
 When Query History enrichment is enabled, compare like-for-like fields:
-JMeter `Latency` normally aligns with Query History client/total time, while
-Query History execution duration excludes planning, queuing, transport, and
-driver response overhead. `LIMIT_RESULTSET` can also make a query appear
+JMeter `Latency` is client-observed time to the driver's first response; it is
+not guaranteed to match any engine's Query History field. Check that engine's
+field definitions and query IDs before comparing planning, queueing, execution,
+and client timings. `LIMIT_RESULTSET` can also make a query appear
 successful to JMeter but `CANCELLED` in engine history: JDBC exposed a valid
 response and JMeter deliberately closed the result set after reaching the row
 limit. Treat that as a result-consumption status difference, not automatically
@@ -816,10 +810,10 @@ as an engine execution failure, and retain both artifacts for audit.
 
 ## Developer checks
 
-Run the dependency-free regression suite and static checks before changing runners, profile parsing, or reporting:
+With development dependencies installed by setup, run the regression suite and
+static checks before changing runners, profile parsing, reporting, or documentation:
 
 ```bash
-python3 -m unittest discover -s utilities/tests -v
 ./utilities/run_premerge_checks.sh
 ```
 
@@ -833,13 +827,13 @@ For a bounded live JDBC validation (five plans, real query load):
 ## Important Notes
 
 - **Security**: Do not commit credentials to version control. Connection properties and data files are in `.gitignore`.
-- **JDBC drivers**: Place JARs in `jdbc_drivers/`. The setup script copies them to JMeter's lib directory.
+- **JDBC drivers**: Standard setup installs bundled drivers into JMeter's `lib/ext/`; use the [optional installer](docs/jdbc-engines.md#optional-driver-installer) for additional named engines rather than manually mixing JARs.
 - JMeter uses one global classpath. Setup quarantines signed fat JARs that embed
   conflicting dependencies. The
   original JAR remains in `jdbc_drivers/`; use an isolated JMeter installation
   when benchmarking a driver that requires the quarantined signed bundle.
 - **Start small**: Begin with 1-2 threads in a non-production environment. Monitor target database resources before scaling up.
-- **HOLD_PERIOD**: The test always runs for the full duration, even if queries finish early. With `RECYCLE_ON_EOF=true`, queries repeat until time expires.
+- **Duration**: Run Once is bounded by query passes; profile plans by their CSV schedule; fixed-load plans by their configured ramp/hold. Keep `RECYCLE_ON_EOF=true` for sustained load: input exhaustion, failures, or cancellation can end useful work early. In-flight queries can extend wall-clock duration.
 
 ## Disclaimer
 

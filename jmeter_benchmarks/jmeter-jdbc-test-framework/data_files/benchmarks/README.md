@@ -8,7 +8,7 @@ as a local file or an `s3://` URI.
 Every query CSV must use the framework contract:
 
 ```csv
-QUERY_ALIAS,QUERY
+query_alias,query_string
 Q01,"select 1"
 ```
 
@@ -18,3 +18,7 @@ Warm-up files use the same contract. Their samples are written below
 For reproducible comparisons, retain stable aliases and compare equivalent
 data, query semantics, execution policies, and successful query coverage. The
 runner records the original input URI and resolved SHA-256 with each run.
+
+Headers are case-insensitive; `QUERY_ALIAS,QUERY` is also accepted. See the
+[main guide](../../README.md#first-benchmark-a-small-sequential-run) for setup
+and CSV quoting rules. This directory documents the contract, not a bundled suite.
