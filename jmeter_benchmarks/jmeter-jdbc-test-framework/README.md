@@ -234,6 +234,11 @@ TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
 
 **2. Fixed QPS — target 2 query submissions/second for a 300-second hold.**
 
+Arrival-based JDBC plans use one connection per JMeter worker (`poolMax=0`),
+not a shared fixed-size pool. Start with a low QPS and increase gradually:
+slow queries increase the required workers/connections, bounded by the arrival
+concurrency safety cap. Connection-pool wait failures are not engine query timeouts.
+
 ```bash
 TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx \
   QPS=2 HOLD_PERIOD=300 RAMP_UP_TIME=0 RECYCLE_ON_EOF=true \
