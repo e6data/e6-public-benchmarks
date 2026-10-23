@@ -83,10 +83,12 @@ vary by engine. Apply this to both measured and warm-up queries, and choose
 the appropriate profile/query file separately for each comparison engine.
 
 In the UI, a new profile's JDBC URL is visible in the `CONNECTION_STRING`
-input. Selecting an existing profile shows its filename, not its saved URL;
-the CLI configuration preview also shows the profile path. Verify that
-profile's JDBC URL on the runner before launching. Do not share URLs containing
-credentials or tokens.
+input. Selecting an existing profile shows a read-only, server-masked JDBC
+target before launch, including catalog/schema settings present in its URL.
+Credentials and non-target properties are masked; unsupported or ambiguous
+formats are hidden entirely. This preview does not test connectivity or resolve
+server-side defaults. The CLI configuration preview still shows the profile path.
+Do not share original URLs containing credentials or tokens.
 
 ### 4. Configure and run
 

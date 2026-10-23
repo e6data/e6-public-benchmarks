@@ -7,6 +7,28 @@ import unittest
 
 @unittest.skipUnless(shutil.which('node'), 'Node.js required for browser helper tests')
 class PlanControlTests(unittest.TestCase):
+    def test_connection_preview_switching_ignores_stale_responses(self):
+        app = Path(__file__).resolve().parents[2] / 'ui/static/app.js'
+        script = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(process.argv[1],'utf8');
+vm.runInThisContext(source.slice(source.indexOf('async function updateConnectionPreview'),source.indexOf('function updatePreview(){',source.indexOf('async function updateConnectionPreview'))));
+const pending=[];global.api=url=>new Promise(resolve=>pending.push({url,resolve}));
+const text={textContent:''},box={dataset:{},classList:{toggle(){}},querySelector:()=>text};
+const mode={value:'existing'},file={value:'a.properties'};
+const card={querySelector:s=>s==='.connection-preview'?box:s==='.connection-mode'?mode:file};
+(async()=>{
+const a=updateConnectionPreview(card);file.value='b.properties';const b=updateConnectionPreview(card);
+pending[1].resolve({jdbc_url:'jdbc:b://host'});await b;
+pending[0].resolve({jdbc_url:'jdbc:a://host'});await a;
+assert.equal(text.textContent,'jdbc:b://host');
+await updateConnectionPreview(card);assert.equal(pending.length,2);
+mode.value='create';await updateConnectionPreview(card);assert.equal(text.textContent,'');
+})().catch(e=>{console.error(e);process.exitCode=1});
+'''
+        result = subprocess.run(['node', '-e', script, str(app)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_plan_groups_and_schedule_duration(self):
         app = Path(__file__).resolve().parents[2] / 'ui/static/app.js'
         script = r'''

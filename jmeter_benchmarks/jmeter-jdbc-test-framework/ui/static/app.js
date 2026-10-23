@@ -253,6 +253,7 @@ function engineCard(i){
       <div class="fields"><label>Run label<input class="engine-label" value="${i?'Engine B':'Engine A'}"></label><label>ENGINE<select class="engine-kind">${options(Object.keys(state.config.engines),x=>state.config.engines[x],x=>x)}<option value="custom">Custom</option></select></label><label>CONNECTION_FILE mode<select class="connection-mode"><option value="create">Create local profile</option><option value="existing">Use existing profile</option></select></label><label class="existing-connection hidden">CONNECTION_FILE<select class="connection"><option value="">Select a connection…</option>${options(state.config.connections,x=>x.split('/').pop())}</select></label></div>
       <div class="new-connection"><div class="fields connection-fields"><label>Profile name<input class="new-name" value="ui_${stamp}_engine_${i+1}" required></label>${connectionFields(transport)}<label>USER<input class="new-user" autocomplete="username"></label><label>PASSWORD<input class="new-password" type="password" autocomplete="new-password"></label></div><p class="local-secret-note">Saved only under <code>connection_properties/</code> on this runner. Passwords are never returned to the browser.</p></div>
     </section>
+    <div class="connection-preview hidden" aria-live="polite"><small>JDBC target · credentials and non-target options masked</small><pre style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></div>
     <section class="engine-section dataset-section"><div class="engine-section-header"><b>What to run</b><small>Engine-specific SQL dialect files</small></div>
       <p class="local-secret-note connection-dataset-hint">Unqualified table names use the catalog/schema defaults of your connection. Select a connection profile matching this workload, or use fully qualified table names (FQN) in your queries, such as <code>catalog.schema.table</code> where supported. Check the SQL dialect and table access for each engine; this also applies to warm-up queries.</p>
       <div class="warmup-choice"><label class="phase-toggle"><input class="engine-warmup-enabled" type="checkbox"><span>Enable excluded warm-up</span></label></div>
@@ -313,8 +314,20 @@ function presetValues(kind){
   if(kind==='metadata')return metadataFromCard(document.querySelector('.engine'));
   return {TEST_PLAN:state.config.plans.find(p=>p.id===c.plan)?.path,CONCURRENT_QUERY_COUNT:c.CONCURRENT_QUERY_COUNT,QPS:c.QPS,QPM:c.QPM,HOLD_PERIOD:c.HOLD_PERIOD,RAMP_UP_TIME:c.RAMP_UP_TIME,RAMP_UP_STEPS:c.RAMP_UP_STEPS,MAX_CONCURRANCY:c.MAX_CONCURRANCY,QUERY_TIMEOUT:c.QUERY_TIMEOUT,LIMIT_RESULTSET:c.LIMIT_RESULTSET,MAX_ERROR_PCT:c.MAX_ERROR_PCT,MEASURED_ITERATIONS:c.MEASURED_ITERATIONS,RECYCLE_ON_EOF:c.RECYCLE_ON_EOF,RANDOM_ORDER:c.RANDOM_ORDER,GENERATE_DASHBOARD:c.GENERATE_DASHBOARD,LOAD_PROFILE:c.load_profile};
 }
+async function updateConnectionPreview(card){
+  const box=card.querySelector('.connection-preview');if(!box)return;
+  const file=card.querySelector('.connection-mode').value==='existing'?card.querySelector('.connection').value:'';
+  box.classList.toggle('hidden',!file);
+  if(box.dataset.file===file)return;
+  box.dataset.file=file;const text=box.querySelector('pre');text.textContent='';
+  if(!file)return;
+  text.textContent='Loading masked JDBC target…';
+  try{const result=await api('/api/connection-preview?file='+encodeURIComponent(file));if(box.dataset.file===file)text.textContent=result.jdbc_url}
+  catch(e){if(box.dataset.file===file)text.textContent='Cannot preview this connection profile.'}
+}
 function updatePreview(){
   if(!$('configPreview')||!state.config)return;
+  document.querySelectorAll('.engine').forEach(updateConnectionPreview);
   document.querySelectorAll('.engine').forEach(card=>card.querySelector('.engine-warmup-fields')?.classList.toggle('inactive',!card.querySelector('.engine-warmup-enabled')?.checked));
   configureAdvancedForPlan();
   const env=relevantEnvironment(previewEnvironment(),$('plan').value);
