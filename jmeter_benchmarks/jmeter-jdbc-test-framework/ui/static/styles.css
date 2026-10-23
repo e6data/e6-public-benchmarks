@@ -309,6 +309,9 @@ select:focus, input:focus { outline: 2px solid rgba(116, 28, 245, .16); border-c
 .advanced-card, .metadata-card, .preview-card { margin-top: 18px; }
 .advanced-card summary, .metadata-card summary, .preview-card summary { cursor: pointer; display: flex; justify-content: space-between; color: var(--text); }
 .advanced-card summary span, .metadata-card summary span, .preview-card summary span { color: var(--muted); font-size: 11px; }
+/* Explicit grid/flex rules must not expose content of closed launch details. */
+#runForm details:not([open]) > :not(summary) { display: none; }
+#showAdvancedPlans { width: auto; margin-right: 6px; }
 .details-fields { margin-top: 20px; }
 .details-fields .wide { grid-column: span 2; }
 .preview-card pre { background: #21163a; color: #ded7ec; padding: 16px; border-radius: 5px; max-height: 300px; overflow: auto; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }

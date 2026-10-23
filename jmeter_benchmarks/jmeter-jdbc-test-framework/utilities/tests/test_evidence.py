@@ -30,7 +30,7 @@ class EvidenceTests(unittest.TestCase):
             ET.parse(target)
             text = target.read_text()
             self.assertIn("rows_materialized", text)
-            self.assertEqual(text.count("<JDBCSampler>"), 1)
+            self.assertEqual(len(ET.parse(target).findall(".//JDBCSampler")), 1)
 
     def test_generator_health_requires_sustained_saturation(self):
         with tempfile.TemporaryDirectory() as temp:

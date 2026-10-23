@@ -46,13 +46,14 @@
               <div><h4>Test execution</h4><p>Select how JMeter submits the measured query dataset configured in each engine card.</p></div>
             </div>
             <div class="fields">
-              <label>Test plan <small>JMeter TEST_PLAN (.jmx)</small><select id="plan"></select></label>
+              <label>Test plan <small>Choose the load model</small><select id="plan"></select><span><input id="showAdvancedPlans" type="checkbox"> Show advanced plans</span></label>
               <label>Default test properties <small>automatic TEST_PROPERTIES_FILE</small><input id="testPropertiesDisplay" type="text" readonly></label>
               <label class="profile-field">LOAD_PROFILE <small>schedule CSV</small><span class="help-tip" tabindex="0" aria-label="Load profile format help" data-tip="Variable arrivals use StartValue, EndValue, Duration. Variable concurrency uses Threads, StartTime, StartupTime, HoldTime, ShutdownTime. Open Input file format help below for examples.">?</span><select id="load_profile"></select><span class="source-actions"><input id="profile_upload" type="file" accept=".csv"><button type="button" data-upload="profile">Local CSV</button><button type="button" data-s3="profile">S3 URI</button></span></label>
               <label class="param concurrency">CONCURRENT_QUERY_COUNT<input id="CONCURRENT_QUERY_COUNT" type="number" value="2" min="1"></label>
               <label class="param qps">QPS <small>queries / second</small><input id="QPS" type="number" value="1" min="1"></label>
               <label class="param qpm">QPM <small>queries / minute</small><input id="QPM" type="number" value="60" min="1"></label>
               <label class="duration-field">HOLD_PERIOD <small id="durationUnit">seconds</small><input id="HOLD_PERIOD" type="number" value="60" min="1"></label>
+              <div class="profile-duration-field hidden"><strong>Schedule duration</strong><p id="profileDuration" role="status">Select a valid load profile</p><small>Calculated from the CSV. Hold duration does not apply. In-flight queries may finish later.</small></div>
               <label class="measured-iterations">Measured iterations <small>Run Once passes included in JMeter results</small><input id="MEASURED_ITERATIONS" type="number" value="1" min="1" max="20"></label>
             </div>
             <details class="input-format-help">
@@ -87,7 +88,7 @@ Q02,"SELECT col1, col2 FROM catalog.schema.table"</pre>
             <div id="plannedWorkload" class="planned-workload"><div class="chart-empty">Select a workload to preview its planned shape.</div></div>
           </section>
           <details class="execution-preset-manager">
-            <summary><strong>Saved execution settings</strong><span>Optional overrides on top of the selected plan defaults</span></summary>
+            <summary><strong>Reuse or save settings</strong><span>Optional reusable load settings—not results or baselines</span></summary>
             <div class="preset-strip">
               <label>Profile mode<select id="executionProfileMode"><option value="custom">Configure for this run</option><option value="existing">Use a saved profile</option></select></label>
               <label id="savedExecutionProfileWrap" class="hidden">Saved profile<select id="workloadPreset"><option value="">Select a saved profile…</option></select></label>
@@ -106,12 +107,12 @@ Q02,"SELECT col1, col2 FROM catalog.schema.table"</pre>
           <div class="fields details-fields">
             <label class="ramp-time-setting">RAMP_UP_TIME <small>seconds; 0 starts immediately</small><input id="RAMP_UP_TIME" type="number" value="0" min="0"></label>
             <label class="ramp-steps-setting">RAMP_UP_STEPS <small>number of stepped increases</small><input id="RAMP_UP_STEPS" type="number" value="1" min="1"></label>
-            <label>MAX_CONCURRANCY <small>arrival safety cap</small><input id="MAX_CONCURRANCY" type="number" value="100" min="1"></label>
+            <label class="arrival-cap-setting">Maximum in-flight queries <small>MAX_CONCURRANCY · arrival safety cap</small><input id="MAX_CONCURRANCY" type="number" value="100" min="1"></label>
             <label>MAX_ERROR_PCT <small>runner pass/fail threshold</small><input id="MAX_ERROR_PCT" type="number" value="5" min="0" max="100"></label>
             <label>QUERY_TIMEOUT <small>per query, seconds</small><input id="QUERY_TIMEOUT" type="number" value="300" min="1"></label>
             <label>LIMIT_RESULTSET <small>maximum rows consumed per query</small><input id="LIMIT_RESULTSET" type="number" value="1000" min="1"></label>
           </div>
-          <div class="checks"><label><input id="RECYCLE_ON_EOF" type="checkbox" checked> RECYCLE_ON_EOF</label><label class="random-order-setting"><input id="RANDOM_ORDER" type="checkbox"> RANDOM_ORDER</label><label><input id="GENERATE_DASHBOARD" type="checkbox" checked> GENERATE_DASHBOARD</label></div>
+          <div class="checks"><label class="recycle-setting"><input id="RECYCLE_ON_EOF" type="checkbox" checked> Repeat queries until the schedule ends</label><label class="random-order-setting"><input id="RANDOM_ORDER" type="checkbox"> Randomize query order</label><label><input id="GENERATE_DASHBOARD" type="checkbox" checked> Generate JMeter HTML report</label></div>
         </details>
         <details class="card metadata-card hidden" aria-hidden="true">
           <summary><strong>Run metadata</strong><span>Descriptive only · does not change JMeter execution</span></summary>
@@ -144,7 +145,7 @@ Q02,"SELECT col1, col2 FROM catalog.schema.table"</pre>
           <p class="artifact-list">Prometheus listener, port, Grafana URL and S3 destination are configured under System settings and apply to this runner.</p>
         </details>
         <details class="card preview-card">
-          <summary><strong>Resolved configuration preview</strong><span>No passwords</span></summary>
+          <summary><strong>CLI configuration</strong><span>Relevant settings · export/import · no passwords</span></summary>
           <pre id="configPreview"></pre>
           <div class="config-actions"><button id="exportConfig" type="button" class="secondary">Export .env</button><label class="secondary import-label">Import .env<input id="importConfig" type="file" accept=".env,.txt"></label></div>
         </details>
