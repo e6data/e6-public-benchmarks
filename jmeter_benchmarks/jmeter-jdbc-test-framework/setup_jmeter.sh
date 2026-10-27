@@ -725,15 +725,30 @@ if [ -n "$JAVA_HOME" ]; then
     echo "  $JAVA_HOME"
     echo ""
 fi
-echo "Next steps:"
-echo "  1. Copy your JDBC drivers to jdbc_drivers/ (if not already there)"
-echo "  2. Create connection: ./create_connection.sh (or create it in the UI)"
+echo "Next steps — guided CLI (from ${SCRIPT_DIR}):"
+echo "  1. Create your connection: ./create_connection.sh"
+echo "  2. Run mkdir -p data_files, then create data_files/my_queries.csv in a text editor:"
+echo '       query_alias,query_string'
+echo '       smoke_test,"SELECT 1"'
+echo "  3. Configure the test: ./create_test_config.sh"
+echo "     Select Sequential, your connection and query CSV; use one iteration and no warm-up."
+echo "     Name the configuration my_benchmark, or use your own name."
+echo "  4. Run the command printed by the wizard. For my_benchmark with an HTML report:"
+echo "     GENERATE_DASHBOARD=true ./run_test.sh test_configs/my_benchmark.env"
+echo "  5. Check JmeterResultFile.csv and dashboard/index.html in the printed reports/ directory."
+echo "     Confirm SELECT 1 succeeds, then try your workload sequentially before increasing load."
+echo ""
+echo "The wizard offers Sequential, Fixed QPS and Arrival-rate profile; other plans are under Advanced."
+echo "Bundled test properties are selected automatically; no extra properties file is needed."
+echo "For optional engine drivers/authentication, see docs/jdbc-engines.md."
+echo "Quick start and troubleshooting: README.md"
+echo "No UI, S3 or monitoring service is required for CLI runs."
 if [ "$INSTALL_UI" = true ]; then
-    echo "  3. Start the UI: ./start_ui.sh"
-    echo "  4. Open http://127.0.0.1:8765 and launch a test"
-    echo "  5. CLI alternative: ./run_test.sh test_configs/<your_config>.env"
-else
-    echo "  3. Run from CLI: ./run_test.sh test_configs/<your_config>.env"
+    echo ""
+    echo "Optional UI (not needed for the steps above):"
+    echo "  ./start_ui.sh --background"
+    echo "  Open http://127.0.0.1:8765 locally, or use your configured SSH tunnel/reverse proxy."
+    echo "  Stop a manually started UI with ./stop_ui.sh; use systemctl for a managed service."
 fi
 echo ""
 echo "To verify installation:"

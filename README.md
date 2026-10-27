@@ -14,68 +14,38 @@ The toolsets do not share a common runtime or configuration. Enter the selected 
 
 ## JMeter quick start
 
-The JMeter framework is the recommended entry point for repeatable query-engine load tests. After cloning the repository:
+The JMeter framework is the recommended starting point for query-engine load tests.
+Use the [customer quick start](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md#first-benchmark-a-small-sequential-run)
+for EC2 prerequisites, Git clone or Download ZIP, and a first connection test.
+
+After getting the code, run these commands from the framework directory:
 
 ```bash
-cd jmeter_benchmarks/jmeter-jdbc-test-framework
 ./setup_jmeter.sh
 ./create_connection.sh
-mkdir -p data_files
-cp /path/to/my_queries.csv data_files/my_queries.csv
-cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
+# Create data_files/my_queries.csv using the format in the quick start.
+./create_test_config.sh
+# Name the configuration my_benchmark in the wizard:
+GENERATE_DASHBOARD=true ./run_test.sh test_configs/my_benchmark.env
 ```
 
-`setup_jmeter.sh` installs JMeter, required plugins and JDBC drivers, plus the
-isolated Benchmark Studio Python environment. It uses SQLite by default. For a
-local PostgreSQL registry, use `./setup_jmeter.sh --with-postgres` instead.
-For a self-contained runner with PostgreSQL plus local Prometheus and Grafana,
-use `./setup_jmeter.sh --with-postgres --with-observability`. These services are
-optional; CLI execution remains available without them.
+The guided wizard offers **Sequential, Fixed QPS, and Arrival-rate profile**;
+specialized concurrency and other plans are under Advanced. Start with
+`SELECT 1`, then your real workload sequentially, before increasing load.
+It selects the bundled test properties for you. No UI, S3, or monitoring
+service is required.
 
-Edit only `CONNECTION_FILE` and `QUERY_FILE` in `my_benchmark.env`, then choose a load model with command-line overrides:
+See the [CLI examples and reference](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md#cli-reference)
+for repeat runs and overrides. Results are saved under the report directory
+printed by the runner.
 
-```bash
-# Fixed concurrency
-CONCURRENT_QUERY_COUNT=4 HOLD_PERIOD=300 \
-  ./run_test.sh test_configs/my_benchmark.env
+To share published results for customer validation, use the
+[How to Run Benchmarks Using This Repository](jmeter_benchmarks/jmeter-jdbc-test-framework/docs/run-benchmarks.md).
+It describes the inputs, environment details and reference results to supply,
+and the commands customers use to repeat the experiment.
 
-# Constant arrival rate
-TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx \
-  QPS=5 HOLD_PERIOD=300 ./run_test.sh test_configs/my_benchmark.env
-
-# Variable arrival rate from CSV
-TEST_PLAN=Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx \
-  LOAD_PROFILE=test_properties/load_profile.csv \
-  ./run_test.sh test_configs/my_benchmark.env
-
-# Variable concurrency from CSV
-TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx \
-  LOAD_PROFILE=test_properties/utg_load_profile.csv \
-  ./run_test.sh test_configs/my_benchmark.env
-```
-
-See the [complete JMeter guide](jmeter_benchmarks/jmeter-jdbc-test-framework/README.md) for run-once, QPM, HTTP, custom profiles, reports, S3/Athena analysis, and metric definitions.
-
-To apply the same S3, observability, retention, and optional e6 Query History
-defaults to CLI, interactive, suite, and UI launches, copy
-`config/system_settings.example.json` to the gitignored
-`config/system_settings.json`. Keep this owner-readable only: it may contain an
-OAuth machine-client secret. Explicit environment and suite overrides take
-precedence. The existing runner uploader continues to use `COPY_TO_S3` and
-`S3_REPORT_PATH`.
-
-An optional local Benchmark Studio wrapper is included for internal evaluation.
-It invokes the same `run_test.sh` contract and does not replace the documented
-CLI workflow.
-
-To run an ordered collection of complete saved benchmark forms, use the
-**Performance suites** page or invoke the same CLI contract directly. Each
-suite entry retains its connection-profile reference, measured/warm-up files,
-JMeter plan and settings, iterations, and run metadata:
-
-```bash
-./run_benchmark_suite.sh suite_manifests/example_saved_benchmarks.json
-```
+Suites, baselines, S3 uploads, monitoring and the optional UI are documented in
+the JMeter guide's optional reference. They are not required for CLI benchmarks.
 
 ## Repository layout
 

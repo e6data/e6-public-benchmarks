@@ -5,11 +5,166 @@ supports JDBC connections.
 
 The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
 
-**Runner scripts** (`run_test.sh`, `run_jmeter_tests_interactive.sh`) handle JMeter invocation for you. All test settings — connection file, test plan, query file, concurrency, duration — can be passed as environment variables using `export`. This means you can change any parameter and re-run without editing files:
+**Start here:** [Run your first benchmark](#first-benchmark-a-small-sequential-run)
+→ [Choose a load model](#choose-a-load-model)
+→ [Use the three CLI examples](#three-common-cli-plans).
+To share results with a customer, use the
+[How to Run Benchmarks Using This Repository](docs/run-benchmarks.md). Everything else below is optional reference.
+
+## First benchmark: a small sequential run
+
+### Before you start on EC2
+
+- Use a Linux runner (for example, Amazon Linux 2023 or Ubuntu) with Bash, disk
+  space for dependencies/results, and permission to install packages with
+  `sudo` if dependencies are missing. Java 17 and Python 3.11 are recommended.
+  Setup checks/installs dependencies; it does not replace the system Python.
+- Allow outbound access to GitHub and dependency repositories. The runner must
+  resolve and reach the supplied e6 cluster endpoint/port through your VPC,
+  firewall, or VPN. CLI-only use needs no inbound UI port.
+- Obtain the **JDBC URL, username, token/password, catalog/schema, and network
+  access requirements** from your e6 contact. Use the supplied endpoint and TLS
+  settings rather than guessing them.
+- Obtain an authorized query CSV and ensure its dataset/tables are available
+  to your user. Setup does not create clusters or load TPC-DS, TPC-H, or
+  ClickBench data. Start with a dedicated test cluster and a small workload.
+
+### 1. Get the code
+
+**Git clone (recommended):**
 
 ```bash
-export HOLD_PERIOD=600    # change duration from 300 to 600
-./run_test.sh             # re-run with new value, everything else stays the same
+git clone https://github.com/e6data/e6-public-benchmarks.git
+cd e6-public-benchmarks
+# To reproduce published results, use the supplied commit:
+# git checkout <published-commit>
+cd jmeter_benchmarks/jmeter-jdbc-test-framework
+```
+
+If Git is not installed, install it using your OS package manager or use
+**Code → Download ZIP** on the [repository page](https://github.com/e6data/e6-public-benchmarks).
+Extract the ZIP and open a terminal in its
+`jmeter_benchmarks/jmeter-jdbc-test-framework` directory.
+For reproduction, download the publisher's commit-specific archive:
+`https://github.com/e6data/e6-public-benchmarks/archive/<published-commit>.zip`.
+Git is not required to extract the ZIP; setup may install it as a dependency.
+
+### 2. Set up and create your connection
+
+```bash
+./setup_jmeter.sh
+./create_connection.sh
+```
+
+In the connection wizard select **JDBC → e6data**, name the connection, and
+enter the supplied JDBC URL, username, and token/password at the password
+prompt. Note the saved `connection_properties/...` path. Keep this file local;
+never include credentials in shared configurations or result bundles.
+
+For another engine, see [engine setup](docs/jdbc-engines.md) for optional
+driver installation and authentication prerequisites.
+
+### 3. Create a small query CSV
+
+```bash
+mkdir -p data_files
+```
+
+Create `data_files/my_queries.csv` in a text editor:
+
+```csv
+query_alias,query_string
+smoke_test,"SELECT 1"
+```
+
+Quote SQL containing commas and escape embedded double quotes as `""`.
+Customer query files under `data_files/` are Git-ignored; selected examples are
+tracked. Supply the exact query CSV for your benchmark.
+
+**Match the connection to the dataset.** Unqualified table names (for example,
+`FROM hits`) use the connection's default catalog/schema. Select a profile
+configured for that workload, or use fully qualified names (FQN), such as
+`catalog.schema.table` where supported. FQN queries can reuse a connection
+across datasets if it has access; SQL dialects and naming conventions still
+vary by engine. Apply this to both measured and warm-up queries, and choose
+the appropriate profile/query file separately for each comparison engine.
+
+In the UI, a new profile's JDBC URL is visible in the `CONNECTION_STRING`
+input. Selecting an existing profile shows a read-only, server-masked JDBC
+target before launch, including catalog/schema settings present in its URL.
+Credentials and non-target properties are masked; unsupported or ambiguous
+formats are hidden entirely. This preview does not test connectivity or resolve
+server-side defaults. The CLI configuration preview still shows the profile path.
+Do not share original URLs containing credentials or tokens.
+
+### 4. Configure and run
+
+```bash
+./create_test_config.sh
+```
+
+Select your connection, **1) Sequential**, and `my_queries.csv`. Accept one
+measured iteration, leave warm-up disabled, skip optional metadata, and name
+the configuration `my_benchmark`.
+
+```bash
+GENERATE_DASHBOARD=true ./run_test.sh test_configs/my_benchmark.env
+```
+
+The wizard selects bundled test properties; no extra properties file is needed.
+Its main choices match the UI: **Sequential, Fixed QPS, and Arrival-rate profile**.
+Other plans are under Advanced. For a profile plan, choose a CSV using the
+[documented format](#load-profile-files-path-columns-and-duration); duration comes
+from that schedule, not a separate hold duration.
+
+### 5. Check results, then run your workload
+
+Use the report directory printed under `reports/`. Confirm the smoke test
+succeeded in `JmeterResultFile.csv` and open `dashboard/index.html`.
+A successful `SELECT 1` validates connectivity, not benchmark performance.
+
+Replace the smoke query with your workload and run sequentially first. Then
+use the wizard to create a Fixed QPS or Arrival-rate profile configuration,
+starting with a low load. Optional warm-up runs sequentially and is excluded
+from measured results. Keep the load-generator EC2 instance free from unrelated
+heavy workloads.
+
+No UI, S3 account, or monitoring service is required. See the
+[CLI reference](#cli-reference) for repeatable commands and overrides.
+
+### Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| Setup/download fails | Check outbound internet/proxy access, package-manager permissions, and the failing setup command. Install missing dependencies before retrying. |
+| Connection timeout or unknown host | Check endpoint/port, DNS, VPC routing, security groups, firewall/VPN, and cluster availability from the runner EC2 instance. |
+| Authentication or permission error | Verify username and token/password, token expiry, and catalog/table permissions. Do not paste secrets into shared logs. |
+| Missing catalog/table or SQL error | Check the connection's default catalog/schema, fully qualified table names, dataset availability, and SQL dialect. |
+| Driver class not found | Rerun setup for the standard drivers or install the optional engine driver on this runner; see engine setup above. |
+| Run fails or results are missing | Read the runner's error and files in its printed report directory. A successful process start alone does not establish a successful benchmark. |
+
+## Choose a load model
+
+Start with sequential, fixed QPS or an arrival-rate profile. Keep concurrency
+tests for questions about a fixed number of simultaneous clients.
+
+| Model | What you control | When to use it |
+| --- | --- | --- |
+| Sequential | One query at a time; finite query passes | First connection test and unloaded query timings |
+| Fixed QPS | Queries submitted per second for a duration | Latency and errors at a known offered load |
+| Arrival-rate profile | QPS changing over time in a CSV | Ramps, peaks and recovery |
+| Fixed concurrency | Number of active query workers | Throughput at a fixed number of clients; each worker waits for its query |
+| Variable concurrency | Worker counts changing over time in a CSV | Increasing or decreasing concurrent-client pressure |
+| Run once concurrently / fixed QPM | Finite parallel passes / submissions per minute | Specialized cases; not needed for a first benchmark |
+
+Concurrency is not QPS: slower queries reduce the submission rate of a fixed
+worker pool. An arrival-rate test attempts to maintain the requested submissions,
+so in-flight work can increase until engine or runner limits are reached.
+
+**Runner scripts** (`run_test.sh`, `run_jmeter_tests_interactive.sh`) handle JMeter invocation for you. After configuring a run, parameters can be overridden without editing JMX files:
+
+```bash
+HOLD_PERIOD=600 ./run_test.sh test_configs/my_benchmark.env
 ```
 
 Helper scripts (`create_connection.sh`, `create_test_config.sh`) interactively create the `.properties` and `.env` config files you need.
@@ -34,65 +189,93 @@ JDBC. `elapsed` also includes the remaining network/result fetch, JDBC decoding,
 and client processing. For engine-only analysis, correlate samples with engine
 execution, planning, queue, scan, spill, and cache metrics.
 
-## Steps to Run
+## CLI reference
 
-### Step 1: Install JMeter and dependencies
+Complete the quick start above first. The following sections describe overrides
+and advanced options; they are not additional setup steps.
 
-```bash
-git clone https://github.com/e6data/e6-public-benchmarks.git
-cd e6-public-benchmarks/jmeter_benchmarks/jmeter-jdbc-test-framework
+Use the config saved by `create_test_config.sh`. The runner selects the matching
+`test_properties/` file automatically; no JMX edits or extra properties file are
+needed. Environment variables override saved values for an individual run.
 
-# Installs Java 17, JMeter 5.6.3, plugins, JDBC drivers, and runner dependencies.
-./setup_jmeter.sh
-```
+### Three common CLI plans
 
-Setup is safe to rerun and does not replace the system Python.
+The following commands reuse that file. Environment values override the config,
+so no JMX editing or separate config per load level is required.
 
-If any dependency fails to install automatically, install it manually: Java 17+, jq 1.5+, git 2.x+.
-
-### Step 2: Create a connection properties file
+**1. Sequential — run every query once, one at a time.**
 
 ```bash
-./create_connection.sh
+TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
+  CONCURRENT_QUERY_COUNT=1 RECYCLE_ON_EOF=false MEASURED_ITERATIONS=1 \
+  ./run_test.sh test_configs/my_benchmark.env
 ```
 
-Interactive prompts collect the JDBC URL, credentials, and driver class. The
-generated connection profile remains local and is ignored by Git. Supply the
-driver class and connection properties documented by the target JDBC provider.
-The setup script installs the repository-supported dependencies and removes
-superseded downloaded driver versions from JMeter's classpath.
+**2. Fixed QPS — target 2 query submissions/second for a 300-second hold.**
 
-This creates a file in `connection_properties/` — e.g., `connection_properties/my_connection.properties`.
-
-For third-party drivers, follow the provider's JDBC documentation and keep all
-passwords or access tokens only in the git-ignored connection profile. The
-runner does not place protected values in generated report metadata.
-
-### Step 3: Create your queries CSV file
-
-Create `data_files/` (it is intentionally ignored because workloads may be sensitive), then add a CSV with one query per row:
-
-```csv
-query_alias,query_string
-q1,"SELECT COUNT(*) FROM my_table"
-q2,"SELECT col1, col2 FROM my_table WHERE col1 > 100"
-```
+Arrival-based JDBC plans use one connection per JMeter worker (`poolMax=0`),
+not a shared fixed-size pool. Start with a low QPS and increase gradually:
+slow queries increase the required workers/connections, bounded by the arrival
+concurrency safety cap. Connection-pool wait failures are not engine query timeouts.
 
 ```bash
-mkdir -p data_files
-cp my_queries.csv data_files/
+TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx \
+  QPS=2 HOLD_PERIOD=300 RAMP_UP_TIME=0 RECYCLE_ON_EOF=true \
+  ./run_test.sh test_configs/my_benchmark.env
 ```
 
-Provide a workload you are authorized to use as a local CSV or an `s3://` URI.
-S3 inputs are downloaded afresh for each run. The CLI validates the two-column
-query CSV and records its source URI and resolved SHA-256.
+**3. Arrival-rate profile — follow the QPS schedule in a CSV.**
 
-For cross-engine comparisons, use stable logical aliases and equivalent data
-and execution policies. Dialect-specific files should contain the same logical
-aliases in the same order. Keep optimized or proprietary workloads outside
-version control.
+```bash
+TEST_PLAN=Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx \
+  LOAD_PROFILE=test_properties/load_profile.csv \
+  RECYCLE_ON_EOF=true \
+  ./run_test.sh test_configs/my_benchmark.env
+```
 
-### Step 4: Run a test
+Start with the bundled profile above or replace the path with your own CSV.
+The CSV determines the schedule duration; `HOLD_PERIOD` does not apply. See
+[load-profile formats and column meanings](#load-profile-files-path-columns-and-duration).
+QPS is an offered load, not a guarantee of completed throughput.
+
+<details>
+<summary>Advanced CLI: concurrency, other plans and direct JMeter invocation</summary>
+
+### Advanced CLI examples
+
+Use these when you specifically need worker-count control, finite parallel
+passes or a per-minute arrival rate. All existing plans remain available.
+
+```bash
+# Hold four query workers for five minutes
+TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
+  CONCURRENT_QUERY_COUNT=4 HOLD_PERIOD=300 RECYCLE_ON_EOF=true \
+  ./run_test.sh test_configs/my_benchmark.env
+
+# Run every query once, using up to four workers
+TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
+  CONCURRENT_QUERY_COUNT=4 RECYCLE_ON_EOF=false MEASURED_ITERATIONS=1 \
+  ./run_test.sh test_configs/my_benchmark.env
+
+# Submit 60 queries per minute; HOLD_PERIOD is in minutes for this plan
+TEST_PLAN=Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx \
+  QPM=60 HOLD_PERIOD=5 RECYCLE_ON_EOF=true \
+  ./run_test.sh test_configs/my_benchmark.env
+
+# Vary concurrent queries using a 5-column CSV
+TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx \
+  LOAD_PROFILE=test_properties/utg_load_profile.csv \
+  RECYCLE_ON_EOF=true \
+  ./run_test.sh test_configs/my_benchmark.env
+```
+
+**Sequential** and **Run once (concurrent)** both reuse the same run-once JMX. Sequential forces
+concurrency to 1, while concurrent Run Once lets threads consume the query CSV
+together. Neither uses `HOLD_PERIOD`—both stop when every query-file row has
+been consumed for the configured `MEASURED_ITERATIONS` (default `1`). For
+example, `MEASURED_ITERATIONS=3` produces three samples per query label in one
+standard JMeter result. The JMeter Aggregate Report and per-query view then
+provide count, average, median, and percentiles across those three samples.
 
 Every bundled plan family has one canonical file under `test_properties/`:
 `run_once.properties`, `fixed_concurrency.properties`,
@@ -110,7 +293,8 @@ For example, this uses `fixed_concurrency.properties` but runs at concurrency
 ```bash
 export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
 export CONCURRENT_QUERY_COUNT=5
-./run_test.sh test_configs/my_benchmark.env
+CONNECTION_FILE=connection_properties/my_connection.properties \
+QUERY_FILE=data_files/my_queries.csv ./run_test.sh
 ```
 
 The equivalent raw JMeter shape is:
@@ -128,56 +312,72 @@ The equivalent raw JMeter shape is:
 JVM startup options such as `HEAP` and `JVM_ARGS` must remain environment
 variables because Java has already started before JMeter reads `-q` files.
 
-**Option A — One reusable config, choose the load model at runtime (recommended):**
+Reuse the configuration saved by the wizard. For non-interactive configuration,
+copy `test_configs/sample_benchmark.env` instead and edit `CONNECTION_FILE` and
+`QUERY_FILE`. These are alternatives, not consecutive setup steps.
 
-```bash
-cp test_configs/sample_benchmark.env test_configs/my_benchmark.env
-# Edit CONNECTION_FILE and QUERY_FILE once in my_benchmark.env.
+</details>
+
+### Load-profile files: path, columns and duration
+
+`LOAD_PROFILE` is a schedule CSV, not the query CSV. The selected plan determines
+which of the following two formats to use. Use integer values and the shown header.
+
+For an **arrival-rate profile**, save a file such as
+`test_properties/my_arrivals.csv`:
+
+```csv
+StartValue,EndValue,Duration
+1,1,60
+1,4,60
+4,4,120
+4,1,60
 ```
 
-The following commands reuse that file and change only the plan plus its controlling parameters:
+- `StartValue`: starting submission rate in queries/second.
+- `EndValue`: ending submission rate; a different value creates a linear ramp.
+- `Duration`: length of that row in seconds, greater than zero.
+
+Rows run one after another. This example schedules 300 seconds (five minutes),
+starting at 1 QPS, ramping to 4 QPS, holding there, then ramping down.
 
 ```bash
-# Run every query once at concurrency 1
-TEST_PLAN=Test-Plans/Test-Plan-Run-Once-static-concurrency.jmx \
-  CONCURRENT_QUERY_COUNT=1 RECYCLE_ON_EOF=false \
-  ./run_test.sh test_configs/my_benchmark.env
-
-# Hold four queries in flight for five minutes
-TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
-  CONCURRENT_QUERY_COUNT=4 HOLD_PERIOD=300 \
-  ./run_test.sh test_configs/my_benchmark.env
-
-# Submit five queries per second for five minutes
-TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx \
-  QPS=5 HOLD_PERIOD=300 \
-  ./run_test.sh test_configs/my_benchmark.env
-
-# Submit 60 queries per minute; this plan interprets HOLD_PERIOD as minutes
-TEST_PLAN=Test-Plans/Test-Plan-Constant-QPM-On-Arrivals.jmx \
-  QPM=60 HOLD_PERIOD=5 \
-  ./run_test.sh test_configs/my_benchmark.env
-
-# Vary arrivals/QPS using a 3-column CSV
 TEST_PLAN=Test-Plans/Test-Plan-Fire-QPS-with-load-profile.jmx \
-  LOAD_PROFILE=test_properties/load_profile.csv \
-  ./run_test.sh test_configs/my_benchmark.env
-
-# Vary concurrent queries using a 5-column CSV
-TEST_PLAN=Test-Plans/Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx \
-  LOAD_PROFILE=test_properties/utg_load_profile.csv \
-  ./run_test.sh test_configs/my_benchmark.env
+LOAD_PROFILE=test_properties/my_arrivals.csv \
+RECYCLE_ON_EOF=true ./run_test.sh test_configs/my_benchmark.env
 ```
 
-Environment values override the config file, so no JMX editing or separate config per load level is required.
+For a **variable-concurrency profile**, use a separate file such as
+`test_properties/my_concurrency.csv`:
 
-**Sequential** and **Run once (concurrent)** both reuse the same run-once JMX. Sequential forces
-concurrency to 1, while concurrent Run Once lets threads consume the query CSV
-together. Neither uses `HOLD_PERIOD`—both stop when every query-file row has
-been consumed for the configured `MEASURED_ITERATIONS` (default `1`). For
-example, `MEASURED_ITERATIONS=3` produces three samples per query label in one
-standard JMeter result. The JMeter Aggregate Report and per-query view then
-provide count, average, median, and percentiles across those three samples.
+```csv
+Threads,StartTime,StartupTime,HoldTime,ShutdownTime
+4,0,30,120,30
+```
+
+- `Threads`: workers added by this row, greater than zero; not QPS.
+- `StartTime`: delay from test start, in seconds.
+- `StartupTime`: seconds to ramp up this row's workers.
+- `HoldTime`: seconds to hold those workers, greater than zero.
+- `ShutdownTime`: seconds to ramp them down.
+
+Rows are independent waves; overlapping rows add their workers together. The
+example ramps to four workers over 30 seconds, holds for 120, then ramps down
+over 30: a 180-second schedule. Select the variable-concurrency plan for this format.
+
+**Which path do I use?** CLI paths refer to files on the runner; relative paths
+are resolved from the framework directory. `LOAD_PROFILE` can also be an `s3://`
+URI if the runner has permission to download it. In the optional UI, select a
+runner file, use **Local CSV** to upload a file from your computer, or use
+**S3 URI** to import one. A path on your laptop is not a path on a remote runner.
+
+**What about Hold duration?** For both profile-driven plans, the CSV defines the
+schedule. The separate `HOLD_PERIOD` setting does not extend or truncate it,
+and the UI shows the calculated schedule duration instead. For fixed QPS and fixed concurrency it
+controls the hold interval in seconds; fixed QPM uses minutes. Sequential and
+run-once plans stop after their configured query passes, not a hold interval.
+Actual wall-clock duration can include startup and completion of in-flight work.
+Keep query recycling enabled for sustained-load tests so the input does not run out.
 
 #### Optional excluded warm-up
 
@@ -200,7 +400,7 @@ Warm-up inputs remain local or in configured object storage. Engine-specific
 cache or persisted-result behavior remains the responsibility of the selected
 connection and workload.
 
-**Option B — Export variables and run:**
+**Advanced: export variables instead of using a saved configuration:**
 
 ```bash
 export CONNECTION_FILE=connection_properties/my_connection.properties
@@ -214,27 +414,26 @@ export HOLD_PERIOD=300
 
 Change any variable and re-run — no prompts, no file editing.
 
-**Option C — Use a dedicated config file:**
-
-```bash
-# Copy sample and edit
-cp test_configs/sample_concurrency_test.env test_configs/my_test.env
-vi test_configs/my_test.env
-
-# Run
-./run_test.sh test_configs/my_test.env
-```
-
-**Option D — Fully interactive:**
+**Compatibility entry point — configure, save, then optionally launch:**
 
 ```bash
 ./run_jmeter_tests_interactive.sh
 ```
 
+This compatibility entry point uses the same configuration wizard, saves a
+reusable `.env`, and asks for confirmation before calling `run_test.sh`.
+It no longer maintains a separate plan menu or JMeter execution path. Old
+scripted numeric menu answers must be updated; for automation use a saved
+configuration with `run_test.sh` instead. To use custom local test defaults,
+set `TEST_PROPERTIES_FILE=path/to/custom.properties` before starting the wizard.
+
 Guides you through selecting a connection, test plan, query file, optional metadata,
 and the workload values relevant to the selected plan. The plan automatically selects
 its canonical file under `test_properties/`; interactive answers override those defaults
 for that run and the script delegates execution to `run_test.sh`.
+
+<details>
+<summary>Optional reference: suites, baselines, UI, monitoring and configuration</summary>
 
 ## Performance Suites
 
@@ -258,20 +457,20 @@ supersedes the previous active reference without deleting its history.
 
 ```bash
 # Promote and inspect references
-./benchmark.sh baseline promote --run-id <run-id> \
-  --reason "Validated release reference" --promoted-by <name-or-team>
+./benchmark.sh baseline promote --run-id '<run-id>' \
+  --reason "Validated release reference" --promoted-by '<name-or-team>'
 ./benchmark.sh baseline list
 ./benchmark.sh baseline list --all
 
 # Compare with the active reference for the same engine and configuration
-./benchmark.sh compare --baseline active --run-id <candidate-run-id>
+./benchmark.sh compare --baseline active --run-id '<candidate-run-id>'
 
 # Compare any two runs, including sequential versus a load/concurrency run
-./benchmark.sh compare --baseline <baseline-run-id> --run-id <candidate-run-id> \
+./benchmark.sh compare --baseline '<baseline-run-id>' --run-id '<candidate-run-id>' \
   --warning-pct 5 --critical-pct 10
 
 # Retire an active reference while preserving its history
-./benchmark.sh baseline deactivate --run-id <baseline-run-id>
+./benchmark.sh baseline deactivate --run-id '<baseline-run-id>'
 ```
 
 Comparisons report throughput, successful-query latency, errors, configuration
@@ -280,8 +479,8 @@ are treated as improvements. Direct report paths require no registry:
 
 ```bash
 ./benchmark.sh compare \
-  --baseline-report reports/<baseline>/run_summary.json \
-  --candidate-report reports/<candidate>/run_summary.json
+  --baseline-report 'reports/<baseline>/run_summary.json' \
+  --candidate-report 'reports/<candidate>/run_summary.json'
 ```
 
 Use `--format json` for automation. Baseline promotion stores only governance
@@ -293,7 +492,26 @@ The included web interface can configure and monitor the same CLI workflows.
 It invokes the existing runners and reads the same JMeter artifacts; the CLI
 remains fully supported for local and automated execution.
 
-### Optional e6 Query History capture
+After setup, start it in the background with one command (no `nohup` needed):
+
+```bash
+./start_ui.sh --background
+# Stop before restarting:
+./stop_ui.sh
+```
+
+The launcher loads `.benchmark-ui.env`, appends `logs/ui-console.log`, and checks
+local health before reporting success. It defaults to `127.0.0.1:8765`, suitable
+for an on-host reverse proxy or SSH tunnel. Use `--host 0.0.0.0 --port 8765` only
+when remote binding is intentional and authentication/network access is secured.
+An existing live PID is left untouched. This survives logout, but does not
+provide automatic reboot startup or crash recovery. `start_ui.sh` remains the
+foreground entry point for service managers when `--background` is omitted.
+For a systemd-managed instance, use `systemctl start/stop/restart e6-benchmark-ui`
+instead of launching or stopping a second instance manually; the existing service
+template requires foreground startup and remains unchanged.
+
+## Optional e6 Query History capture
 
 An e6 run can export the matching workspace Query History after JMeter
 finishes. The capture window is derived from the first sample start and last
@@ -301,6 +519,7 @@ sample end in `JmeterResultFile.csv`; the workspace and cluster are derived
 from the selected e6 JDBC URL. It writes `e6_query_history.csv` and
 `e6_query_history_capture.json` into the run report directory before the normal
 S3 upload. Capture failure is reported but never changes the JMeter result.
+Warm-up skips Query History capture and its ingestion wait.
 
 Configure the OAuth2 machine client through environment variables, not in a
 JDBC connection properties file:
@@ -318,7 +537,7 @@ Deployments whose Query History is eventually consistent should increase it;
 `300` seconds is a practical value when history can take several minutes to
 publish completed queries.
 
-### Optional Prometheus and Grafana observability
+## Optional Prometheus and Grafana observability
 
 Prometheus support is opt-in and does not change the normal CLI execution
 path. When enabled, the runner creates a run-local copy of the selected JMX,
@@ -370,7 +589,7 @@ One process owns one metrics port. Sequential comparison runs can reuse port
 targets. Prometheus collection is intended for live observability; the raw JTL,
 JMeter dashboard, and generated summary remain the benchmark evidence.
 
-### Run metadata
+## Run metadata
 
 Optional descriptive metadata can be added through environment variables. It is
 recorded in `run_summary.json` and `run_report.md` but does not affect JMeter
@@ -390,10 +609,11 @@ ENGINE_BUILD=2026.08.18 BENCHMARK_TYPE=tpcds_25_1tb \
 |-----------|-------------|----------------|
 | `Test-Plan-Run-Once-static-concurrency.jmx` | Run all queries once at fixed concurrency, then stop | `CONCURRENT_QUERY_COUNT` |
 | `Test-Plan-Maintain-static-concurrency.jmx` | Maintain fixed concurrency for the hold period | `CONCURRENT_QUERY_COUNT`, `HOLD_PERIOD` |
-| `Test-Plan-Constant-QPS-On-Arrivals.jmx` | Fire queries at constant queries-per-second | `QPS`, `HOLD_PERIOD` |
+| `Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx` | Primary fixed-QPS plan used by the wizard/UI | `QPS`, `HOLD_PERIOD` |
+| `Test-Plan-Constant-QPS-On-Arrivals.jmx` | Alternative fixed-QPS plan for advanced/manual use | `QPS`, `HOLD_PERIOD` |
 | `Test-Plan-Constant-QPM-On-Arrivals.jmx` | Fire queries at constant queries-per-minute | `QPM`, `HOLD_PERIOD` |
-| `Test-Plan-Fire-QPS-with-load-profile.jmx` | Variable QPS rate from load profile CSV | `load_profile.csv`, `HOLD_PERIOD` |
-| `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx` | Variable concurrency from load profile CSV | `load_profile.csv`, `HOLD_PERIOD` |
+| `Test-Plan-Fire-QPS-with-load-profile.jmx` | Variable QPS rate from a three-column schedule | `LOAD_PROFILE` (e.g. `test_properties/load_profile.csv`) |
+| `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx` | Variable concurrency from a five-column schedule | `LOAD_PROFILE` (e.g. `test_properties/utg_load_profile.csv`) |
 
 ### HTTP Endpoint Test Plans
 
@@ -403,26 +623,6 @@ ENGINE_BUILD=2026.08.18 BENCHMARK_TYPE=tpcds_25_1tb \
 | `Test-Plan-Maintain-static-concurrency-http-endpoint.jmx` | Maintain fixed concurrency against HTTP endpoint |
 | `Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx` | Variable QPS against HTTP endpoint |
 
-### Switching test plan, properties, or parameters
-
-Just change the relevant `export` and re-run:
-
-```bash
-# Switch to a QPS test plan with different parameters
-export TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals.jmx
-export QPS=10
-export HOLD_PERIOD=300
-./run_test.sh
-
-# Switch connection to a different database
-export CONNECTION_FILE=connection_properties/another_connection.properties
-./run_test.sh
-
-# Same test plan, just change concurrency
-export CONCURRENT_QUERY_COUNT=8
-./run_test.sh
-```
-
 ## Key Parameters
 
 | Parameter | Description | Used by |
@@ -430,7 +630,7 @@ export CONCURRENT_QUERY_COUNT=8
 | `CONCURRENT_QUERY_COUNT` | Number of simultaneous queries | Concurrency-based plans |
 | `QPS` | Queries per second | QPS-based plans |
 | `QPM` | Queries per minute | QPM-based plans |
-| `HOLD_PERIOD` | Test duration in seconds; the QPM arrivals plan interprets it as minutes | All plans except Run-Once |
+| `HOLD_PERIOD` | Hold interval in seconds; the QPM arrivals plan interprets it as minutes | Fixed concurrency/QPS/QPM; not Run Once or profile plans |
 | `RECYCLE_ON_EOF` | Repeat queries when CSV ends (`true`/`false`); forced `false` for Run Once | Duration/profile plans |
 | `RANDOM_ORDER` | Shuffle query execution order (`true`/`false`) | Plans whose JMX contains the shuffle preprocessor; not Run Once |
 | `WARMUP_ENABLED` | Run excluded sequential warm-up pass(es) before measurement; default `false` | All JDBC plans |
@@ -450,50 +650,19 @@ export CONCURRENT_QUERY_COUNT=8
 | `E6_QUERY_HISTORY_EMAIL` | Optional query-user filter for Query History export | e6 JDBC runs when capture is enabled |
 | `E6_QUERY_HISTORY_WAIT_SECONDS` | Delay before export to allow Query History ingestion; default `5` | e6 JDBC runs when capture is enabled |
 
-### Load profile CSV
-
-The two load-profile plans control different things, so they take different CSV formats.
-The format is picked from the plan automatically — set `LOAD_PROFILE` to any CSV.
-Both `QUERY_FILE` and `LOAD_PROFILE` may be local paths or complete `s3://`
-URIs. CLI runs download a fresh, private temporary copy for every invocation,
-validate it, record the source URI and SHA-256 in run metadata, and remove the
-temporary copy on exit.
-
-**Arrival rate** — `Test-Plan-Fire-QPS-with-load-profile.jmx`, default
-`test_properties/load_profile.csv`. Controls how fast queries are *submitted*:
-
-```csv
-StartValue,EndValue,Duration
-1,1,5        # 1 QPS for 5s
-2,2,10       # 2 QPS for 10s
-1,10,5       # ramp 1 -> 10 QPS over 5s
-```
-
-**Concurrency** — `Test-Plan-Maintain-variable-concurrency-with-load-profile.jmx`, default
-`test_properties/utg_load_profile.csv`. Controls how many run *at once*. Rows stack:
-
-```csv
-Threads,StartTime,StartupTime,HoldTime,ShutdownTime
-10,0,30,60,10     # ramp to 10 over 30s, hold 60s, wind down over 10s
-20,90,30,60,10    # +20 more from t=90 -> 30 concurrent
-```
-
-Use `StartupTime=0` and `ShutdownTime=0` for a flat step with no ramp. All times in seconds.
-See `CLAUDE.md` for the full reference.
-
 ## Configuration Reference
 
 | Script | What it does |
 |--------|-------------|
 | `setup_jmeter.sh` | Install JMeter, plugins, Groovy, drivers, and UI runtime |
 | `setup_ui.sh` | Install only the UI runtime; optionally start local PostgreSQL |
-| `start_ui.sh` / `stop_ui.sh` | Start or stop the optional Benchmark Studio UI |
+| `start_ui.sh` / `stop_ui.sh` | Foreground startup by default; `--background` for manual detached startup; stop manually started UI |
 | `create_connection.sh` | Create a connection properties file (interactive) |
 | `create_test_config.sh` | Create a full test config file (interactive) |
 | `run_test.sh` | Run a test (config file or env vars) |
 | `benchmark.sh` | Promote, list, deactivate, and compare reference baselines |
 | `run_benchmark_suite.sh` | Run an ordered Performance Suite through `run_test.sh` |
-| `run_jmeter_tests_interactive.sh` | Run a test (interactive prompts) |
+| `run_jmeter_tests_interactive.sh` | Compatibility wrapper: run the config wizard, save, and ask before launching |
 
 ### Sample configs
 
@@ -507,46 +676,21 @@ Ready-to-copy templates in `test_configs/`:
 cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 ```
 
-## File Structure
+</details>
 
-```
-.
-├── setup_jmeter.sh                  # Install JMeter + dependencies
-├── setup_ui.sh                      # Install UI runtime + optional PostgreSQL
-├── start_ui.sh / stop_ui.sh         # Start/stop Benchmark Studio
-├── create_connection.sh             # Create connection properties (interactive)
-├── create_test_config.sh            # Create test config (interactive)
-├── run_test.sh                      # Run test (config file or env vars)
-├── benchmark.sh                     # Baseline governance and comparison CLI
-├── run_benchmark_suite.sh           # Ordered multi-benchmark runner
-├── run_jmeter_tests_interactive.sh  # Run test (interactive)
-├── config/
-│   └── system_settings.example.json # Shared CLI/UI runner settings template
-├── suite_manifests/                 # Tracked examples + ignored local suites
-├── connection_properties/           # JDBC connection files
-│   └── connection.properties.template
-├── test_properties/                 # Test parameter files
-│   ├── run_once.properties
-│   ├── fixed_concurrency.properties
-│   ├── constant_qps.properties
-│   ├── constant_qpm.properties
-│   ├── variable_arrivals.properties
-│   ├── variable_concurrency.properties
-│   └── load_profile.csv
-├── test_configs/                    # Ready-to-run config files
-│   ├── sample_concurrency_test.env
-│   └── sample_qps_test.env
-├── data_files/                      # Local query CSV files (ignored; create it)
-├── Test-Plans/                      # JMeter test plan files (.jmx)
-├── jdbc_drivers/                    # JDBC driver JARs
-├── metadata_files/                  # Cluster metadata for S3/Athena
-├── utilities/                       # Analysis, comparison, and Athena scripts
-└── reports/                         # Test output (generated at runtime)
-```
+## Publishing a benchmark
+
+Share a pinned repository version, exact workload/configuration, dataset setup
+instructions and reviewed results. Record environment, cache/warm-up policy,
+metric definitions and repeat-selection rules. Exclude credentials and disclose
+failures or differences; matching inputs does not guarantee identical timings.
+
+See [How to Run Benchmarks Using This Repository](docs/run-benchmarks.md) for the
+handoff checklist, runnable configuration and validation steps. The runner
+already generates reports and checksum manifests, with optional verified S3
+upload; it does not create a customer installer or make results public.
 
 ## Test Output
-
-Each test run generates results in the `reports/` directory:
 
 Each run gets its own directory, `reports/<run_id>/`, containing:
 
@@ -556,18 +700,21 @@ Each run gets its own directory, `reports/<run_id>/`, containing:
   sample rows rather than pre-aggregated tables
 - **`run_report.md`** — human-readable summary, generated automatically after every run
 - **`run_summary.json`** — the same metrics in machine-readable form
-- **`statistics.json`** and **`dashboard/`** — JMeter's authoritative per-label
-  aggregate statistics and HTML dashboard
+- **`statistics.json`** and **`dashboard/`** — per-label elapsed-time aggregate
+  statistics and HTML dashboard, when dashboard generation is enabled
 - **`e6_query_history.csv`** and **`e6_query_history_capture.json`** — optional
   e6 workspace Query History export and capture metadata
-- **`s3_upload.json`** — verified immutable S3 destination when upload succeeds
+- **`s3_upload.json`** — verified S3 destination and upload receipt when upload succeeds
 - **`inputs/query.csv`**, **`inputs/warmup-query.csv`**, and
   **`inputs/load-profile.csv`** — exact non-secret workload inputs used by the
   measured run (only applicable files are present); these are included in S3
   uploads. Connection and test-property files are
   deliberately excluded because they may contain credentials.
 
-Set `GENERATE_DASHBOARD=false` to skip the HTML dashboard (~3.5 MB per run).
+Set `GENERATE_DASHBOARD=false` to skip HTML generation and its `statistics.json`.
+`run_summary.json` and `run_report.md` are still generated from samples.
+S3 uploads omit dashboard static assets by default; set
+`S3_UPLOAD_DASHBOARD_ASSETS=true` if the remote HTML must be self-contained.
 
 These can be opened in spreadsheet tools or processed with the scripts in `utilities/`.
 
@@ -626,20 +773,24 @@ python3 utilities/cleanup_reports.py --keep-days 30 --keep-latest 10 \
 ```
 
 When Query History enrichment is enabled, compare like-for-like fields:
-JMeter `Latency` normally aligns with Query History client/total time, while
-Query History execution duration excludes planning, queuing, transport, and
-driver response overhead. `LIMIT_RESULTSET` can also make a query appear
+JMeter `Latency` is client-observed time to the driver's first response; it is
+not guaranteed to match any engine's Query History field. Check that engine's
+field definitions and query IDs before comparing planning, queueing, execution,
+and client timings. `LIMIT_RESULTSET` can also make a query appear
 successful to JMeter but `CANCELLED` in engine history: JDBC exposed a valid
 response and JMeter deliberately closed the result set after reaching the row
 limit. Treat that as a result-consumption status difference, not automatically
 as an engine execution failure, and retain both artifacts for audit.
 
+<details>
+<summary>Developer checks</summary>
+
 ## Developer checks
 
-Run the dependency-free regression suite and static checks before changing runners, profile parsing, or reporting:
+With development dependencies installed by setup, run the regression suite and
+static checks before changing runners, profile parsing, reporting, or documentation:
 
 ```bash
-python3 -m unittest discover -s utilities/tests -v
 ./utilities/run_premerge_checks.sh
 ```
 
@@ -650,16 +801,18 @@ For a bounded live JDBC validation (five plans, real query load):
   connection_properties/my_connection.properties data_files/my_queries.csv
 ```
 
+</details>
+
 ## Important Notes
 
 - **Security**: Do not commit credentials to version control. Connection properties and data files are in `.gitignore`.
-- **JDBC drivers**: Place JARs in `jdbc_drivers/`. The setup script copies them to JMeter's lib directory.
+- **JDBC drivers**: Standard setup installs bundled drivers into JMeter's `lib/ext/`; use the [optional installer](docs/jdbc-engines.md#optional-driver-installer) for additional named engines rather than manually mixing JARs.
 - JMeter uses one global classpath. Setup quarantines signed fat JARs that embed
   conflicting dependencies. The
   original JAR remains in `jdbc_drivers/`; use an isolated JMeter installation
   when benchmarking a driver that requires the quarantined signed bundle.
 - **Start small**: Begin with 1-2 threads in a non-production environment. Monitor target database resources before scaling up.
-- **HOLD_PERIOD**: The test always runs for the full duration, even if queries finish early. With `RECYCLE_ON_EOF=true`, queries repeat until time expires.
+- **Duration**: Run Once is bounded by query passes; profile plans by their CSV schedule; fixed-load plans by their configured ramp/hold. Keep `RECYCLE_ON_EOF=true` for sustained load: input exhaustion, failures, or cancellation can end useful work early. In-flight queries can extend wall-clock duration.
 
 ## Disclaimer
 

@@ -1161,6 +1161,48 @@ def _inside(relative: str, directory: str, suffix: str) -> str:
     return candidate.relative_to(ROOT.resolve()).as_posix()
 
 
+def masked_jdbc_url(url: str) -> str:
+    """Conservative target-only preview: unknown properties are never exposed."""
+    hidden = "JDBC URL hidden: unsupported or ambiguous format"
+    if any(c in url for c in "\r\n{}\"'\\#"):
+        return hidden
+    match = re.fullmatch(r"(jdbc:[a-zA-Z0-9]+://)([^/;?&]+)([^;?&]*)(.*)", url)
+    if not match:
+        return hidden
+    prefix, authority, path, params = match.groups()
+    host = authority.rsplit("@", 1)[-1]
+    if not re.fullmatch(r"[a-zA-Z0-9.-]+(?::[0-9]+)?", host):
+        return hidden
+    # Some drivers use /database=value instead of a query separator.
+    if "=" in path:
+        params = path + params
+        path = ""
+    if path and not re.fullmatch(r"/[a-zA-Z0-9_.-]*(?:/[a-zA-Z0-9_.-]+)?", path):
+        return hidden
+    safe_keys = {"catalog", "schema", "database", "db", "currentcatalog",
+                 "currentschema", "conncatalog", "connschema", "httppath", "warehouse"}
+    result = prefix + ("***@" if "@" in authority else "") + host + path
+    for part in re.finditer(r"([/;?&])([^/;?&=]+)=([^;?&]*)", params):
+        separator, key, value = part.groups()
+        if not re.fullmatch(r"[a-zA-Z0-9_.-]+", key):
+            return hidden
+        visible = key.lower() in safe_keys and re.fullmatch(r"[a-zA-Z0-9_./-]*", value)
+        result += separator + key + "=" + (value if visible else "***")
+    # Refuse to silently skip malformed segments that could contain credentials.
+    if params and "".join(m.group(0) for m in re.finditer(
+            r"([/;?&])([^/;?&=]+)=([^;?&]*)", params)) != params:
+        return hidden
+    return result
+
+
+def connection_preview(relative: str) -> dict[str, str]:
+    path = ROOT / _inside(relative, "connection_properties", ".properties")
+    for line in path.read_text().splitlines():
+        if line.strip().startswith("CONNECTION_STRING="):
+            return {"jdbc_url": masked_jdbc_url(line.strip().split("=", 1)[1])}
+    return {"jdbc_url": "No JDBC URL configured (this may be an HTTP profile)."}
+
+
 def _number(config: dict[str, Any], key: str, default: int) -> str:
     try:
         value = int(config.get(key, default))
@@ -2483,7 +2525,7 @@ class Handler(SimpleHTTPRequestHandler):
         LOGGER.info("client=%s %s", self.address_string(), fmt % args)
 
     def end_headers(self) -> None:
-        if urlparse(self.path).path in {"/", "/index.html", "/app.js", "/styles.css"}:
+        if urlparse(self.path).path in {"/", "/index.html", "/app.js", "/styles.css", "/api/connection-preview"}:
             # Benchmark Studio is frequently restarted while being configured.
             # Never let a browser combine a new page with stale JS or CSS.
             self.send_header("Cache-Control", "no-store, max-age=0")
@@ -2568,6 +2610,8 @@ class Handler(SimpleHTTPRequestHandler):
                 queries = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data_files").rglob("*.csv"))
                 profiles = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "test_properties").glob("*.csv"))
                 self._json({"engines": ENGINE_LABELS, "plans": [{"id": k, "label": v[0], "path": v[1], "transport": v[2], "test_properties": PLAN_TEST_PROPERTIES[k]} for k, v in PLANS.items()], "connections": connections, "queries": queries, "profiles": profiles, "workload_presets": preset_catalog("test_properties", "*.properties"), "metadata_presets": preset_catalog("metadata_files", "*.txt"), "observability": {"enabled": PROMETHEUS_DEFAULT_ENABLED, "port": int(PROMETHEUS_DEFAULT_PORT), "prometheus_url": PROMETHEUS_URL, "grafana_url": GRAFANA_URL}, "system": {"runner_backend": RUNNER_BACKEND, "settings_write_enabled": ALLOW_SETTINGS_WRITE, "copy_to_s3": SYSTEM_COPY_TO_S3, "s3_report_path": SYSTEM_S3_REPORT_PATH, "generate_dashboard": SYSTEM_GENERATE_DASHBOARD, "query_history": {"enabled": E6_QUERY_HISTORY_ENABLED, "client_id": E6_MACHINE_CLIENT_ID, "secret_configured": bool(E6_MACHINE_CLIENT_SECRET), "email": E6_QUERY_HISTORY_EMAIL, "wait_seconds": int(E6_QUERY_HISTORY_WAIT_SECONDS)}, "auth_enabled": bool(AUTH_TOKEN), "db_path": str(DB_PATH) if REGISTRY_BACKEND == "sqlite" else "Configured PostgreSQL service", "reports_path": str(REPORTS), **storage_snapshot()}})
+            elif parsed.path == "/api/connection-preview":
+                self._json(connection_preview(parse_qs(parsed.query).get("file", [""])[0]))
             elif parsed.path == "/api/runs":
                 with RUN_LOCK:
                     self._json([run.public() for run in RUNS.values()])

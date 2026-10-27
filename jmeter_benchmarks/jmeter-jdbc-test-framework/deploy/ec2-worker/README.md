@@ -13,8 +13,7 @@ unchanged `run_test.sh`; local UI and CLI execution remain the default.
 - Bucket encryption and public access blocking. Job bundles contain a temporary
   connection properties file and must be treated as secrets.
 
-Use a clean checkout on the worker. From the framework directory, run the
-location-independent installer:
+Clone on the worker, then run the installer from the framework directory:
 
 ```bash
 git clone https://github.com/e6data/e6-public-benchmarks.git
@@ -32,8 +31,9 @@ idle-stop systemd unit. It is safe to use the checkout at
 `/home/ec2-user/e6-public-benchmarks`; `/opt` is not required.
 
 For CLI-only execution on the EC2 host, the worker installer is not needed.
-Follow the main README: run `./setup_jmeter.sh`, create a connection profile,
-and invoke `./run_test.sh`.
+Follow the [main quick start](../../README.md#first-benchmark-a-small-sequential-run):
+run `./setup_jmeter.sh`, create a connection profile and query CSV, use
+`./create_test_config.sh`, and run the saved configuration.
 
 Configure the UI service:
 

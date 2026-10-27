@@ -204,7 +204,8 @@
         <stringProp name="driver">${DRIVER_CLASS}</stringProp>
         <boolProp name="keepAlive">true</boolProp>
         <stringProp name="password">${PASSWORD}</stringProp>
-        <stringProp name="poolMax">10</stringProp>
+        <!-- Zero gives each JMeter worker its own connection instead of a shared ten-connection bottleneck. -->
+        <stringProp name="poolMax">0</stringProp>
         <stringProp name="timeout">30000</stringProp>
         <stringProp name="transactionIsolation">DEFAULT</stringProp>
         <stringProp name="trimInterval">300000</stringProp>

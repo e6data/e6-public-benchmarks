@@ -235,8 +235,9 @@ fi
 
 echo ""
 echo "Benchmark Studio setup complete."
-echo "Start: ./start_ui.sh"
-echo "Stop:  ./stop_ui.sh"
+echo "Optional manual start: ./start_ui.sh --background"
+echo "Foreground/systemd entry point: ./start_ui.sh"
+echo "Stop a manually started UI: ./stop_ui.sh (use systemctl for a managed service)"
 if [ "$WITH_POSTGRES" = false ]; then
     echo "Registry: local SQLite (run ./setup_ui.sh --with-postgres to use PostgreSQL)"
 else

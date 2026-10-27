@@ -12,6 +12,39 @@ from ui import server
 
 
 class UiTests(unittest.TestCase):
+    def test_jdbc_target_preview_masks_credentials_and_unknown_properties(self):
+        url = ('jdbc:databricks://user:secret@host:443/default;ConnCatalog=main;'
+               'ConnSchema=clickbench;httpPath=/sql/1.0/warehouses/abc;'
+               'PWD=secret;accessToken=token;customCredential=other')
+        preview = server.masked_jdbc_url(url)
+        for secret in ('user:', 'secret', '=token', '=other'):
+            self.assertNotIn(secret, preview)
+        for target in ('host:443/default', 'ConnCatalog=main', 'ConnSchema=clickbench',
+                       'httpPath=/sql/1.0/warehouses/abc'):
+            self.assertIn(target, preview)
+        self.assertIn('PWD=***', preview)
+        self.assertIn('db=demo', server.masked_jdbc_url('jdbc:snowflake://host/?db=demo&token=abc'))
+        self.assertIn('catalog=glue', server.masked_jdbc_url('jdbc:e6data://host:443/database=demo&catalog=glue'))
+        for value in ('jdbc:x://host;PWD={abc;def}', 'jdbc:x://host;PWD="abc&def"',
+                      'jdbc:x://host;PWD=abc\\\ndef', 'jdbc:oracle:thin:user/secret@host',
+                      'jdbc:x://host;token', 'jdbc:x://host;schema=%73ecret'):
+            self.assertNotIn('secret', server.masked_jdbc_url(value))
+
+    def test_connection_preview_is_scoped_and_does_not_return_profile_secrets(self):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(server, 'ROOT', Path(temp)):
+            base = Path(temp) / 'connection_properties'
+            base.mkdir()
+            profile = base / 'test.properties'
+            profile.write_text('CONNECTION_STRING=jdbc:trino://host:443/catalog\nPASSWORD=secret\n')
+            self.assertEqual(server.connection_preview('connection_properties/test.properties'),
+                             {'jdbc_url': 'jdbc:trino://host:443/catalog'})
+            outside = Path(temp) / 'outside.properties'
+            outside.write_text('PASSWORD=secret')
+            (base / 'link.properties').symlink_to(outside)
+            for path in ('outside.properties', 'connection_properties/link.properties', '../secret.properties'):
+                with self.assertRaises(ValueError):
+                    server.connection_preview(path)
+
     def test_system_settings_are_read_only_by_default(self):
         with mock.patch.object(server, "ALLOW_SETTINGS_WRITE", False):
             with self.assertRaisesRegex(ValueError, "writes are disabled"):
