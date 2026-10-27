@@ -5,6 +5,12 @@ supports JDBC connections.
 
 The framework reads connection and test parameters from `.properties` files at runtime — no editing of JMeter test plans required. Queries are loaded from a CSV file, so switching databases, workloads, or test parameters is just a matter of pointing to different files.
 
+**Start here:** [Run your first benchmark](#first-benchmark-a-small-sequential-run)
+→ [Choose a load model](#choose-a-load-model)
+→ [Use the three CLI examples](#three-common-cli-plans).
+To share results with a customer, use the
+[Run This Benchmark Yourself](docs/run-this-benchmark.md). Everything else below is optional reference.
+
 ## First benchmark: a small sequential run
 
 ### Before you start on EC2
@@ -136,15 +142,6 @@ No UI, S3 account, or monitoring service is required. See the
 | Driver class not found | Rerun setup for the standard drivers or install the optional engine driver on this runner; see engine setup above. |
 | Run fails or results are missing | Read the runner's error and files in its printed report directory. A successful process start alone does not establish a successful benchmark. |
 
-### Sharing a reproducible benchmark
-
-Share the repository commit, authorized query CSVs, load profile, sanitized test
-configuration, engine/driver versions, dataset/cluster details, warm-up/cache
-policy, and result artifacts. Recipients create their own connection profile
-and adjust local paths. Do not send credentials or an unreviewed ZIP of your
-working directory. Matching scripts alone does not guarantee matching performance:
-hardware, data, region, and settings also matter.
-
 ## Choose a load model
 
 Start with sequential, fixed QPS or an arrival-rate profile. Keep concurrency
@@ -196,44 +193,9 @@ execution, planning, queue, scan, spill, and cache metrics.
 Complete the quick start above first. The following sections describe overrides
 and advanced options; they are not additional setup steps.
 
-Every bundled plan family has one canonical file under `test_properties/`:
-`run_once.properties`, `fixed_concurrency.properties`,
-`constant_qps.properties`, `constant_qpm.properties`,
-`variable_arrivals.properties`, or `variable_concurrency.properties`.
-`run_test.sh` selects the matching file automatically. You may select a local
-or `s3://` file with `TEST_PROPERTIES_FILE`; the runner downloads S3 inputs
-fresh for that run.
-
-The effective precedence is JMX fallback, then connection and test `-q`
-files, then explicit environment values emitted as JMeter `-J` overrides.
-For example, this uses `fixed_concurrency.properties` but runs at concurrency
-5 without creating another properties file:
-
-```bash
-export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
-export CONCURRENT_QUERY_COUNT=5
-CONNECTION_FILE=connection_properties/my_connection.properties \
-QUERY_FILE=data_files/my_queries.csv ./run_test.sh
-```
-
-The equivalent raw JMeter shape is:
-
-```bash
-./apache-jmeter-5.6.3/bin/jmeter -n \
-  -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
-  -q connection_properties/my_connection.properties \
-  -q test_properties/fixed_concurrency.properties \
-  -JQUERY_PATH=data_files/my_queries.csv \
-  -JCONCURRENT_QUERY_COUNT=5 \
-  -l reports/results.csv
-```
-
-JVM startup options such as `HEAP` and `JVM_ARGS` must remain environment
-variables because Java has already started before JMeter reads `-q` files.
-
-Reuse the configuration saved by the wizard. For non-interactive configuration,
-copy `test_configs/sample_benchmark.env` instead and edit `CONNECTION_FILE` and
-`QUERY_FILE`. These are alternatives, not consecutive setup steps.
+Use the config saved by `create_test_config.sh`. The runner selects the matching
+`test_properties/` file automatically; no JMX edits or extra properties file are
+needed. Environment variables override saved values for an individual run.
 
 ### Three common CLI plans
 
@@ -275,6 +237,9 @@ The CSV determines the schedule duration; `HOLD_PERIOD` does not apply. See
 [load-profile formats and column meanings](#load-profile-files-path-columns-and-duration).
 QPS is an offered load, not a guarantee of completed throughput.
 
+<details>
+<summary>Advanced CLI: concurrency, other plans and direct JMeter invocation</summary>
+
 ### Advanced CLI examples
 
 Use these when you specifically need worker-count control, finite parallel
@@ -310,6 +275,47 @@ been consumed for the configured `MEASURED_ITERATIONS` (default `1`). For
 example, `MEASURED_ITERATIONS=3` produces three samples per query label in one
 standard JMeter result. The JMeter Aggregate Report and per-query view then
 provide count, average, median, and percentiles across those three samples.
+
+Every bundled plan family has one canonical file under `test_properties/`:
+`run_once.properties`, `fixed_concurrency.properties`,
+`constant_qps.properties`, `constant_qpm.properties`,
+`variable_arrivals.properties`, or `variable_concurrency.properties`.
+`run_test.sh` selects the matching file automatically. You may select a local
+or `s3://` file with `TEST_PROPERTIES_FILE`; the runner downloads S3 inputs
+fresh for that run.
+
+The effective precedence is JMX fallback, then connection and test `-q`
+files, then explicit environment values emitted as JMeter `-J` overrides.
+For example, this uses `fixed_concurrency.properties` but runs at concurrency
+5 without creating another properties file:
+
+```bash
+export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
+export CONCURRENT_QUERY_COUNT=5
+CONNECTION_FILE=connection_properties/my_connection.properties \
+QUERY_FILE=data_files/my_queries.csv ./run_test.sh
+```
+
+The equivalent raw JMeter shape is:
+
+```bash
+./apache-jmeter-5.6.3/bin/jmeter -n \
+  -t Test-Plans/Test-Plan-Maintain-static-concurrency.jmx \
+  -q connection_properties/my_connection.properties \
+  -q test_properties/fixed_concurrency.properties \
+  -JQUERY_PATH=data_files/my_queries.csv \
+  -JCONCURRENT_QUERY_COUNT=5 \
+  -l reports/results.csv
+```
+
+JVM startup options such as `HEAP` and `JVM_ARGS` must remain environment
+variables because Java has already started before JMeter reads `-q` files.
+
+Reuse the configuration saved by the wizard. For non-interactive configuration,
+copy `test_configs/sample_benchmark.env` instead and edit `CONNECTION_FILE` and
+`QUERY_FILE`. These are alternatives, not consecutive setup steps.
+
+</details>
 
 ### Load-profile files: path, columns and duration
 
@@ -424,6 +430,9 @@ Guides you through selecting a connection, test plan, query file, optional metad
 and the workload values relevant to the selected plan. The plan automatically selects
 its canonical file under `test_properties/`; interactive answers override those defaults
 for that run and the script delegates execution to `run_test.sh`.
+
+<details>
+<summary>Optional reference: suites, baselines, UI, monitoring and configuration</summary>
 
 ## Performance Suites
 
@@ -613,27 +622,6 @@ ENGINE_BUILD=2026.08.18 BENCHMARK_TYPE=tpcds_25_1tb \
 | `Test-Plan-Maintain-static-concurrency-http-endpoint.jmx` | Maintain fixed concurrency against HTTP endpoint |
 | `Test-Plan-Fire-QPS-with-load-profile-http-endpoint_v2.jmx` | Variable QPS against HTTP endpoint |
 
-### Switching test plan, properties, or parameters
-
-Just change the relevant `export` and re-run:
-
-```bash
-# Switch to a QPS test plan with different parameters
-export TEST_PLAN=Test-Plans/Test-Plan-Constant-QPS-On-Arrivals-JSR-Optimized.jmx
-export QPS=10
-export HOLD_PERIOD=300
-./run_test.sh
-
-# Switch connection to a different database
-export CONNECTION_FILE=connection_properties/another_connection.properties
-./run_test.sh
-
-# Switch to fixed concurrency (worker count does not set the fixed-QPS rate)
-export TEST_PLAN=Test-Plans/Test-Plan-Maintain-static-concurrency.jmx
-export CONCURRENT_QUERY_COUNT=8
-./run_test.sh
-```
-
 ## Key Parameters
 
 | Parameter | Description | Used by |
@@ -661,19 +649,6 @@ export CONCURRENT_QUERY_COUNT=8
 | `E6_QUERY_HISTORY_EMAIL` | Optional query-user filter for Query History export | e6 JDBC runs when capture is enabled |
 | `E6_QUERY_HISTORY_WAIT_SECONDS` | Delay before export to allow Query History ingestion; default `5` | e6 JDBC runs when capture is enabled |
 
-### Load profile CSV
-
-See [load-profile files](#load-profile-files-path-columns-and-duration) for
-copyable examples, column meanings, units and duration rules. The format must
-match the selected plan. Do not put inline comments in numeric CSV cells.
-Both `QUERY_FILE` and `LOAD_PROFILE` may be local paths or complete `s3://`
-URIs. CLI runs download a fresh, private temporary copy for every invocation,
-validate it, record the source URI and SHA-256 in run metadata, and remove the
-temporary copy on exit.
-
-The bundled examples are `test_properties/load_profile.csv` (arrivals) and
-`test_properties/utg_load_profile.csv` (concurrency).
-
 ## Configuration Reference
 
 | Script | What it does |
@@ -700,42 +675,19 @@ Ready-to-copy templates in `test_configs/`:
 cp test_configs/sample_concurrency_test.env test_configs/my_test.env
 ```
 
-## File Structure
+</details>
 
-```
-.
-├── setup_jmeter.sh                  # Install JMeter + dependencies
-├── setup_ui.sh                      # Install UI runtime + optional PostgreSQL
-├── start_ui.sh / stop_ui.sh         # Start/stop Benchmark Studio
-├── create_connection.sh             # Create connection properties (interactive)
-├── create_test_config.sh            # Create test config (interactive)
-├── run_test.sh                      # Run test (config file or env vars)
-├── benchmark.sh                     # Baseline governance and comparison CLI
-├── run_benchmark_suite.sh           # Ordered multi-benchmark runner
-├── run_jmeter_tests_interactive.sh  # Run test (interactive)
-├── config/
-│   └── system_settings.example.json # Shared CLI/UI runner settings template
-├── suite_manifests/                 # Tracked examples + ignored local suites
-├── connection_properties/           # JDBC connection files
-│   └── connection.properties.template
-├── test_properties/                 # Test parameter files
-│   ├── run_once.properties
-│   ├── fixed_concurrency.properties
-│   ├── constant_qps.properties
-│   ├── constant_qpm.properties
-│   ├── variable_arrivals.properties
-│   ├── variable_concurrency.properties
-│   └── load_profile.csv
-├── test_configs/                    # Ready-to-run config files
-│   ├── sample_concurrency_test.env
-│   └── sample_qps_test.env
-├── data_files/                      # Local query CSV files (ignored; create it)
-├── Test-Plans/                      # JMeter test plan files (.jmx)
-├── jdbc_drivers/                    # JDBC driver JARs
-├── metadata_files/                  # Cluster metadata for S3/Athena
-├── utilities/                       # Analysis, comparison, and Athena scripts
-└── reports/                         # Test output (generated at runtime)
-```
+## Publishing a benchmark
+
+Share a pinned repository version, exact workload/configuration, dataset setup
+instructions and reviewed results. Record environment, cache/warm-up policy,
+metric definitions and repeat-selection rules. Exclude credentials and disclose
+failures or differences; matching inputs does not guarantee identical timings.
+
+Use the [Run This Benchmark Yourself](docs/run-this-benchmark.md) for the
+handoff checklist, runnable configuration and validation steps. The runner
+already generates reports and checksum manifests, with optional verified S3
+upload; it does not create a customer installer or make results public.
 
 ## Test Output
 
@@ -829,6 +781,9 @@ response and JMeter deliberately closed the result set after reaching the row
 limit. Treat that as a result-consumption status difference, not automatically
 as an engine execution failure, and retain both artifacts for audit.
 
+<details>
+<summary>Developer checks</summary>
+
 ## Developer checks
 
 With development dependencies installed by setup, run the regression suite and
@@ -844,6 +799,8 @@ For a bounded live JDBC validation (five plans, real query load):
 ./utilities/run_smoke_suite.sh \
   connection_properties/my_connection.properties data_files/my_queries.csv
 ```
+
+</details>
 
 ## Important Notes
 

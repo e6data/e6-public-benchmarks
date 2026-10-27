@@ -39,26 +39,13 @@ See the [CLI examples and reference](jmeter_benchmarks/jmeter-jdbc-test-framewor
 for repeat runs and overrides. Results are saved under the report directory
 printed by the runner.
 
-To apply the same S3, observability, retention, and optional e6 Query History
-defaults to CLI, interactive, suite, and UI launches, copy
-`config/system_settings.example.json` to the gitignored
-`config/system_settings.json`. Keep this owner-readable only: it may contain an
-OAuth machine-client secret. Explicit environment and suite overrides take
-precedence. The existing runner uploader continues to use `COPY_TO_S3` and
-`S3_REPORT_PATH`.
+To share published results for customer validation, use the
+[Run This Benchmark Yourself](jmeter_benchmarks/jmeter-jdbc-test-framework/docs/run-this-benchmark.md).
+It describes the inputs, environment details and reference results to supply,
+and the commands customers use to repeat the experiment.
 
-An optional local Benchmark Studio wrapper is included for internal evaluation.
-It invokes the same `run_test.sh` contract and does not replace the documented
-CLI workflow.
-
-To run an ordered collection of complete saved benchmark forms, use the
-**Performance suites** page or invoke the same CLI contract directly. Each
-suite entry retains its connection-profile reference, measured/warm-up files,
-JMeter plan and settings, iterations, and run metadata:
-
-```bash
-./run_benchmark_suite.sh suite_manifests/example_saved_benchmarks.json
-```
+Suites, baselines, S3 uploads, monitoring and the optional UI are documented in
+the JMeter guide's optional reference. They are not required for CLI benchmarks.
 
 ## Repository layout
 
