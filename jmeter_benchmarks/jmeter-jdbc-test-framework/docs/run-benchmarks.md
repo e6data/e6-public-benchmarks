@@ -5,7 +5,9 @@ benchmark using its supplied queries, configuration and reference results.
 For your own workload, start with the [CLI quick start](../README.md#first-benchmark-a-small-sequential-run)
 and choose sequential, fixed QPS or an arrival-rate profile. The steps below
 explain how to prepare and run a shared benchmark on a Linux/EC2 runner, using
-TPC-DS as an example. No UI or S3 account is required. Matching the experiment
+TPC-DS as an example. The same CLI flow applies to TPC-H, ClickBench or your own
+SQL: supply the appropriate query CSV and prepare its dataset on the target engine.
+No UI or S3 account is required. Matching the experiment
 does not guarantee identical timings: hardware, data layout, software and cache
 state matter.
 

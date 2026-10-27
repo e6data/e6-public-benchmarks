@@ -78,7 +78,8 @@ smoke_test,"SELECT 1"
 ```
 
 Quote SQL containing commas and escape embedded double quotes as `""`.
-The framework's `data_files/` directory is Git-ignored; supply your own files.
+Customer query files under `data_files/` are Git-ignored; selected examples are
+tracked. Supply the exact query CSV for your benchmark.
 
 **Match the connection to the dataset.** Unqualified table names (for example,
 `FROM hits`) use the connection's default catalog/schema. Select a profile
@@ -703,7 +704,7 @@ Each run gets its own directory, `reports/<run_id>/`, containing:
   statistics and HTML dashboard, when dashboard generation is enabled
 - **`e6_query_history.csv`** and **`e6_query_history_capture.json`** — optional
   e6 workspace Query History export and capture metadata
-- **`s3_upload.json`** — verified immutable S3 destination when upload succeeds
+- **`s3_upload.json`** — verified S3 destination and upload receipt when upload succeeds
 - **`inputs/query.csv`**, **`inputs/warmup-query.csv`**, and
   **`inputs/load-profile.csv`** — exact non-secret workload inputs used by the
   measured run (only applicable files are present); these are included in S3
