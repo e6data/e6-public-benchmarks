@@ -40,7 +40,7 @@ for repeat runs and overrides. Results are saved under the report directory
 printed by the runner.
 
 To share published results for customer validation, use the
-[Run This Benchmark Yourself](jmeter_benchmarks/jmeter-jdbc-test-framework/docs/run-this-benchmark.md).
+[How to Run Benchmarks Using This Repository](jmeter_benchmarks/jmeter-jdbc-test-framework/docs/run-benchmarks.md).
 It describes the inputs, environment details and reference results to supply,
 and the commands customers use to repeat the experiment.
 

@@ -1,8 +1,13 @@
-# Run This Benchmark Yourself
+# How to Run Benchmarks Using This Repository
 
-Use this guide on a customer Linux/EC2 runner to repeat a supplied benchmark
-through the CLI. No UI or S3 account is required. It reproduces the experiment,
-not a guaranteed timing: hardware, data layout, software and cache state matter.
+Run benchmarks in your environment using this repository, or reproduce a shared
+benchmark using its supplied queries, configuration and reference results.
+For your own workload, start with the [CLI quick start](../README.md#first-benchmark-a-small-sequential-run)
+and choose sequential, fixed QPS or an arrival-rate profile. The steps below
+explain how to prepare and run a shared benchmark on a Linux/EC2 runner, using
+TPC-DS as an example. No UI or S3 account is required. Matching the experiment
+does not guarantee identical timings: hardware, data layout, software and cache
+state matter.
 
 The repository does **not** provision the engine or generate/load the dataset.
 Its tracked `E6Data_TPCDS_queries_29_1TB.csv` is a subset with bootstrap queries,

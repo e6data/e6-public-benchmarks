@@ -9,7 +9,7 @@ The framework reads connection and test parameters from `.properties` files at r
 → [Choose a load model](#choose-a-load-model)
 → [Use the three CLI examples](#three-common-cli-plans).
 To share results with a customer, use the
-[Run This Benchmark Yourself](docs/run-this-benchmark.md). Everything else below is optional reference.
+[How to Run Benchmarks Using This Repository](docs/run-benchmarks.md). Everything else below is optional reference.
 
 ## First benchmark: a small sequential run
 
@@ -684,7 +684,7 @@ instructions and reviewed results. Record environment, cache/warm-up policy,
 metric definitions and repeat-selection rules. Exclude credentials and disclose
 failures or differences; matching inputs does not guarantee identical timings.
 
-Use the [Run This Benchmark Yourself](docs/run-this-benchmark.md) for the
+See [How to Run Benchmarks Using This Repository](docs/run-benchmarks.md) for the
 handoff checklist, runnable configuration and validation steps. The runner
 already generates reports and checksum manifests, with optional verified S3
 upload; it does not create a customer installer or make results public.
