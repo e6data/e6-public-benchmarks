@@ -66,8 +66,9 @@ case "$conn_type" in
         echo "  9) Amazon Redshift"
         echo "  10) ClickHouse"
         echo "  11) Other"
+        echo "  12) DuckDB (local database file)"
         echo ""
-        read -p "Enter choice [1-11]: " engine_choice
+        read -p "Enter choice [1-12]: " engine_choice
 
         case "$engine_choice" in
             1) ENGINE="e6data"; DRIVER_CLASS="io.e6.jdbc.driver.E6Driver" ;;
@@ -80,6 +81,7 @@ case "$conn_type" in
             8) ENGINE="emr_trino"; DRIVER_CLASS="io.trino.jdbc.TrinoDriver" ;;
             9) ENGINE="redshift"; DRIVER_CLASS="com.amazon.redshift.jdbc.Driver"; JDBC_INIT_SQL="SET enable_result_cache_for_session TO OFF" ;;
             10) ENGINE="clickhouse"; DRIVER_CLASS="com.clickhouse.jdbc.ClickHouseDriver" ;;
+            12) ENGINE="duckdb"; DRIVER_CLASS="org.duckdb.DuckDBDriver" ;;
             11)
                 read -p "Engine name (for filename): " ENGINE
                 read -p "JDBC Driver class: " DRIVER_CLASS
@@ -122,6 +124,16 @@ case "$conn_type" in
             DATABASE=""
             CATALOG=""
 
+        elif [ "$ENGINE" = "duckdb" ]; then
+            echo "DuckDB runs inside JMeter on this machine; use an existing absolute database path."
+            read -r -p "Database file (e.g. /data/benchmark.duckdb): " DATABASE
+            if [[ "$DATABASE" != /* ]] || [ ! -f "$DATABASE" ]; then
+                echo "Expected an existing absolute database file path." >&2; exit 1
+            fi
+            CONNECTION_STRING="jdbc:duckdb:${DATABASE}"
+            HOSTNAME=""
+            PORT=""
+            CATALOG=""
         else
             # Snowflake/Trino/Other: accept the vendor JDBC URL and retain
             # optional database/catalog metadata for reporting.
@@ -136,8 +148,13 @@ case "$conn_type" in
             read -p "JDBC URL: " CONNECTION_STRING
         fi
 
-        read -p "Username: " USER_VAL
-        read -sp "Password: " PASSWORD_VAL
+        if [ "$ENGINE" = "duckdb" ]; then
+            USER_VAL=""
+            PASSWORD_VAL=""
+        else
+            read -p "Username: " USER_VAL
+            read -sp "Password: " PASSWORD_VAL
+        fi
         echo ""
         echo ""
 

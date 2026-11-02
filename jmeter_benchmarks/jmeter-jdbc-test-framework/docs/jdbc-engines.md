@@ -8,6 +8,9 @@ arrival plans, warm-up, reports, baselines and S3 artifact upload.
 
 ## Configure a runner
 
+DuckDB is also available in the CLI and UI. See [DuckDB](#duckdb-local-database)
+for its local database setup and measurement differences.
+
 1. Install the engines you need with the optional installer below. It downloads
    the drivers and runtime/authentication dependencies; no manual JAR downloads
    are required. Use the Java 17 JDK provided by runner setup.
@@ -111,3 +114,51 @@ S3 artifact upload remains available independently.
 - [Athena JDBC 3.x](https://docs.aws.amazon.com/athena/latest/ug/jdbc-v3-driver.html)
 - [Redshift JDBC 2.x](https://docs.aws.amazon.com/redshift/latest/mgmt/jdbc20-install.html)
 - [ClickHouse JDBC](https://clickhouse.com/docs/integrations/language-clients/java/jdbc)
+
+## DuckDB (local database)
+
+Install the pinned DuckDB JDBC **2.0.0.1** bundle (including its native engine):
+
+```bash
+python3 utilities/install_jdbc_drivers.py duckdb
+```
+
+Or include `--jdbc-engines=duckdb` when running `./setup_jmeter.sh`. The driver
+must support your runner's OS/architecture. The installer checks Java loading;
+the optional smoke test below also opens a database and runs real queries.
+
+Prepare a DuckDB database using DuckDB's tooling before benchmarking. Setup does
+not generate or load benchmark data. Keep the file on the actual runner and use
+an absolute path; do not use an anonymous in-memory database for separate
+warm-up/measured processes. Close other applications writing to the same file.
+
+- **CLI:** run `./create_connection.sh`, choose JDBC then DuckDB, and enter the
+  existing database-file path. No hostname, username or password is needed.
+  Use `./create_test_config.sh` to select Sequential, Fixed QPS or Arrival-rate
+  profile and a DuckDB-compatible query CSV.
+- **UI:** select DuckDB and create a profile with
+  `jdbc:duckdb:/absolute/path/benchmark.duckdb`. Leave credentials and the custom
+  driver field blank. Use the same three plans. A browser upload of a query CSV
+  does not upload the database; its path must exist on the runner.
+- **Manual profile:** copy `connection_properties/duckdb.properties.template` to
+  a local `.properties` file and replace the database path.
+
+DuckDB executes inside the JMeter JVM process, so CPU/RAM include both the load
+client and the engine. The existing generator-health verdict cannot distinguish
+these: engine CPU saturation must not be presented as proof of client overload.
+Record machine size, DuckDB thread/memory settings and storage placement when
+comparing results with a remote engine. JMeter latency remains client-observed;
+there is no server-side Query History capture for DuckDB. Multiple runs against
+the same writable database file can conflict; run them sequentially or use
+separate database copies. See [DuckDB JDBC](https://duckdb.org/docs/current/clients/java/overview)
+and [concurrency](https://duckdb.org/docs/stable/connect/concurrency.html).
+
+To validate the installed driver and all three plans locally with temporary
+synthetic data (no external database credentials needed):
+
+```bash
+RUN_DUCKDB_SMOKE=1 python3 -m unittest utilities.tests.test_duckdb -v
+```
+
+This also exercises excluded warm-up and repeated measured passes. It is a
+functional smoke test, not a TPC-DS result or a capacity benchmark.

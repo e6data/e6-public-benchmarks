@@ -7,6 +7,25 @@ import unittest
 
 @unittest.skipUnless(shutil.which('node'), 'Node.js required for browser helper tests')
 class PlanControlTests(unittest.TestCase):
+    def test_duckdb_hint_switches_with_engine_without_changing_url(self):
+        app = Path(__file__).resolve().parents[2] / 'ui/static/app.js'
+        script = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync(process.argv[1],'utf8');
+vm.runInThisContext(source.slice(source.indexOf('function updateDuckDBHint'),source.indexOf('async function updateConnectionPreview')));
+let hidden=true;
+const hint={classList:{toggle:(name,value)=>hidden=value},textContent:''};
+const engine={value:'duckdb'},input={value:'jdbc:duckdb:/data/test.duckdb'};
+const card={querySelector:s=>s==='.engine-kind'?engine:s==='.duckdb-hint'?hint:input};
+updateDuckDBHint(card);
+assert.equal(hidden,false);assert(hint.textContent.includes('runner'));
+assert(input.placeholder.startsWith('jdbc:duckdb:'));
+engine.value='e6data';updateDuckDBHint(card);
+assert.equal(hidden,true);assert.equal(input.value,'jdbc:duckdb:/data/test.duckdb');
+'''
+        result = subprocess.run(['node', '-e', script, str(app)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_connection_preview_switching_ignores_stale_responses(self):
         app = Path(__file__).resolve().parents[2] / 'ui/static/app.js'
         script = r'''

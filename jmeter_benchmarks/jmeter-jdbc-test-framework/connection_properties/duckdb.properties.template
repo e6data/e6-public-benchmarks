@@ -1,0 +1,8 @@
+# Install with: python3 utilities/install_jdbc_drivers.py duckdb
+# Use an existing database file on the runner, not on your browser's machine.
+ENGINE=duckdb
+DRIVER_CLASS=org.duckdb.DuckDBDriver
+CONNECTION_STRING=jdbc:duckdb:/absolute/path/benchmark.duckdb
+USER=
+PASSWORD=
+JDBC_INIT_SQL=

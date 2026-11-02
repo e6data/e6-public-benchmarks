@@ -17,7 +17,7 @@ class JdbcEngineTests(unittest.TestCase):
             (root / "test_properties/load.csv").write_text("StartValue,EndValue,Duration\n1,1,1\n")
             for path in set(server.PLAN_TEST_PROPERTIES.values()):
                 (root / path).write_text("")
-            for engine in ("fabric", "starburst_galaxy", "athena", "emr_trino", "redshift", "clickhouse"):
+            for engine in ("fabric", "starburst_galaxy", "athena", "emr_trino", "redshift", "clickhouse", "duckdb"):
                 connection = server.create_connection_profile({
                     "name": engine, "engine": engine, "transport": "jdbc",
                     "connection_string": "jdbc:example://host/database",
@@ -34,7 +34,7 @@ class JdbcEngineTests(unittest.TestCase):
                         self.assertEqual(env["ENGINE"], engine)
 
     def test_new_profiles_round_trip_through_suite_identity(self):
-        for engine in ("fabric", "starburst_galaxy", "athena", "emr_trino", "redshift", "clickhouse"):
+        for engine in ("fabric", "starburst_galaxy", "athena", "emr_trino", "redshift", "clickhouse", "duckdb"):
             with self.subTest(engine=engine), tempfile.TemporaryDirectory() as tmp:
                 with mock.patch.object(server, "ROOT", Path(tmp)):
                     relative = server.create_connection_profile({

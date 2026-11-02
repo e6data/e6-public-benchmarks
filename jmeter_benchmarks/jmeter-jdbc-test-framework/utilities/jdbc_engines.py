@@ -14,13 +14,14 @@ JDBC_DRIVERS = {
     "emr_trino": "io.trino.jdbc.TrinoDriver",
     "redshift": "com.amazon.redshift.jdbc.Driver",
     "clickhouse": "com.clickhouse.jdbc.ClickHouseDriver",
+    "duckdb": "org.duckdb.DuckDBDriver",
 }
 ENGINE_LABELS = {
     "e6data": "e6data", "databricks": "Databricks", "snowflake": "Snowflake",
     "trino": "Trino", "fabric": "Microsoft Fabric",
     "starburst_galaxy": "Starburst Galaxy", "athena": "Amazon Athena",
     "emr_trino": "Amazon EMR Trino", "redshift": "Amazon Redshift",
-    "clickhouse": "ClickHouse",
+    "clickhouse": "ClickHouse", "duckdb": "DuckDB",
 }
 
 

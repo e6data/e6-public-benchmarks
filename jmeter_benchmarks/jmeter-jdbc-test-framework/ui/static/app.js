@@ -314,6 +314,15 @@ function presetValues(kind){
   if(kind==='metadata')return metadataFromCard(document.querySelector('.engine'));
   return {TEST_PLAN:state.config.plans.find(p=>p.id===c.plan)?.path,CONCURRENT_QUERY_COUNT:c.CONCURRENT_QUERY_COUNT,QPS:c.QPS,QPM:c.QPM,HOLD_PERIOD:c.HOLD_PERIOD,RAMP_UP_TIME:c.RAMP_UP_TIME,RAMP_UP_STEPS:c.RAMP_UP_STEPS,MAX_CONCURRANCY:c.MAX_CONCURRANCY,QUERY_TIMEOUT:c.QUERY_TIMEOUT,LIMIT_RESULTSET:c.LIMIT_RESULTSET,MAX_ERROR_PCT:c.MAX_ERROR_PCT,MEASURED_ITERATIONS:c.MEASURED_ITERATIONS,RECYCLE_ON_EOF:c.RECYCLE_ON_EOF,RANDOM_ORDER:c.RANDOM_ORDER,GENERATE_DASHBOARD:c.GENERATE_DASHBOARD,LOAD_PROFILE:c.load_profile};
 }
+function updateDuckDBHint(card){
+  const duck=card.querySelector('.engine-kind').value==='duckdb';
+  let hint=card.querySelector('.duckdb-hint');
+  if(!hint){hint=document.createElement('p');hint.className='local-secret-note duckdb-hint';card.querySelector('.new-connection').append(hint)}
+  hint.classList.toggle('hidden',!duck);
+  hint.textContent='DuckDB runs on the runner itself. Install its optional JDBC driver first and use an existing absolute database-file path on that runner. Leave username/password blank. CPU and memory include engine work.';
+  const input=card.querySelector('.new-url');
+  if(input)input.placeholder=duck?'jdbc:duckdb:/data/benchmark.duckdb':'jdbc:engine://host:port/…';
+}
 async function updateConnectionPreview(card){
   const box=card.querySelector('.connection-preview');if(!box)return;
   const file=card.querySelector('.connection-mode').value==='existing'?card.querySelector('.connection').value:'';
@@ -327,7 +336,7 @@ async function updateConnectionPreview(card){
 }
 function updatePreview(){
   if(!$('configPreview')||!state.config)return;
-  document.querySelectorAll('.engine').forEach(updateConnectionPreview);
+  document.querySelectorAll('.engine').forEach(card=>{updateDuckDBHint(card);updateConnectionPreview(card)});
   document.querySelectorAll('.engine').forEach(card=>card.querySelector('.engine-warmup-fields')?.classList.toggle('inactive',!card.querySelector('.engine-warmup-enabled')?.checked));
   configureAdvancedForPlan();
   const env=relevantEnvironment(previewEnvironment(),$('plan').value);

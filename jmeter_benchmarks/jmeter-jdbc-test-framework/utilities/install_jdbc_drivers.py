@@ -21,6 +21,7 @@ CENTRAL = "https://repo.maven.apache.org/maven2"
 ALIASES = {"starburst_galaxy": "trino", "emr_trino": "trino"}
 # Fabric's optional auth dependencies must be explicit Maven roots.
 SPECS = {
+    "duckdb": [("org.duckdb", "duckdb_jdbc", "2.0.0.1")],
     "fabric": [("com.microsoft.sqlserver", "mssql-jdbc", "13.4.0.jre11"),
                ("com.azure", "azure-identity", "1.18.2"),
                ("org.bouncycastle", "bcpkix-jdk18on", "1.79")],
@@ -35,6 +36,7 @@ SPECS = {
 }
 ATHENA_URL = "https://aws-analytics-downloads-us-east-1.s3.us-east-1.amazonaws.com/athena/JDBC/3.8.2/athena-jdbc-3.8.2-with-dependencies.jar"
 DRIVERS = {
+    "duckdb": "org.duckdb.DuckDBDriver",
     "fabric": "com.microsoft.sqlserver.jdbc.SQLServerDriver",
     "redshift": "com.amazon.redshift.jdbc.Driver",
     "clickhouse": "com.clickhouse.jdbc.ClickHouseDriver",

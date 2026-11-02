@@ -1166,6 +1166,9 @@ def masked_jdbc_url(url: str) -> str:
     hidden = "JDBC URL hidden: unsupported or ambiguous format"
     if any(c in url for c in "\r\n{}\"'\\#"):
         return hidden
+    if url.startswith("jdbc:duckdb:"):
+        path = url[len("jdbc:duckdb:"):]
+        return url if re.fullmatch(r"/[a-zA-Z0-9_./ -]+", path) else hidden
     match = re.fullmatch(r"(jdbc:[a-zA-Z0-9]+://)([^/;?&]+)([^;?&]*)(.*)", url)
     if not match:
         return hidden

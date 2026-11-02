@@ -106,6 +106,13 @@ def connection_engine(path: Path) -> str:
 
 def network_preflight(path: Path) -> None:
     values = properties(path); host = values.get("HOSTNAME", "")
+    if values.get("DRIVER_CLASS") == "org.duckdb.DuckDBDriver":
+        url = values.get("CONNECTION_STRING", "")
+        database = Path(url[len("jdbc:duckdb:"):]) if url.startswith("jdbc:duckdb:") else Path()
+        if not database.is_absolute() or not database.is_file():
+            raise ValueError("DuckDB requires an existing absolute database-file path on the runner")
+        print("Local preflight: DuckDB database file exists")
+        return
     if values.get("DRIVER_CLASS") == "com.amazon.athena.jdbc.AthenaDriver":
         print("Network preflight: Athena endpoint and credentials are resolved by the AWS JDBC driver")
         return
